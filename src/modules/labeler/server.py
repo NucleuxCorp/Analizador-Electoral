@@ -986,13 +986,21 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
             # serves PDFs as application/octet-stream, which forces a download).
             source_url = (details.get("source_url") or "").strip()
             if source_url:
-                # Temporary strategy (pilot): redirect the user's browser
-                # directly to the Registraduria URL. Their browser can reach
-                # registraduria.gov.co fine; Railway's egress cannot. Skips
-                # the server-side proxy entirely. When/if we cache PDFs in
-                # Storage (Phase B), this can switch to a signed Storage URL.
-                logger.info("pdf redirect crop=%s -> registraduria", crop_id)
-                return redirect(source_url, code=302)
+                # Temporary strategy (pilot): redirect to Google Docs Viewer
+                # wrapping the Registraduria URL. The viewer renders PDFs
+                # inline regardless of Content-Type (Registraduria serves
+                # octet-stream which otherwise forces a download). Google's
+                # backend fetches the PDF; the user's browser only loads the
+                # viewer HTML. Railway egress is bypassed entirely.
+                # Phase B (Storage cache) can replace this with a signed URL.
+                import urllib.parse as _up
+                viewer_url = (
+                    "https://docs.google.com/viewer?url="
+                    + _up.quote(source_url, safe="")
+                    + "&embedded=false"
+                )
+                logger.info("pdf redirect crop=%s -> gdocs viewer", crop_id)
+                return redirect(viewer_url, code=302)
             # Fallback: serve from local disk (dev / not-yet-backfilled actas).
             pdf_path = Path(details.get("pdf_path", "")).resolve()
             if not pdf_path.exists():
