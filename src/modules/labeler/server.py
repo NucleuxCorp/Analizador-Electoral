@@ -1008,13 +1008,13 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 }
                 req = _ur.Request(source_url, headers=headers)
 
-                # Retry up to 3 times with linear backoff to absorb transient
-                # Railway-egress / upstream connection drops. Total worst case:
-                # 25s + 2s + 25s + 4s + 25s = ~81s — capped by gunicorn --timeout=60.
-                # In practice the first attempt either connects or hangs <= 25s.
+                # Retry up to 2 times with backoff to absorb transient drops.
+                # Worst case timing: 25s + 2s + 25s = 52s (fits inside gunicorn
+                # --timeout=60). A 3rd attempt would overrun and trigger a hard
+                # WORKER TIMEOUT, returning a generic 500 instead of our JSON.
                 last_exc: Exception | None = None
                 pdf_bytes = b""
-                for attempt in (1, 2, 3):
+                for attempt in (1, 2):
                     try:
                         with _ur.urlopen(req, context=ctx, timeout=25) as resp:
                             pdf_bytes = resp.read()
@@ -1026,8 +1026,8 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                             "pdf upstream attempt=%d failed crop=%s type=%s msg=%s",
                             attempt, crop_id, type(exc).__name__, str(exc) or repr(exc),
                         )
-                        if attempt < 3:
-                            _time.sleep(2 * attempt)
+                        if attempt < 2:
+                            _time.sleep(2)
                     except Exception as exc:  # non-retryable
                         last_exc = exc
                         break
