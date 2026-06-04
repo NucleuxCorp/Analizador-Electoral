@@ -711,9 +711,27 @@
       if (imgF) imgF.classList.add("img-fade");
 
       setTimeout(function() {
-        // Swap images
-        if (imgD) { imgD.src = "/image/" + item.crop_id; imgD.classList.remove("img-fade"); }
-        if (imgF) { imgF.src = "/image/" + item.full_cell_crop_id; imgF.classList.remove("img-fade"); }
+        // Hide overlay only after both images have actually painted.
+        // Safety fallback fires after 3 s if a load event never arrives.
+        var pending = (imgD ? 1 : 0) + (imgF ? 1 : 0);
+        var safety = setTimeout(hideLoader, 3000);
+        function onImgDone(el) {
+          if (el) el.classList.remove("img-fade");
+          if (--pending <= 0) { clearTimeout(safety); hideLoader(); }
+        }
+        if (!pending) { clearTimeout(safety); hideLoader(); }
+
+        // Swap images — remove img-fade happens inside onImgDone, not here
+        if (imgD) {
+          imgD.onload  = function () { onImgDone(imgD); };
+          imgD.onerror = function () { onImgDone(imgD); };
+          imgD.src = "/image/" + item.crop_id;
+        }
+        if (imgF) {
+          imgF.onload  = function () { onImgDone(imgF); };
+          imgF.onerror = function () { onImgDone(imgF); };
+          imgF.src = "/image/" + item.full_cell_crop_id;
+        }
 
         // Update input
         inp.value = item.label_ocr;
@@ -810,7 +828,6 @@
         setEnmienda(false);
         inp.focus();
         inp.select();  // select placeholder so first keystroke replaces it
-        hideLoader();
       }, 120); // wait for fade
     }
 
@@ -959,7 +976,7 @@
       border-radius:50%;
       animation:spin 0.7s linear infinite;
     "></div>
-    <span style="font-size:0.7rem; color:#445; letter-spacing:1px; text-transform:uppercase;">Loading</span>
+    <span style="font-size:0.7rem; color:#445; letter-spacing:1px; text-transform:uppercase;">Analizando</span>
   </div>
 </div>
 <style>
