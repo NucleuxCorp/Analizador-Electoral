@@ -412,8 +412,7 @@
   </div><!-- end controls-area -->
   </div><!-- end left column (OCR+keyboard) -->
 
-  <!-- Right column: Last Labeled — fills remaining space -->
-  {% if recent %}
+  <!-- Right column: Last Labeled — always rendered so the SPA can append after the first label -->
   <div style="flex:1; min-width:0; border-left:2px solid #1e2a3a; padding-left:14px; overflow:hidden;">
     <div class="recent-log" style="border-top:none; padding-top:0; overflow-y:auto; max-height:340px;">
       <div class="recent-header">
@@ -453,7 +452,6 @@
     </div>
     </div><!-- end recent-log -->
   </div><!-- end right log column -->
-  {% endif %}
 
   </div><!-- end bottom section -->
 

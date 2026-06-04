@@ -281,6 +281,33 @@ def release_expired_assignments() -> None:
 # 3.9  get_storage_url
 # ---------------------------------------------------------------------------
 
+def get_concordancias(pdf_path: str, label_ocr: str, exclude_crop_id: str = "", limit: int = 5) -> list[str]:
+    """
+    Return crop_ids from the same acta (pdf_path) whose OCR value matches the
+    current digit — the DB-backed replacement for the local index.jsonl lookup,
+    so it works on a cloud deploy with no local files.
+    """
+    if not pdf_path or not label_ocr or label_ocr == "?":
+        return []
+    resp = (
+        _client()
+        .table("crops")
+        .select("crop_id")
+        .eq("pdf_path", pdf_path)
+        .eq("label_ocr", label_ocr)
+        .limit(limit + 1)
+        .execute()
+    )
+    out: list[str] = []
+    for r in (resp.data or []):
+        cid = r.get("crop_id")
+        if cid and cid != exclude_crop_id:
+            out.append(cid)
+        if len(out) >= limit:
+            break
+    return out
+
+
 def get_storage_url(crop_id: str) -> str:
     """
     Return the public Supabase Storage URL for a crop PNG in bucket 'crops'.

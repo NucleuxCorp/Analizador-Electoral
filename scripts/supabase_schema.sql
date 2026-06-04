@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS crops (
     confirmed_label  TEXT,
     status           TEXT        DEFAULT 'pending',  -- pending | needs_third | confirmed | conflict
     source_url       TEXT,       -- public Registraduria PDF URL ("Ver acta" online)
+    full_cell_crop_id TEXT,      -- crop_id of the full 3-digit cell image (context)
     created_at       TIMESTAMPTZ DEFAULT now()
 );
 

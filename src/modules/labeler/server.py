@@ -561,7 +561,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
             crop = _db.get_crop_details(crop_id)
 
             # Full cell crop id — look up from local index (not stored in Supabase)
-            full_cell_crop_id = _get_full_cell_crop_id(crop_id, _index_path)
+            full_cell_crop_id = crop.get("full_cell_crop_id") or crop_id
 
             # Recent log — stored in Flask session (per-user, last 30)
             recent = session.get("recent_labels", [])
@@ -569,7 +569,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
             # Concordancias — same PDF, same label_ocr, from local index
             pdf_path = crop.get("pdf_path", "")
             label_ocr = crop.get("label_ocr", "?")
-            concordancias = _get_concordancias(pdf_path, _index_path, label_ocr)
+            concordancias = _db.get_concordancias(pdf_path, label_ocr, crop_id)
 
             # Counts — use session cache to avoid extra round-trips on every load
             labeled = session.get("labeled_count", 0)
@@ -800,8 +800,8 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
             crop = _db.get_crop_details(crop_id)
             pdf_path = crop.get("pdf_path", "")
             label_ocr = crop.get("label_ocr", "?")
-            full_cell_crop_id = _get_full_cell_crop_id(crop_id, _index_path)
-            concordancias = _get_concordancias(pdf_path, _index_path, label_ocr)
+            full_cell_crop_id = crop.get("full_cell_crop_id") or crop_id
+            concordancias = _db.get_concordancias(pdf_path, label_ocr, crop_id)
             labeled = session.get("labeled_count", 0)
             total = session.get("total_count", 0)
             return jsonify({
