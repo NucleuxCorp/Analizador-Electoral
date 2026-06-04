@@ -25,7 +25,16 @@ from typing import Any
 # ---------------------------------------------------------------------------
 
 _supabase_url: str = os.environ.get("SUPABASE_URL", "").strip()
-_supabase_key: str = os.environ.get("SUPABASE_ANON_KEY", "").strip()
+
+# Table operations prefer the service_role key when available, so the portal can
+# read/write while RLS denies all direct anon/authenticated access (Option A
+# server-trust model). Falls back to the anon key when no service key is set
+# (e.g. RLS-off local dev / pilot before hardening). The service_role key is
+# server-side only — never sent to the browser. User auth still uses the anon
+# key via auth.init_supabase_client (a separate client).
+_service_key: str = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+_anon_key: str = os.environ.get("SUPABASE_ANON_KEY", "").strip()
+_supabase_key: str = _service_key or _anon_key
 
 supabase: Any = None  # supabase.Client | None
 
