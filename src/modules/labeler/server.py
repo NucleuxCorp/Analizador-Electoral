@@ -620,8 +620,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
 
             # Validate assignment ownership: check an active assignment row exists
             try:
-                from src.modules.labeler.auth import init_supabase_client as _iac
-                _cli = _iac()
+                _cli = _db._client()
                 asgn_resp = (
                     _cli.table("assignments")
                     .select("crop_id")
@@ -664,8 +663,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
             session["labeled_count"] = session.get("labeled_count", 0) + 1
             if session.get("total_count", 0) == 0:
                 try:
-                    from src.modules.labeler.auth import init_supabase_client as _iac
-                    session["total_count"] = _iac().table("crops").select("crop_id", count="exact").execute().count or 0
+                    session["total_count"] = _db._client().table("crops").select("crop_id", count="exact").execute().count or 0
                 except Exception:
                     pass
             session.modified = True
@@ -683,8 +681,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
             body = request.get_json(force=True, silent=True) or {}
             crop_id = body.get("crop_id", "")
             try:
-                from src.modules.labeler.auth import init_supabase_client as _iac
-                _cli = _iac()
+                _cli = _db._client()
                 # Delete active assignment
                 _cli.table("assignments").delete().eq("annotator_id", g.user_id).execute()
                 # Insert a skip label so assign_next_crop excludes this crop for this user
@@ -732,8 +729,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
         @app.route("/status")
         def status_view() -> Response:
             try:
-                from src.modules.labeler.auth import init_supabase_client as _iac
-                _cli = _iac()
+                _cli = _db._client()
 
                 # Total crops
                 crops_resp = _cli.table("crops").select("status", count="exact").execute()
@@ -835,8 +831,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
         def back_view_prod() -> Response:
             from flask import g
             try:
-                from src.modules.labeler.auth import init_supabase_client as _iac
-                _cli = _iac()
+                _cli = _db._client()
                 # Find the user's most recent label
                 last = (
                     _cli.table("labels")
@@ -1131,8 +1126,8 @@ def _is_admin_user(user_id: str) -> bool:
     Returns False on any error (fail-closed).
     """
     try:
-        from src.modules.labeler.auth import init_supabase_client
-        client = init_supabase_client()
+        from src.modules.labeler import db as _db
+        client = _db._client()  # service_role — required for the admin API
         # Use the admin API to get user metadata
         user_resp = client.auth.admin.get_user_by_id(user_id)
         if user_resp and user_resp.user:
