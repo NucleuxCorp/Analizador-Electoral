@@ -121,6 +121,46 @@
         <form id="logout-form" action="/auth/logout" method="post" style="display:none;"></form>
       </div>
     {% endif %}
+
+    <div style="margin-top:20px;">
+      <button onclick="document.getElementById('wa-home').style.display='flex'"
+        style="background:none; border:1px solid #1a4a1a; border-radius:8px; color:#66bb6a;
+               font-family:monospace; font-size:0.75rem; padding:7px 16px; cursor:pointer;">
+        💬 Enviar feedback o consulta
+      </button>
+    </div>
+
+    <!-- WhatsApp feedback mini-modal (home) -->
+    <div id="wa-home" style="
+      position:fixed; inset:0; z-index:9999; background:rgba(8,10,16,0.8);
+      display:none; align-items:center; justify-content:center;">
+      <div style="width:min(420px,92vw); background:#141a26; border:1px solid #1a4a1a;
+                  border-radius:12px; padding:22px 24px; box-shadow:0 12px 40px #000a;">
+        <div style="font-size:1rem; font-weight:bold; color:#66bb6a;">💬 Enviar feedback</div>
+        <div style="font-size:0.74rem; color:#889; margin-top:8px; line-height:1.5;">
+          Tu duda, sugerencia o problema. Se abre WhatsApp con el mensaje listo.
+        </div>
+        <textarea id="wa-home-msg" rows="4" placeholder="Escribí aquí..."
+          style="width:100%; margin-top:12px; background:#0d1119; border:1px solid #2a3a4a;
+                 border-radius:8px; color:#dce3ea; font-size:0.85rem; padding:10px;
+                 resize:vertical; box-sizing:border-box; font-family:inherit;"></textarea>
+        <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:10px;">
+          <button onclick="document.getElementById('wa-home').style.display='none'"
+            style="background:none; border:1px solid #2a3a4a; border-radius:8px; color:#889;
+                   padding:8px 16px; cursor:pointer; font-size:0.82rem;">Cancelar</button>
+          <button onclick="(function(){
+              var m=(document.getElementById('wa-home-msg').value||'').trim();
+              if(!m) return;
+              window.open('https://wa.me/573233131374?text='+encodeURIComponent(m),'_blank');
+              document.getElementById('wa-home').style.display='none';
+            })()" style="background:linear-gradient(180deg,#0a3a0a,#061506);
+                          border:1px solid #1a5a1a; border-radius:8px; color:#66bb6a;
+                          padding:8px 16px; cursor:pointer; font-size:0.82rem; font-weight:bold;">
+            Enviar por WhatsApp
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <div class="ver">v{{ app_version }}</div>

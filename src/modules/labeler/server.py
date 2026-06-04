@@ -881,10 +881,32 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
             details = _db.get_crop_details(crop_id)
             if not details:
                 return Response("Crop not found", status=404)
-            # Prefer the public Registraduria URL — no PDF hosting needed online.
+            # Proxy the PDF so the browser displays it inline (the Registraduria
+            # serves PDFs as application/octet-stream, which forces a download).
             source_url = (details.get("source_url") or "").strip()
             if source_url:
-                return redirect(source_url, code=302)
+                try:
+                    import urllib.request as _ur
+                    import ssl as _ssl
+                    ctx = _ssl.create_default_context()
+                    ctx.check_hostname = False
+                    ctx.verify_mode = _ssl.CERT_NONE
+                    req = _ur.Request(source_url, headers={"User-Agent": "Mozilla/5.0"})
+                    with _ur.urlopen(req, context=ctx, timeout=20) as resp:
+                        pdf_bytes = resp.read()
+                    fname = source_url.split("/")[-1] or "acta.pdf"
+                    return Response(
+                        pdf_bytes,
+                        status=200,
+                        mimetype="application/pdf",
+                        headers={
+                            "Content-Disposition": f'inline; filename="{fname}"',
+                            "Content-Length": str(len(pdf_bytes)),
+                            "Cache-Control": "private, max-age=300",
+                        },
+                    )
+                except Exception as exc:
+                    return Response(f"Could not fetch PDF: {exc}", status=502)
             # Fallback: serve from local disk (dev / not-yet-backfilled actas).
             pdf_path = Path(details.get("pdf_path", "")).resolve()
             if not pdf_path.exists():

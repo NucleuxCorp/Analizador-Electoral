@@ -247,21 +247,26 @@
   <span style="font-size: 0.68rem; color: #445;">
     Signed in as <span style="color: #7ec8e3;">{{ user_email }}</span>
   </span>
-  <form action="/auth/logout" method="post" style="margin: 0;">
-    <button type="submit" style="
-      background: none;
-      border: 1px solid #2a3a4a;
-      border-radius: 4px;
-      color: #556;
-      font-family: monospace;
-      font-size: 0.65rem;
-      padding: 3px 10px;
-      cursor: pointer;
-    " onmouseover="this.style.borderColor='#ef5350'; this.style.color='#ef5350';"
-       onmouseout="this.style.borderColor='#2a3a4a'; this.style.color='#556';">
-      Sign out
+  <div style="display:flex; gap:8px; align-items:center;">
+    <button onclick="openWa()" style="
+      background:none; border:1px solid #1a4a1a; border-radius:4px;
+      color:#66bb6a; font-family:monospace; font-size:0.65rem;
+      padding:3px 10px; cursor:pointer;"
+      onmouseover="this.style.borderColor='#66bb6a';"
+      onmouseout="this.style.borderColor='#1a4a1a';">
+      💬 Feedback
     </button>
-  </form>
+    <form action="/auth/logout" method="post" style="margin:0;">
+      <button type="submit" style="
+        background: none; border: 1px solid #2a3a4a; border-radius: 4px;
+        color: #556; font-family: monospace; font-size: 0.65rem;
+        padding: 3px 10px; cursor: pointer;"
+        onmouseover="this.style.borderColor='#ef5350'; this.style.color='#ef5350';"
+        onmouseout="this.style.borderColor='#2a3a4a'; this.style.color='#556';">
+        Sign out
+      </button>
+    </form>
+  </div>
 </div>
 {% endif %}
 
@@ -348,11 +353,12 @@
         </div>
         {% endfor %}
       </div>
-      <!-- Ver acta (PDF) — below the fraud flag -->
-      <a id="btn-pdf" class="btn purple" href="/pdf?v={{ crop_id }}" target="_blank"
-         style="margin-top:10px; flex-direction:row; gap:8px; padding:9px 14px;">
+      <!-- Ver acta (PDF) — opens inline modal viewer -->
+      <button id="btn-pdf" class="btn purple"
+              onclick="openPdf('/pdf?v={{ crop_id }}')"
+              style="margin-top:10px; flex-direction:row; gap:8px; padding:9px 14px; width:100%; border:none; cursor:pointer;">
         <span class="k">PDF</span><span class="d" style="font-size:0.72rem;">Ver acta completa</span>
-      </a>
+      </button>
     </div>
   </div>
 
@@ -536,6 +542,50 @@
       post("/label", { crop_id: inp.dataset.cropId, value: (enmienda ? "E" : "") + d });
     };
 
+    // ── PDF viewer modal ──
+    window.openPdf = function (url) {
+      var m = document.getElementById("pdf-modal");
+      var frame = document.getElementById("pdf-frame");
+      var loader = document.getElementById("pdf-loader");
+      if (!m) return;
+      frame.style.display = "none";
+      loader.style.display = "flex";
+      frame.src = "";
+      m.style.display = "flex";
+      frame.onload = function () {
+        loader.style.display = "none";
+        frame.style.display = "block";
+      };
+      frame.src = url;
+    };
+    window.closePdf = function () {
+      var m = document.getElementById("pdf-modal");
+      var frame = document.getElementById("pdf-frame");
+      if (m) m.style.display = "none";
+      if (frame) frame.src = "";
+    };
+
+    // ── WhatsApp feedback modal ──
+    window.openWa = function () {
+      var m = document.getElementById("wa-modal");
+      if (!m) return;
+      document.getElementById("wa-msg").value = "";
+      document.getElementById("wa-err").textContent = "";
+      m.style.display = "flex";
+      setTimeout(function () { document.getElementById("wa-msg").focus(); }, 50);
+    };
+    window.closeWa = function () {
+      var m = document.getElementById("wa-modal");
+      if (m) m.style.display = "none";
+    };
+    window.submitWa = function () {
+      var msg = (document.getElementById("wa-msg").value || "").trim();
+      if (!msg) { document.getElementById("wa-err").textContent = "Escribí tu mensaje primero."; return; }
+      var url = "https://wa.me/573233131374?text=" + encodeURIComponent(msg);
+      window.open(url, "_blank");
+      closeWa();
+    };
+
     // ── Fraud modal ──
     function fraudModal() { return document.getElementById("fraud-modal"); }
     function fraudOpen()  { return fraudModal() && fraudModal().style.display === "flex"; }
@@ -593,6 +643,15 @@
 
     // Global fallback so Esc/arrows work even when input loses focus
     document.addEventListener("keydown", function (e) {
+      // close PDF/WA/fraud modals on Esc
+      if (document.getElementById("pdf-modal").style.display === "flex") {
+        if (e.key === "Escape") { e.preventDefault(); closePdf(); return; }
+        return;
+      }
+      if (document.getElementById("wa-modal").style.display === "flex") {
+        if (e.key === "Escape") { e.preventDefault(); closeWa(); return; }
+        return;
+      }
       if (fraudOpen()) {
         if (e.key === "Escape") { e.preventDefault(); closeFraud(); return; }
         if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); submitFraud(); return; }
@@ -654,7 +713,7 @@
 
         // Update PDF link
         var pdfBtn = document.getElementById("btn-pdf");
-        if (pdfBtn) pdfBtn.href = "/pdf?v=" + item.crop_id;
+        if (pdfBtn) pdfBtn.setAttribute("onclick", "openPdf('/pdf?v=" + item.crop_id + "')");
 
         // Update fraud flags
         var fb = document.getElementById("flag-box");
@@ -750,6 +809,66 @@
   color:#445; background:rgba(13,17,25,0.7); border:1px solid #1e2a3a;
   border-radius:5px; padding:2px 7px; pointer-events:none; user-select:none;
 ">v{{ app_version }}</div>
+
+<!-- PDF viewer modal -->
+<div id="pdf-modal" style="
+  position:fixed; inset:0; z-index:10001;
+  background:rgba(8,10,16,0.88);
+  display:none; flex-direction:column; align-items:center; justify-content:center;
+">
+  <div style="
+    width:min(900px,95vw); height:min(88vh,860px);
+    display:flex; flex-direction:column;
+    background:#141a26; border:1px solid #2a3a5a; border-radius:12px;
+    box-shadow:0 12px 40px #000c; overflow:hidden;
+  ">
+    <div style="display:flex; align-items:center; justify-content:space-between;
+                padding:10px 16px; border-bottom:1px solid #1e2a3a; flex-shrink:0;">
+      <span style="font-size:0.78rem; color:#7ec8e3; font-weight:bold;">Acta E-14 — Vista completa</span>
+      <button onclick="closePdf()" style="
+        background:none; border:1px solid #2a3a4a; border-radius:6px;
+        color:#889; font-size:0.8rem; padding:4px 12px; cursor:pointer;">✕ Cerrar</button>
+    </div>
+    <div id="pdf-loader" style="flex:1; display:flex; align-items:center; justify-content:center; color:#445; font-size:0.8rem;">
+      Cargando acta…
+    </div>
+    <iframe id="pdf-frame" src="" style="flex:1; border:none; display:none;"></iframe>
+  </div>
+</div>
+
+<!-- WhatsApp feedback modal -->
+<div id="wa-modal" style="
+  position:fixed; inset:0; z-index:10001;
+  background:rgba(8,10,16,0.8);
+  display:none; align-items:center; justify-content:center;
+">
+  <div style="
+    width:min(420px,92vw); background:#141a26; border:1px solid #1a4a1a;
+    border-radius:12px; padding:22px 24px; box-shadow:0 12px 40px #000a;
+  ">
+    <div style="font-size:1rem; font-weight:bold; color:#66bb6a; display:flex; align-items:center; gap:8px;">
+      💬 Enviar feedback
+    </div>
+    <div style="font-size:0.74rem; color:#889; margin-top:8px; line-height:1.5;">
+      Escribí tu duda, sugerencia o problema. Se va a abrir WhatsApp con el mensaje listo para enviar.
+    </div>
+    <textarea id="wa-msg" rows="4" placeholder="Ej: no entiendo bien cómo marcar este dígito..."
+      style="width:100%; margin-top:12px; background:#0d1119; border:1px solid #2a3a4a; border-radius:8px;
+             color:#dce3ea; font-size:0.85rem; padding:10px; resize:vertical; box-sizing:border-box;
+             font-family:inherit;"></textarea>
+    <div id="wa-err" style="color:#ef5350; font-size:0.72rem; min-height:14px; margin-top:4px;"></div>
+    <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:10px;">
+      <button onclick="closeWa()" style="
+        background:none; border:1px solid #2a3a4a; border-radius:8px; color:#889;
+        padding:8px 16px; cursor:pointer; font-size:0.82rem;">Cancelar</button>
+      <button onclick="submitWa()" style="
+        background:linear-gradient(180deg,#0a3a0a,#061506); border:1px solid #1a5a1a; border-radius:8px;
+        color:#66bb6a; padding:8px 16px; cursor:pointer; font-size:0.82rem; font-weight:bold;">
+        Enviar por WhatsApp
+      </button>
+    </div>
+  </div>
+</div>
 
 <!-- Fraud modal -->
 <div id="fraud-modal" style="
