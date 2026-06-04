@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Analizador de Elecciones — Verificación Ciudadana E-14</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: monospace;
+      background: radial-gradient(1200px 600px at 50% -10%, #1f2a44, #14182a 60%, #0d1018);
+      color: #e6edf3;
+      min-height: 100vh;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      padding: 32px 18px;
+    }
+    .wrap { width: 100%; max-width: 620px; text-align: center; }
+
+    .badge-top {
+      display: inline-block; font-size: 0.62rem; letter-spacing: 1.5px;
+      text-transform: uppercase; color: #7ec8e3; border: 1px solid #2a3a5a;
+      border-radius: 999px; padding: 4px 12px; margin-bottom: 18px;
+    }
+    h1 { font-size: 1.7rem; color: #fff; line-height: 1.2; margin-bottom: 10px; }
+    h1 .accent { color: #7ec8e3; }
+    .lead { font-size: 0.86rem; color: #9fb0c0; line-height: 1.6; margin-bottom: 28px; }
+
+    .countdown-label {
+      font-size: 0.66rem; text-transform: uppercase; letter-spacing: 2px;
+      color: #667; margin-bottom: 10px;
+    }
+    .countdown {
+      display: flex; gap: 10px; justify-content: center; margin-bottom: 8px;
+    }
+    .cd-cell {
+      background: linear-gradient(180deg, #16213e, #0f1626);
+      border: 1px solid #2a3a5a; border-radius: 12px;
+      padding: 14px 8px; min-width: 78px;
+      box-shadow: 0 6px 20px #00000055;
+    }
+    .cd-num { font-size: 2rem; font-weight: bold; color: #fff; line-height: 1; }
+    .cd-unit { font-size: 0.6rem; text-transform: uppercase; letter-spacing: 1px; color: #667; margin-top: 6px; }
+    .launch-at { font-size: 0.68rem; color: #556; margin-bottom: 26px; }
+
+    .open-banner {
+      background: #0a2a0a; border: 1px solid #1a5a1a; border-radius: 12px;
+      color: #66bb6a; padding: 14px; font-size: 0.95rem; font-weight: bold;
+      margin-bottom: 24px;
+    }
+
+    .cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+    .btn {
+      font-family: monospace; font-size: 0.92rem; font-weight: bold;
+      padding: 11px 22px; border-radius: 9px; cursor: pointer;
+      text-decoration: none; display: inline-block; transition: all 0.12s;
+    }
+    .btn-primary {
+      color: #06121e; background: linear-gradient(180deg, #8fd3ec, #5fb6d8);
+      border: 1px solid #7ec8e3;
+    }
+    .btn-primary:hover { background: linear-gradient(180deg, #a4ddf2, #6fc2e0); }
+    .btn-ghost {
+      color: #7ec8e3; background: transparent; border: 1px solid #2a3a5a;
+    }
+    .btn-ghost:hover { border-color: #7ec8e3; }
+
+    .signed {
+      font-size: 0.72rem; color: #667; margin-top: 22px;
+    }
+    .signed a { color: #7ec8e3; text-decoration: none; }
+    .signed a:hover { text-decoration: underline; }
+
+    .ver { position: fixed; bottom: 8px; left: 10px; font-size: 0.6rem; color: #445; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <span class="badge-top">Elecciones Presidenciales 2026 · Acta E-14</span>
+    <h1>Verificación <span class="accent">Ciudadana</span> de Actas</h1>
+    <p class="lead">
+      Ayudanos a revisar las actas E-14 del escrutinio para detectar
+      inconsistencias. Cada dígito que validás fortalece el control sobre el conteo.
+    </p>
+
+    {% if is_open %}
+      <div class="open-banner">✅ ¡La verificación está abierta!</div>
+      <div class="cta">
+        {% if logged_in %}
+          <a class="btn btn-primary" href="{{ work_url }}">Empezar a etiquetar</a>
+        {% else %}
+          <a class="btn btn-primary" href="/auth/register">Crear cuenta</a>
+          <a class="btn btn-ghost" href="/auth/login">Iniciar sesión</a>
+        {% endif %}
+      </div>
+    {% else %}
+      <div class="countdown-label">
+        {% if logged_in %}La verificación abre en{% else %}Faltan{% endif %}
+      </div>
+      <div class="countdown" id="countdown">
+        <div class="cd-cell"><div class="cd-num" id="cd-d">--</div><div class="cd-unit">días</div></div>
+        <div class="cd-cell"><div class="cd-num" id="cd-h">--</div><div class="cd-unit">horas</div></div>
+        <div class="cd-cell"><div class="cd-num" id="cd-m">--</div><div class="cd-unit">min</div></div>
+        <div class="cd-cell"><div class="cd-num" id="cd-s">--</div><div class="cd-unit">seg</div></div>
+      </div>
+      <div class="launch-at" id="launch-at"></div>
+
+      <div class="cta">
+        {% if logged_in %}
+          <span class="btn btn-ghost" style="cursor:default; border-style:dashed;">Tu cuenta está lista ✓</span>
+        {% else %}
+          <a class="btn btn-primary" href="/auth/register">Crear cuenta</a>
+          <a class="btn btn-ghost" href="/auth/login">Iniciar sesión</a>
+        {% endif %}
+      </div>
+    {% endif %}
+
+    {% if logged_in %}
+      <div class="signed">
+        Sesión: <span style="color:#7ec8e3;">{{ user_email }}</span> ·
+        <a href="#" onclick="document.getElementById('logout-form').submit(); return false;">Cerrar sesión</a>
+        <form id="logout-form" action="/auth/logout" method="post" style="display:none;"></form>
+      </div>
+    {% endif %}
+  </div>
+
+  <div class="ver">v{{ app_version }}</div>
+
+  {% if not is_open and launch_iso %}
+  <script>
+  (function () {
+    var target = new Date("{{ launch_iso }}").getTime();
+    var elD = document.getElementById("cd-d");
+    var elH = document.getElementById("cd-h");
+    var elM = document.getElementById("cd-m");
+    var elS = document.getElementById("cd-s");
+
+    // Show the local launch time in a friendly format
+    try {
+      var t = new Date("{{ launch_iso }}");
+      document.getElementById("launch-at").textContent =
+        "Apertura: " + t.toLocaleString("es-CO", { dateStyle: "full", timeStyle: "short" });
+    } catch (e) {}
+
+    function pad(n) { return (n < 10 ? "0" : "") + n; }
+    function tick() {
+      var diff = target - Date.now();
+      if (diff <= 0) { location.reload(); return; }
+      var s = Math.floor(diff / 1000);
+      elD.textContent = Math.floor(s / 86400);
+      elH.textContent = pad(Math.floor((s % 86400) / 3600));
+      elM.textContent = pad(Math.floor((s % 3600) / 60));
+      elS.textContent = pad(s % 60);
+    }
+    tick();
+    setInterval(tick, 1000);
+  })();
+  </script>
+  {% endif %}
+</body>
+</html>

@@ -1,0 +1,70 @@
+# Environment & credentials
+.env
+.env.*
+!.env.example
+
+# Data — PDFs, crops, labels (too large for git)
+data/pdfs/
+data/labels/
+data/labels_v2/
+data/e14c_urls.jsonl
+data/e14c_failed.jsonl
+data/e14c_progress.json
+data/*_cnn.jsonl
+data/suspicious_summary.jsonl
+data/review_summary.jsonl
+data/fraud_report.json
+
+# --- Bundle crops metadata for prod deploy (text only; PNGs stay excluded) ---
+# Full-cell context + concordancias need crops/index.jsonl; flag descriptions
+# need suspicious_summary.jsonl. Re-include just these files.
+!data/suspicious_summary.jsonl
+!data/labels_v2/
+data/labels_v2/*
+!data/labels_v2/crops/
+data/labels_v2/crops/*
+!data/labels_v2/crops/index.jsonl
+
+# Keep data dir tracked but not contents
+!data/.gitkeep
+
+# Models (large binary weights)
+models/*.pth
+models/training_report.json
+
+# Debug images
+debug/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Debug / calibration images in data/
+data/*.png
+data/debug_*.png
+data/calib_*.png
+data/crop_*.png
+data/form_*.png
+data/muestra_*.png
+data/p1_strip_*.png
+data/*.bak
+
+# Atl internal cache
+.atl/

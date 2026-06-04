@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Digit Labeler{% if not done %} — {{ field_name }}{% endif %}</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: monospace;
+      background: #1a1a2e;
+      color: #eee;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 12px 16px;
+      gap: 10px;
+    }
+
+    /* ── Progress ── */
+    .progress-wrap { width: 100%; max-width: 960px; }
+
+    /* Thin mode */
+    .progress-bg   { background: #2a2a4a; border-radius: 4px; height: 10px; }
+    .progress-fill { height: 10px; background: linear-gradient(90deg, #2e7d32, #66bb6a); border-radius: 4px; transition: width 0.6s ease; box-shadow: 0 0 6px #4caf5066; }
+    .progress-meta { display: flex; justify-content: space-between; font-size: 0.7rem; color: #555; margin-top: 3px; }
+
+    /* Thick mode */
+    .progress-bg.thick   { height: 28px; border-radius: 8px; position: relative; overflow: hidden; }
+    .progress-fill.thick {
+      height: 28px; border-radius: 8px;
+      background: linear-gradient(90deg, #1b5e20, #388e3c, #66bb6a);
+      box-shadow: 0 0 12px #4caf5055;
+      display: flex; align-items: center; justify-content: flex-end; padding-right: 10px;
+      min-width: 32px;
+    }
+    .progress-fill.thick .pct-inside { font-size: 0.78rem; font-weight: bold; color: #fff; white-space: nowrap; }
+    .progress-meta.thick { font-size: 0.75rem; color: #556; margin-top: 5px; font-weight: bold; }
+    .progress-meta.thick .pct-big { font-size: 1.1rem; color: #66bb6a; font-weight: bold; }
+
+    /* Toggle button */
+    .prog-toggle { background: none; border: 1px solid #2a3a4a; border-radius: 4px; color: #445; font-size: 0.65rem; padding: 2px 7px; cursor: pointer; float: right; margin-bottom: 4px; }
+    .prog-toggle:hover { border-color: #7ec8e3; color: #7ec8e3; }
+
+    /* ── Mesa info bar ── */
+    .mesa-bar {
+      width: 100%; max-width: 960px;
+      background: linear-gradient(135deg, #0d1b2a, #0a1520);
+      border: 1px solid #1e3050;
+      border-radius: 8px;
+      padding: 7px 16px;
+      display: flex; gap: 18px; flex-wrap: wrap; align-items: center;
+      font-size: 0.72rem;
+      box-shadow: 0 2px 8px #00000044;
+    }
+    .mesa-bar .lbl  { color: #445; text-transform: uppercase; font-size: 0.65rem; }
+    .mesa-bar .val  { color: #ccc; font-weight: bold; }
+    .mesa-bar .lugar { color: #7ec8e3; }
+    .field-badge {
+      background: #0f3460; color: #7ec8e3;
+      border-radius: 4px; padding: 2px 10px;
+      font-size: 0.75rem; white-space: nowrap;
+    }
+
+    /* ── Image panels ── */
+    .panels { display: flex; gap: 14px; width: 100%; max-width: 960px; }
+    .panel  {
+      flex: 1;
+      background: linear-gradient(180deg, #16213e, #111827);
+      border: 1px solid #2a3a5a; border-radius: 10px;
+      padding: 10px; text-align: center;
+      box-shadow: 0 4px 12px #00000055;
+      transition: border-color 0.2s;
+    }
+    .panel:hover { border-color: #3a5a8a; }
+    .panel-img-wrap {
+      width: 100%; height: 200px;
+      display: flex; align-items: center; justify-content: center;
+      background: #fff; border-radius: 4px; overflow: hidden;
+    }
+    .panel-img-wrap img { max-width: 100%; max-height: 200px; object-fit: contain; }
+    .panel-lbl { font-size: 0.65rem; color: #555; margin-top: 5px; }
+
+    /* ── OCR row ── */
+    .ocr-row {
+      width: 100%; max-width: 960px;
+      display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    }
+    .ocr-hint { font-size: 0.9rem; color: #888; }
+    .ocr-hint strong { color: #ffd700; font-size: 1.3rem; }
+    .badge { border-radius: 3px; padding: 1px 8px; font-size: 0.7rem; font-weight: bold; }
+    .badge-review     { background: #7f0000; color: #ff8a80; }
+    .badge-suspicious { background: #7f3d00; color: #ffcc80; }
+
+    input#answer {
+      font-size: 1.5rem; width: 100px; padding: 5px 10px;
+      border-radius: 6px; border: 2px solid #3a3a6a;
+      background: #111; color: #fff; text-align: center; outline: none;
+    }
+    input#answer:focus { border-color: #7ec8e3; }
+    #mode-ind { font-size: 0.78rem; color: #ff9800; min-height: 1.1em; }
+
+    /* ── Controls layout ── */
+    .controls-area {
+      width: 100%; max-width: 960px;
+      display: flex; flex-direction: row; gap: 16px; align-items: flex-start;
+    }
+
+    /* Numpad — 5 rows × 4 cols, all equal width */
+    .numpad {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      grid-template-rows: repeat(5, 52px);
+      gap: 5px;
+      width: 260px;
+      flex-shrink: 0;
+    }
+    /* Row 1 — actions: Back, E, F (fraude), Esc */
+    .nk-act-back  { grid-column:1; grid-row:1; }
+    .nk-act-e     { grid-column:2; grid-row:1; }
+    .nk-act-fraud { grid-column:3; grid-row:1; }
+    .nk-act-esc   { grid-column:4; grid-row:1; }
+    /* Row 2 */
+    .nk-7     { grid-column:1; grid-row:2; }
+    .nk-8     { grid-column:2; grid-row:2; }
+    .nk-9     { grid-column:3; grid-row:2; }
+    .nk-dash  { grid-column:4; grid-row:2; }
+    /* Row 3 */
+    .nk-4     { grid-column:1; grid-row:3; }
+    .nk-5     { grid-column:2; grid-row:3; }
+    .nk-6     { grid-column:3; grid-row:3; }
+    .nk-star  { grid-column:4; grid-row:3; }
+    /* + shares the asterisco slot visually — shown as a 2-label button */
+    /* Row 4 */
+    .nk-1     { grid-column:1; grid-row:4; }
+    .nk-2     { grid-column:2; grid-row:4; }
+    .nk-3     { grid-column:3; grid-row:4; }
+    .nk-enter { grid-column:4; grid-row:4/6; align-items:center; }
+    /* Row 5 */
+    .nk-0     { grid-column:1/3; grid-row:5; }
+    .nk-dot   { grid-column:3; grid-row:5; }
+
+    /* Base button */
+    .btn {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 2px; padding: 9px 8px;
+      border-radius: 9px; border: 1px solid #2a4060;
+      background: linear-gradient(180deg, #1a2a40, #111827);
+      cursor: pointer; user-select: none;
+      transition: background 0.12s, border-color 0.12s, box-shadow 0.12s, transform 0.08s;
+      text-decoration: none;
+      box-shadow: 0 2px 6px #00000044;
+    }
+    .btn:hover  { background: linear-gradient(180deg, #1e3a5a, #16263a); border-color: #7ec8e3; box-shadow: 0 0 10px #7ec8e322; }
+    .btn:active { transform: scale(0.96); box-shadow: none; }
+    .btn .k     { font-size: 1.05rem; font-weight: bold; color: #7ec8e3; }
+    .btn .d     { font-size: 0.6rem; color: #556; text-align: center; line-height: 1.2; }
+
+    .btn.green  { border-color: #1b4020; } .btn.green .k  { color: #66bb6a; }
+    .btn.green:hover  { background: #142814; border-color: #66bb6a; }
+
+    .btn.yellow { border-color: #5a4000; } .btn.yellow .k { color: #ffd740; }
+    .btn.yellow:hover { background: #2a2000; border-color: #ffd740; }
+
+    .btn.red    { border-color: #5a1010; } .btn.red .k    { color: #ef5350; }
+    .btn.red:hover    { background: #2a0a0a; border-color: #ef5350; }
+
+    .btn.gray   { border-color: #2a2a3a; } .btn.gray .k   { color: #888; }
+
+    .btn.purple { border-color: #4a2060; } .btn.purple .k { color: #ce93d8; }
+    .btn.purple:hover { background: #2a1040; border-color: #ce93d8; }
+
+    .btn.orange { border-color: #6a3000; background: linear-gradient(180deg, #2a1505, #1a0f08); }
+    .btn.orange .k { color: #ff9100; }
+    .btn.orange:hover { background: #3a2008; border-color: #ff9100; box-shadow: 0 0 10px #ff910033; }
+
+    /* Recent log */
+    .recent-log {
+      border-top: 1px solid #1e2a3a;
+      padding-top: 10px;
+    }
+
+    /* Smooth image swap */
+    #img-digit, #img-full { transition: opacity 0.15s ease; }
+    .img-fade { opacity: 0 !important; }
+
+    /* New log item slide-in */
+    @keyframes slideIn { from { opacity:0; transform:translateY(-8px); } to { opacity:1; transform:translateY(0); } }
+    .log-new { animation: slideIn 0.2s ease forwards; }
+    .recent-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+    .recent-title  { font-size: 0.65rem; color: #444; text-transform: uppercase; letter-spacing: 1px; }
+    .view-toggle   { display: flex; gap: 4px; }
+    .view-btn {
+      background: none; border: 1px solid #2a3a4a; border-radius: 4px;
+      color: #445; font-size: 0.7rem; padding: 2px 8px; cursor: pointer;
+    }
+    .view-btn.active { border-color: #7ec8e3; color: #7ec8e3; background: #0d1a2a; }
+    .view-btn:hover  { border-color: #7ec8e3; color: #7ec8e3; }
+
+    /* Grid view */
+    .recent-grid { display: flex; gap: 6px; flex-wrap: wrap; }
+    .recent-item {
+      display: flex; flex-direction: column; align-items: center; gap: 2px;
+      background: #0d1520; border: 1px solid #1e2a3a; border-radius: 6px;
+      padding: 5px 7px; min-width: 64px;
+    }
+    .recent-item img    { width: 52px; height: 38px; object-fit: contain; background: #fff; border-radius: 3px; }
+    .recent-item .r-row { display: flex; gap: 5px; align-items: baseline; }
+    .recent-item .r-lbl { font-size: 1.05rem; font-weight: bold; color: #7ec8e3; }
+    .recent-item .r-ocr { font-size: 0.7rem; color: #4caf50; }
+    .recent-item .r-conf { font-size: 0.58rem; color: #445; }
+    .recent-item .r-fld { font-size: 0.55rem; color: #344; text-align: center; max-width: 64px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+
+    /* List view */
+    .recent-list { display: flex; flex-direction: column; gap: 3px; max-height: 340px; overflow-y: auto; }
+    .recent-list::-webkit-scrollbar { width: 4px; }
+    .recent-list::-webkit-scrollbar-thumb { background: #2a3a4a; border-radius: 2px; }
+    .recent-row {
+      display: flex; align-items: center; gap: 10px;
+      background: #0d1520; border: 1px solid #1a2530; border-radius: 5px;
+      padding: 4px 10px;
+    }
+    .recent-row img    { width: 40px; height: 30px; object-fit: contain; background: #fff; border-radius: 3px; flex-shrink: 0; }
+    .recent-row .r-lbl { font-size: 1.1rem; font-weight: bold; color: #7ec8e3; min-width: 20px; }
+    .recent-row .r-ocr { font-size: 0.72rem; color: #4caf50; }
+    .recent-row .r-fld { font-size: 0.7rem; color: #445; flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .recent-row .r-conf{ font-size: 0.65rem; color: #334; min-width: 36px; text-align: right; }
+
+    /* Done */
+    .done-box { text-align: center; margin-top: 80px; }
+    .done-box h2 { color: #4caf50; font-size: 1.4rem; margin-bottom: 8px; }
+  </style>
+</head>
+<body>
+
+{% if user_email %}
+<div style="
+  width: 100%;
+  max-width: 960px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 0;
+  margin-bottom: 2px;
+">
+  <span style="font-size: 0.68rem; color: #445;">
+    Signed in as <span style="color: #7ec8e3;">{{ user_email }}</span>
+  </span>
+  <form action="/auth/logout" method="post" style="margin: 0;">
+    <button type="submit" style="
+      background: none;
+      border: 1px solid #2a3a4a;
+      border-radius: 4px;
+      color: #556;
+      font-family: monospace;
+      font-size: 0.65rem;
+      padding: 3px 10px;
+      cursor: pointer;
+    " onmouseover="this.style.borderColor='#ef5350'; this.style.color='#ef5350';"
+       onmouseout="this.style.borderColor='#2a3a4a'; this.style.color='#556';">
+      Sign out
+    </button>
+  </form>
+</div>
+{% endif %}
+
+{% if done %}
+  <div class="done-box">
+    <h2>All done!</h2>
+    <p>{{ labeled }} items labeled. The queue is exhausted.</p>
+  </div>
+
+{% else %}
+
+  <!-- Progress bar -->
+  {% set pct = ((labeled / total) * 100) | round(1) if total > 0 else 0 %}
+  <div class="progress-wrap" id="prog-wrap">
+    <button class="prog-toggle" onclick="toggleProg()" id="prog-btn">&#9643; thick</button>
+
+    <!-- Thin bar (default) -->
+    <div id="prog-thin">
+      <div class="progress-bg"><div class="progress-fill" style="width:{{ pct }}%"></div></div>
+      <div class="progress-meta">
+        <span>{{ labeled }} labeled</span>
+        <span>{{ pct }}%</span>
+        <span>{{ remaining }} remaining</span>
+      </div>
+    </div>
+
+    <!-- Thick bar (hidden by default) -->
+    <div id="prog-thick" style="display:none;">
+      <div class="progress-bg thick">
+        <div class="progress-fill thick" style="width:{{ pct }}%">
+          <span class="pct-inside">{{ pct }}%</span>
+        </div>
+      </div>
+      <div class="progress-meta thick">
+        <span>{{ labeled }} labeled</span>
+        <span class="pct-big">{{ pct }}%</span>
+        <span>{{ remaining }} remaining</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mesa info bar -->
+  <div class="mesa-bar">
+    <span class="field-badge">{{ field_name }}{% if digit_index != -1 %} [{{ digit_index }}]{% endif %}</span>
+    <span><span class="lbl">Dpto </span><span class="val">{{ mesa.departamento }}</span></span>
+    <span><span class="lbl">Mpio </span><span class="val">{{ mesa.municipio }}</span></span>
+    <span><span class="lbl">Zona </span><span class="val">{{ mesa.zona }}</span></span>
+    <span><span class="lbl">Puesto </span><span class="val">{{ mesa.puesto }}</span></span>
+    <span><span class="lbl">Mesa </span><span class="val">{{ mesa.mesa }}</span></span>
+    {% if mesa.lugar %}<span><span class="lbl">Lugar </span><span class="val lugar">{{ mesa.lugar }}</span></span>{% endif %}
+    <span style="margin-left:auto;"><span class="lbl">Acta </span><span style="color:#666; font-size:0.68rem;">{{ pdf_filename }}</span></span>
+  </div>
+
+  <!-- Image panels — full width -->
+  <div style="width:100%; max-width:960px;">
+  <div class="panels">
+    <div class="panel">
+      <div class="panel-img-wrap"><img id="img-digit" src="/image/{{ crop_id }}" alt="digit crop"></div>
+      <div class="panel-lbl" id="lbl-type">{% if is_fallback %}Full cell (no segments){% else %}Digit crop{% endif %}</div>
+      <div id="lbl-field" style="margin-top:6px; font-size:0.85rem; color:#7ec8e3; font-weight:bold;">
+        {{ field_name }}{% if digit_index != -1 %} &nbsp;<span style="color:#555;">[{{ digit_index }}]</span>{% endif %}
+      </div>
+      <div id="conc-wrap" style="margin-top:10px; border-top:1px solid #1e2a3a; padding-top:8px; {% if not concordancias %}display:none;{% endif %}">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
+          <span style="font-size:0.62rem; color:#445; text-transform:uppercase; letter-spacing:1px;">Concordancias — mismo E-14</span>
+          <button onclick="toggleConc()" id="conc-btn" style="background:none; border:1px solid #2a3a4a; border-radius:3px; color:#556; font-size:0.62rem; padding:1px 6px; cursor:pointer;">ocultar</button>
+        </div>
+        <div id="conc-imgs" style="display:flex; gap:5px; flex-wrap:wrap; justify-content:center;">
+          {% for cid in concordancias %}
+          <img src="/image/{{ cid }}" style="width:44px; height:36px; object-fit:contain; background:#fff; border-radius:3px; border:1px solid #2a3a4a;">
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-img-wrap"><img id="img-full" src="/image/{{ full_cell_crop_id }}" alt="full cell"></div>
+      <div class="panel-lbl">Full cell (context)</div>
+      <div id="flag-box" style="margin-top:10px; {% if not acta_flags %}display:none;{% endif %}">
+        {% for f in acta_flags %}
+        <div style="background:#2a1810; border:1px solid #5a3010; border-radius:5px; padding:7px 10px; margin-bottom:5px; text-align:left;">
+          <div style="font-size:0.62rem; color:#ffab40; font-weight:bold; text-transform:uppercase; letter-spacing:0.5px;">⚠ {{ f.type }}</div>
+          <div style="font-size:0.7rem; color:#bbb; margin-top:2px;">{{ f.description }}</div>
+          {% if f.detail %}<div style="font-size:0.66rem; color:#888; margin-top:3px; font-family:monospace;">{{ f.detail }}</div>{% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      <!-- Ver acta (PDF) — below the fraud flag -->
+      <a id="btn-pdf" class="btn purple" href="/pdf?v={{ crop_id }}" target="_blank"
+         style="margin-top:10px; flex-direction:row; gap:8px; padding:9px 14px;">
+        <span class="k">PDF</span><span class="d" style="font-size:0.72rem;">Ver acta completa</span>
+      </a>
+    </div>
+  </div>
+
+  </div><!-- end image panels full-width wrapper -->
+
+  <!-- Bottom section: keyboard column + log column -->
+  <div style="display:flex; gap:16px; align-items:flex-start; width:100%; max-width:960px; border-top:1px solid #1e2a3a; padding-top:10px; margin-top:10px;">
+
+    <!-- Left column: OCR + keyboard (fixed 260px) -->
+    <div style="flex:0 0 260px; display:flex; flex-direction:column; gap:6px;">
+
+    <!-- OCR hint + input -->
+    <div class="ocr-row" style="width:260px;">
+      <div class="ocr-hint">OCR: <strong id="ocr-val">{{ label_ocr }}</strong></div>
+      <span id="badge-area">{% if priority == 0 %}<span class="badge badge-review">needs review</span>{% endif %}{% if priority == 1 %}<span class="badge badge-suspicious">suspicious</span>{% endif %}</span>
+      <input id="answer" type="text" autocomplete="off" autocorrect="off" spellcheck="false"
+             value="{{ label_ocr }}"
+             maxlength="{% if is_fallback %}5{% else %}3{% endif %}"
+             data-ocr="{{ label_ocr }}"
+             data-fallback="{{ 'true' if is_fallback else 'false' }}"
+             data-crop-id="{{ crop_id }}">
+      <div id="mode-ind"></div>
+    </div>
+
+  <!-- Controls: numpad -->
+  <div class="controls-area" style="flex-direction:row;">
+    <div class="numpad">
+      <!-- Row 1: actions -->
+      <button class="btn gray nk-act-back" onclick="doBack()"><span class="k">&larr;</span><span class="d">Back</span></button>
+      <button class="btn yellow nk-act-e"  onclick="toggleEnmienda()"><span class="k">E</span><span class="d">Enmienda</span></button>
+      <button class="btn orange nk-act-fraud" onclick="markFraud()"><span class="k">F</span><span class="d">Fraude</span></button>
+      <button class="btn red nk-act-esc"   onclick="doSkip()"><span class="k">Esc</span><span class="d">Skip</span></button>
+
+      <!-- Row 2: 7 8 9 — -->
+      <button class="btn nk-7" onclick="doDigit('7')"><span class="k">7</span></button>
+      <button class="btn nk-8" onclick="doDigit('8')"><span class="k">8</span></button>
+      <button class="btn nk-9" onclick="doDigit('9')"><span class="k">9</span></button>
+      <button class="btn nk-dash" onclick="doVariant('-')" style="border-color:#4a4010;"><span class="k" style="color:#ffd740;">—</span><span class="d">Guión</span></button>
+
+      <!-- Row 3: 4 5 6 * -->
+      <button class="btn nk-4" onclick="doDigit('4')"><span class="k">4</span></button>
+      <button class="btn nk-5" onclick="doDigit('5')"><span class="k">5</span></button>
+      <button class="btn nk-6" onclick="doDigit('6')"><span class="k">6</span></button>
+      <button class="btn nk-star" onclick="doVariant('*')" style="border-color:#4a4010;" title="También: tecla +"><span class="k" style="color:#ffd740;">* <span style="font-size:0.8em;opacity:0.7">+</span></span><span class="d">Asterisco</span></button>
+
+      <!-- Row 4: 1 2 3 | Enter tall -->
+      <button class="btn nk-1" onclick="doDigit('1')"><span class="k">1</span></button>
+      <button class="btn nk-2" onclick="doDigit('2')"><span class="k">2</span></button>
+      <button class="btn nk-3" onclick="doDigit('3')"><span class="k">3</span></button>
+      <button class="btn green nk-enter" onclick="doConfirmOCR()"><span class="k">Enter</span><span class="d">Confirm OCR</span></button>
+
+      <!-- Row 5: 0(wide) • -->
+      <button class="btn nk-0" onclick="doDigit('0')"><span class="k">0</span></button>
+      <button class="btn nk-dot" onclick="doVariant('.')" style="border-color:#4a4010;"><span class="k" style="color:#ffd740;">•</span><span class="d">Punto</span></button>
+    </div>
+
+  </div><!-- end controls-area -->
+  </div><!-- end left column (OCR+keyboard) -->
+
+  <!-- Right column: Last Labeled — fills remaining space -->
+  {% if recent %}
+  <div style="flex:1; min-width:0; border-left:2px solid #1e2a3a; padding-left:14px; overflow:hidden;">
+    <div class="recent-log" style="border-top:none; padding-top:0; overflow-y:auto; max-height:340px;">
+      <div class="recent-header">
+        <span class="recent-title">Last labeled ({{ recent|length }})</span>
+        <div class="view-toggle">
+          <button class="view-btn" id="btn-grid" onclick="setView('grid')">&#9633; Grid</button>
+          <button class="view-btn" id="btn-list" onclick="setView('list')">&#9776; Lista</button>
+        </div>
+      </div>
+
+    <!-- Grid view -->
+    <div id="view-grid" class="recent-grid" id="log-grid">
+      {% for r in recent %}
+      <div class="recent-item">
+        <img src="/image/{{ r.crop_id }}" alt="{{ r.label }}">
+        <div class="r-row">
+          <span class="r-lbl">{{ r.label }}</span>
+          {% if r.ocr and r.ocr == r.label %}<span class="r-ocr">✓</span>{% endif %}
+        </div>
+        {% if r.conf > 0 %}<span class="r-conf">{{ r.conf }}%</span>{% endif %}
+        <span class="r-fld">{{ r.field }}</span>
+      </div>
+      {% endfor %}
+    </div>
+
+    <!-- List view -->
+    <div id="view-list" class="recent-list" style="display:none;">
+      {% for r in recent %}
+      <div class="recent-row">
+        <img src="/image/{{ r.crop_id }}" alt="{{ r.label }}">
+        <span class="r-lbl">{{ r.label }}</span>
+        {% if r.ocr and r.ocr == r.label %}<span class="r-ocr">✓</span>{% endif %}
+        <span class="r-fld">{{ r.field }}</span>
+        {% if r.conf > 0 %}<span class="r-conf">{{ r.conf }}%</span>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    </div><!-- end recent-log -->
+  </div><!-- end right log column -->
+  {% endif %}
+
+  </div><!-- end bottom section -->
+
+  <script>
+  // Concordancias toggle
+  (function () {
+    var visible = localStorage.getItem("conc-visible") !== "0";
+    function applyConc() {
+      var imgs = document.getElementById("conc-imgs");
+      var btn  = document.getElementById("conc-btn");
+      if (!imgs) return;
+      imgs.style.display = visible ? "flex" : "none";
+      btn.textContent    = visible ? "ocultar" : "mostrar";
+      localStorage.setItem("conc-visible", visible ? "1" : "0");
+    }
+    window.toggleConc = function () { visible = !visible; applyConc(); };
+    applyConc();
+  })();
+
+  // Recent log view toggle
+  (function () {
+    var view = localStorage.getItem("log-view") || "grid";
+    function applyView(v) {
+      view = v;
+      localStorage.setItem("log-view", v);
+      var g = document.getElementById("view-grid");
+      var l = document.getElementById("view-list");
+      var bg = document.getElementById("btn-grid");
+      var bl = document.getElementById("btn-list");
+      if (!g) return;
+      g.style.display  = v === "grid" ? "flex"  : "none";
+      l.style.display  = v === "list" ? "flex"  : "none";
+      bg.className = "view-btn" + (v === "grid" ? " active" : "");
+      bl.className = "view-btn" + (v === "list" ? " active" : "");
+    }
+    window.setView = applyView;
+    applyView(view);
+  })();
+
+  // Progress toggle — persist preference in localStorage
+  (function () {
+    var thick = localStorage.getItem("prog-thick") === "1";
+    function applyProg() {
+      document.getElementById("prog-thin").style.display  = thick ? "none" : "block";
+      document.getElementById("prog-thick").style.display = thick ? "block" : "none";
+      document.getElementById("prog-btn").textContent     = thick ? "▣ thin" : "▣ thick";
+    }
+    applyProg();
+    window.toggleProg = function () {
+      thick = !thick;
+      localStorage.setItem("prog-thick", thick ? "1" : "0");
+      applyProg();
+    };
+  })();
+
+  (function () {
+    var inp      = document.getElementById("answer");
+    var modeEl   = document.getElementById("mode-ind");
+    var enmienda = false;
+
+    inp.focus(); inp.select();
+
+    function setEnmienda(on) {
+      enmienda = on;
+      modeEl.textContent = on ? "ENMIENDA MODE — type digit then Enter" : "";
+      if (on) { inp.value = ""; inp.focus(); }
+    }
+
+    window.toggleEnmienda = function () { setEnmienda(!enmienda); };
+    window.doVariant = function (v) {
+      post("/label", { crop_id: inp.dataset.cropId, value: v });
+    };
+    window.doBack         = function () { post("/back", {}); };
+    window.doSkip         = function () { post("/skip", { crop_id: inp.dataset.cropId }); };
+    window.doConfirmOCR   = function () { post("/label", { crop_id: inp.dataset.cropId, value: inp.value.trim() }); };
+    window.doDigit        = function (d) {
+      if (inp.dataset.fallback === "true") {
+        // Replace placeholder "?" on the first digit instead of appending to it
+        if (inp.value === "?" || inp.value === inp.dataset.ocr && inp.dataset.ocr === "?") inp.value = "";
+        inp.value = inp.value + d; inp.focus(); return;
+      }
+      post("/label", { crop_id: inp.dataset.cropId, value: (enmienda ? "E" : "") + d });
+    };
+
+    // ── Fraud modal ──
+    function fraudModal() { return document.getElementById("fraud-modal"); }
+    function fraudOpen()  { return fraudModal() && fraudModal().style.display === "flex"; }
+
+    window.markFraud = function () {
+      var m = fraudModal();
+      if (!m) return;
+      m.querySelector("#fraud-reason").value = "";
+      m.querySelector("#fraud-err").textContent = "";
+      m.style.display = "flex";
+      setTimeout(function () { m.querySelector("#fraud-reason").focus(); }, 50);
+    };
+    window.closeFraud = function () {
+      var m = fraudModal();
+      if (m) m.style.display = "none";
+      inp.focus(); inp.select();
+    };
+    window.submitFraud = function () {
+      var m = fraudModal();
+      if (!m) return;
+      var reason = m.querySelector("#fraud-reason").value.trim();
+      if (!reason) { m.querySelector("#fraud-err").textContent = "Escribí el motivo del fraude."; return; }
+      var btn = m.querySelector("#fraud-submit");
+      btn.disabled = true; btn.textContent = "Guardando…";
+      fetch("/mark-fraud", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ crop_id: inp.dataset.cropId, reason: reason })
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          btn.disabled = false; btn.textContent = "Confirmar fraude";
+          if (d.ok === false) { m.querySelector("#fraud-err").textContent = "Error: " + (d.error || "?"); return; }
+          closeFraud();
+        })
+        .catch(function () {
+          btn.disabled = false; btn.textContent = "Confirmar fraude";
+          m.querySelector("#fraud-err").textContent = "Error de red.";
+        });
+    };
+
+    inp.addEventListener("keydown", function (e) {
+      if (fraudOpen()) return; // modal handles its own keys
+      var fb = inp.dataset.fallback === "true";
+      if (e.key === "f" || e.key === "F") { e.preventDefault(); markFraud(); return; }
+      if (e.key === "Escape")    { e.preventDefault(); doSkip(); return; }
+      if (e.key === "ArrowLeft") { e.preventDefault(); doBack(); return; }
+      if (e.key === "e" || e.key === "E") { if (!fb) { e.preventDefault(); setEnmienda(true); return; } }
+      if (e.key === "Enter")     { e.preventDefault(); doConfirmOCR(); return; }
+      if (!fb && /^[0-9]$/.test(e.key)) { e.preventDefault(); doDigit(e.key); return; }
+      if (e.key === "+" || e.key === "*") { e.preventDefault(); doVariant("*"); return; }
+      if (e.key === ".")                 { e.preventDefault(); doVariant("."); return; }
+      if (e.key === "-")                 { e.preventDefault(); doVariant("-"); return; }
+    });
+
+    // Global fallback so Esc/arrows work even when input loses focus
+    document.addEventListener("keydown", function (e) {
+      if (fraudOpen()) {
+        if (e.key === "Escape") { e.preventDefault(); closeFraud(); return; }
+        if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); submitFraud(); return; }
+        return; // let the textarea handle everything else
+      }
+      if (document.activeElement === inp) return; // already handled above
+      if (e.key === "f" || e.key === "F") { e.preventDefault(); markFraud(); return; }
+      if (e.key === "Escape")    { e.preventDefault(); doSkip(); return; }
+      if (e.key === "ArrowLeft") { e.preventDefault(); doBack(); return; }
+      if (e.key === "Enter")     { e.preventDefault(); inp.focus(); return; }
+    });
+
+    function showLoader() {
+      var ov = document.getElementById("load-overlay");
+      if (ov) ov.style.opacity = "1";
+    }
+    function hideLoader() {
+      var ov = document.getElementById("load-overlay");
+      if (ov) ov.style.opacity = "0";
+    }
+
+    function updateDOM(item) {
+      // Fade out images
+      var imgD = document.getElementById("img-digit");
+      var imgF = document.getElementById("img-full");
+      if (imgD) imgD.classList.add("img-fade");
+      if (imgF) imgF.classList.add("img-fade");
+
+      setTimeout(function() {
+        // Swap images
+        if (imgD) { imgD.src = "/image/" + item.crop_id; imgD.classList.remove("img-fade"); }
+        if (imgF) { imgF.src = "/image/" + item.full_cell_crop_id; imgF.classList.remove("img-fade"); }
+
+        // Update input
+        inp.value = item.label_ocr;
+        inp.dataset.ocr = item.label_ocr;
+        inp.dataset.cropId = item.crop_id;
+        inp.dataset.fallback = item.is_fallback ? "true" : "false";
+        inp.maxLength = item.is_fallback ? 5 : 3;
+
+        // Update OCR + badge
+        var ocv = document.getElementById("ocr-val");
+        if (ocv) ocv.textContent = item.label_ocr;
+        var badge = document.getElementById("badge-area");
+        if (badge) {
+          badge.innerHTML = item.priority === 0
+            ? '<span class="badge badge-review">needs review</span>'
+            : item.priority === 1
+            ? '<span class="badge badge-suspicious">suspicious</span>'
+            : '';
+        }
+
+        // Update field name
+        var lf = document.getElementById("lbl-field");
+        if (lf) lf.innerHTML = item.field_name + (item.digit_index !== -1
+          ? ' &nbsp;<span style="color:#555;">[' + item.digit_index + ']</span>' : '');
+        var lt = document.getElementById("lbl-type");
+        if (lt) lt.textContent = item.is_fallback ? "Full cell (no segments)" : "Digit crop";
+
+        // Update PDF link
+        var pdfBtn = document.getElementById("btn-pdf");
+        if (pdfBtn) pdfBtn.href = "/pdf?v=" + item.crop_id;
+
+        // Update fraud flags
+        var fb = document.getElementById("flag-box");
+        if (fb) {
+          if (item.acta_flags && item.acta_flags.length) {
+            fb.innerHTML = item.acta_flags.map(function(f) {
+              return '<div style="background:#2a1810;border:1px solid #5a3010;border-radius:5px;padding:7px 10px;margin-bottom:5px;text-align:left;">'
+                + '<div style="font-size:0.62rem;color:#ffab40;font-weight:bold;text-transform:uppercase;letter-spacing:0.5px;">⚠ ' + f.type + '</div>'
+                + '<div style="font-size:0.7rem;color:#bbb;margin-top:2px;">' + f.description + '</div>'
+                + (f.detail ? '<div style="font-size:0.66rem;color:#888;margin-top:3px;font-family:monospace;">' + f.detail + '</div>' : '')
+                + '</div>';
+            }).join("");
+            fb.style.display = "";
+          } else {
+            fb.style.display = "none";
+          }
+        }
+
+        // Update concordancias
+        var cw = document.getElementById("conc-wrap");
+        var ci = document.getElementById("conc-imgs");
+        if (cw && ci) {
+          if (item.concordancias && item.concordancias.length) {
+            ci.innerHTML = item.concordancias.map(function(cid) {
+              return '<img src="/image/' + cid + '" style="width:44px;height:36px;object-fit:contain;background:#fff;border-radius:3px;border:1px solid #2a3a4a;">';
+            }).join("");
+            cw.style.display = "";
+          } else {
+            cw.style.display = "none";
+          }
+        }
+
+        // Prepend to recent log grid
+        if (item.recent && item.recent.length) {
+          var newest = item.recent[0];
+          var grid = document.getElementById("view-grid");
+          if (grid && newest) {
+            var el = document.createElement("div");
+            el.className = "recent-item log-new";
+            el.innerHTML = '<img src="/image/' + newest.crop_id + '" alt="' + newest.label + '">'
+              + '<div class="r-row"><span class="r-lbl">' + newest.label + '</span>'
+              + (newest.ocr === newest.label ? '<span class="r-ocr">✓</span>' : '') + '</div>'
+              + (newest.conf > 0 ? '<span class="r-conf">' + newest.conf + '%</span>' : '')
+              + '<span class="r-fld">' + newest.field + '</span>';
+            grid.insertBefore(el, grid.firstChild);
+            // Keep max 30 items
+            while (grid.children.length > 30) grid.removeChild(grid.lastChild);
+            var title = document.querySelector(".recent-title");
+            if (title) title.textContent = "Last labeled (" + Math.min(item.recent.length, 30) + ")";
+          }
+        }
+
+        // Reset enmienda mode
+        setEnmienda(false);
+        inp.focus();
+        inp.select();  // select placeholder so first keystroke replaces it
+        hideLoader();
+      }, 120); // wait for fade
+    }
+
+    function post(url, body) {
+      showLoader();
+      fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d.ok !== false || url === "/skip" || url === "/back") {
+            // Back always does full reload (cursor management is server-side)
+            if (url === "/back") { location.href = "{{ work_url }}"; return; }
+            fetch("/next")
+              .then(function(r) { return r.json(); })
+              .then(function(item) {
+                if (item.locked) { location.href = "/"; return; }
+                if (item.done) { location.href = "{{ work_url }}"; }
+                else { updateDOM(item); }
+              })
+              .catch(function() { location.href = "{{ work_url }}"; });
+          } else {
+            hideLoader();
+            modeEl.textContent = "Error: " + (d.error || "?");
+          }
+        })
+        .catch(function() { hideLoader(); });
+    }
+  })();
+  </script>
+
+{% endif %}
+
+<!-- Version badge (always visible — identifies the running build) -->
+<div style="
+  position:fixed; bottom:8px; left:10px; z-index:9998;
+  font-family:monospace; font-size:0.62rem; letter-spacing:0.5px;
+  color:#445; background:rgba(13,17,25,0.7); border:1px solid #1e2a3a;
+  border-radius:5px; padding:2px 7px; pointer-events:none; user-select:none;
+">v{{ app_version }}</div>
+
+<!-- Fraud modal -->
+<div id="fraud-modal" style="
+  position:fixed; inset:0; z-index:10000;
+  background:rgba(8,10,16,0.8);
+  display:none; align-items:center; justify-content:center;
+">
+  <div style="
+    width:min(440px, 92vw); background:#141a26; border:1px solid #5a3010;
+    border-radius:12px; padding:22px 24px; box-shadow:0 12px 40px #000a;
+  ">
+    <div style="font-size:1rem; font-weight:bold; color:#ff9100; display:flex; align-items:center; gap:8px;">
+      ⚠ Marcar acta como fraude
+    </div>
+    <div style="font-size:0.74rem; color:#889; margin-top:8px; line-height:1.5;">
+      Esto registra la mesa actual como fraude manual. Indicá el motivo (qué viste que no cuadra).
+    </div>
+    <textarea id="fraud-reason" rows="4" placeholder="Ej: el total escrito fue alterado, dígitos sobrescritos en candidato 3…"
+      style="width:100%; margin-top:12px; background:#0d1119; border:1px solid #2a3a4a; border-radius:8px;
+             color:#dce3ea; font-size:0.85rem; padding:10px; resize:vertical; box-sizing:border-box;
+             font-family:inherit;"></textarea>
+    <div id="fraud-err" style="color:#ef5350; font-size:0.72rem; min-height:14px; margin-top:6px;"></div>
+    <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:10px;">
+      <button onclick="closeFraud()" style="
+        background:none; border:1px solid #2a3a4a; border-radius:8px; color:#889;
+        padding:8px 16px; cursor:pointer; font-size:0.82rem;">Cancelar</button>
+      <button id="fraud-submit" onclick="submitFraud()" style="
+        background:linear-gradient(180deg,#3a2008,#2a1505); border:1px solid #6a3000; border-radius:8px;
+        color:#ff9100; padding:8px 16px; cursor:pointer; font-size:0.82rem; font-weight:bold;">Confirmar fraude</button>
+    </div>
+    <div style="font-size:0.64rem; color:#445; margin-top:10px; text-align:right;">Esc para cancelar · Ctrl+Enter para confirmar</div>
+  </div>
+</div>
+
+<!-- Loading overlay -->
+<div id="load-overlay" style="
+  position:fixed; inset:0; z-index:9999;
+  background:rgba(10,14,22,0.75);
+  display:flex; align-items:center; justify-content:center;
+  opacity:0; pointer-events:none;
+  transition:opacity 0.15s ease;
+">
+  <div style="display:flex; flex-direction:column; align-items:center; gap:14px;">
+    <div style="
+      width:40px; height:40px;
+      border:3px solid #1e2a3a;
+      border-top-color:#7ec8e3;
+      border-radius:50%;
+      animation:spin 0.7s linear infinite;
+    "></div>
+    <span style="font-size:0.7rem; color:#445; letter-spacing:1px; text-transform:uppercase;">Loading</span>
+  </div>
+</div>
+<style>
+@keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</body>
+</html>

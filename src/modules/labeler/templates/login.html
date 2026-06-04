@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sign In — Digit Labeler</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: monospace;
+      background: #1a1a2e;
+      color: #eee;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px 16px;
+    }
+
+    .card {
+      background: linear-gradient(180deg, #16213e, #111827);
+      border: 1px solid #2a3a5a;
+      border-radius: 12px;
+      padding: 36px 40px;
+      width: 100%;
+      max-width: 400px;
+      box-shadow: 0 8px 24px #00000066;
+    }
+
+    h1 {
+      font-size: 1.3rem;
+      color: #7ec8e3;
+      margin-bottom: 6px;
+      text-align: center;
+    }
+
+    .subtitle {
+      font-size: 0.72rem;
+      color: #445;
+      text-align: center;
+      margin-bottom: 28px;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      margin-bottom: 16px;
+    }
+
+    label {
+      font-size: 0.72rem;
+      color: #556;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    input[type="email"],
+    input[type="password"] {
+      font-family: monospace;
+      font-size: 1rem;
+      padding: 9px 12px;
+      border-radius: 6px;
+      border: 1px solid #2a3a5a;
+      background: #0d1520;
+      color: #eee;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    input[type="email"]:focus,
+    input[type="password"]:focus {
+      border-color: #7ec8e3;
+    }
+
+    .btn-submit {
+      width: 100%;
+      margin-top: 8px;
+      padding: 11px;
+      font-family: monospace;
+      font-size: 1rem;
+      font-weight: bold;
+      color: #eee;
+      background: linear-gradient(180deg, #1a3a5a, #0f2840);
+      border: 1px solid #2a5a8a;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.12s, border-color 0.12s;
+    }
+
+    .btn-submit:hover {
+      background: linear-gradient(180deg, #1e4a72, #163456);
+      border-color: #7ec8e3;
+    }
+
+    .btn-submit:active {
+      transform: scale(0.98);
+    }
+
+    .error-msg {
+      background: #2a0a0a;
+      border: 1px solid #5a1010;
+      border-radius: 6px;
+      color: #ef5350;
+      font-size: 0.8rem;
+      padding: 8px 12px;
+      margin-bottom: 16px;
+      display: none;
+    }
+
+    .error-msg.visible { display: block; }
+
+    .footer-link {
+      text-align: center;
+      margin-top: 20px;
+      font-size: 0.72rem;
+      color: #445;
+    }
+
+    .footer-link a {
+      color: #7ec8e3;
+      text-decoration: none;
+    }
+
+    .footer-link a:hover { text-decoration: underline; }
+
+    .info-msg {
+      background: #0a2a0a;
+      border: 1px solid #1a5a1a;
+      border-radius: 6px;
+      color: #66bb6a;
+      font-size: 0.8rem;
+      padding: 8px 12px;
+      margin-bottom: 16px;
+      display: none;
+    }
+
+    .info-msg.visible { display: block; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Digit Labeler</h1>
+    <div class="subtitle">E-14C Validation Portal — Sign In</div>
+
+    <div id="error-msg" class="error-msg"></div>
+    <div id="info-msg" class="info-msg"></div>
+
+    <form id="login-form" novalidate>
+      <div class="field">
+        <label for="email">Email</label>
+        <input type="email" id="email" name="email" autocomplete="email" autofocus required>
+      </div>
+
+      <div class="field">
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" autocomplete="current-password" required>
+      </div>
+
+      <button type="submit" class="btn-submit">Sign In</button>
+    </form>
+
+    <div class="footer-link">
+      No account? <a href="/auth/register">Register</a>
+    </div>
+  </div>
+
+  <script>
+  (function () {
+    var form     = document.getElementById("login-form");
+    var errEl    = document.getElementById("error-msg");
+    var infoEl   = document.getElementById("info-msg");
+
+    // Show info message if redirected here after registration
+    var params = new URLSearchParams(window.location.search);
+    if (params.get("registered") === "1") {
+      infoEl.textContent = "Registration successful — check your email to confirm your account.";
+      infoEl.classList.add("visible");
+    }
+
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      errEl.classList.remove("visible");
+      infoEl.classList.remove("visible");
+
+      var email    = document.getElementById("email").value.trim();
+      var password = document.getElementById("password").value;
+
+      if (!email || !password) {
+        errEl.textContent = "Email and password are required.";
+        errEl.classList.add("visible");
+        return;
+      }
+
+      fetch("/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email, password: password }),
+        redirect: "follow",
+      })
+        .then(function (r) {
+          // A 302 redirect to "/" means success — the browser followed it
+          if (r.ok || r.redirected) {
+            window.location.href = r.url || "/";
+            return null;
+          }
+          return r.json();
+        })
+        .then(function (data) {
+          if (data === null) return;
+          errEl.textContent = data.error || "Login failed.";
+          errEl.classList.add("visible");
+        })
+        .catch(function () {
+          errEl.textContent = "Network error — please try again.";
+          errEl.classList.add("visible");
+        });
+    });
+  })();
+  </script>
+</body>
+</html>
