@@ -444,6 +444,10 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
         rid = getattr(g, "request_id", None)
         if rid:
             resp.headers["X-Request-ID"] = rid
+        # Security headers — upgrade any HTTP subresource to HTTPS (eliminates
+        # mixed-content browser warnings) and enable HSTS for repeat visits.
+        resp.headers["Content-Security-Policy"] = "upgrade-insecure-requests"
+        resp.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         return resp
 
     @app.errorhandler(Exception)
