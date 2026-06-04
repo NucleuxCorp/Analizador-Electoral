@@ -986,45 +986,83 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
             # serves PDFs as application/octet-stream, which forces a download).
             source_url = (details.get("source_url") or "").strip()
             if source_url:
-                try:
-                    import urllib.request as _ur
-                    import ssl as _ssl
-                    ctx = _ssl.create_default_context()
-                    ctx.check_hostname = False
-                    ctx.verify_mode = _ssl.CERT_NONE
-                    req = _ur.Request(source_url, headers={"User-Agent": "Mozilla/5.0"})
-                    with _ur.urlopen(req, context=ctx, timeout=30) as resp:
-                        pdf_bytes = resp.read()
-                    fname = source_url.split("/")[-1] or "acta.pdf"
-                    logger.info("pdf proxy ok crop=%s bytes=%d", crop_id, len(pdf_bytes))
-                    return Response(
-                        pdf_bytes,
-                        status=200,
-                        mimetype="application/pdf",
-                        headers={
-                            "Content-Disposition": f'inline; filename="{fname}"',
-                            "Content-Length": str(len(pdf_bytes)),
-                            "Cache-Control": "private, max-age=300",
-                        },
-                    )
-                except Exception as exc:
+                import urllib.request as _ur
+                import urllib.error as _uerr
+                import ssl as _ssl
+                import socket as _socket
+                import time as _time
+
+                ctx = _ssl.create_default_context()
+                ctx.check_hostname = False
+                ctx.verify_mode = _ssl.CERT_NONE
+                # Realistic UA + standard browser headers — some upstreams filter
+                # generic UAs. Encourages the CDN/origin to treat us as a browser.
+                headers = {
+                    "User-Agent": (
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) "
+                        "Chrome/120.0.0.0 Safari/537.36"
+                    ),
+                    "Accept": "application/pdf,*/*;q=0.8",
+                    "Accept-Language": "es-CO,es;q=0.9,en;q=0.7",
+                }
+                req = _ur.Request(source_url, headers=headers)
+
+                # Retry up to 3 times with linear backoff to absorb transient
+                # Railway-egress / upstream connection drops. Total worst case:
+                # 25s + 2s + 25s + 4s + 25s = ~81s — capped by gunicorn --timeout=60.
+                # In practice the first attempt either connects or hangs <= 25s.
+                last_exc: Exception | None = None
+                pdf_bytes = b""
+                for attempt in (1, 2, 3):
+                    try:
+                        with _ur.urlopen(req, context=ctx, timeout=25) as resp:
+                            pdf_bytes = resp.read()
+                        last_exc = None
+                        break
+                    except (_uerr.URLError, _socket.timeout, TimeoutError, ConnectionError) as exc:
+                        last_exc = exc
+                        logger.warning(
+                            "pdf upstream attempt=%d failed crop=%s type=%s msg=%s",
+                            attempt, crop_id, type(exc).__name__, str(exc) or repr(exc),
+                        )
+                        if attempt < 3:
+                            _time.sleep(2 * attempt)
+                    except Exception as exc:  # non-retryable
+                        last_exc = exc
+                        break
+
+                if last_exc is not None:
                     rid = getattr(g, "request_id", "-")
                     logger.exception(
-                        "pdf proxy failed crop=%s url=%s type=%s",
-                        crop_id, source_url, type(exc).__name__,
+                        "pdf proxy gave up crop=%s url=%s type=%s",
+                        crop_id, source_url, type(last_exc).__name__,
                     )
                     body = {
                         "error": "pdf_upstream_failed",
                         "request_id": rid,
                         "crop_id": crop_id,
-                        "exc_type": type(exc).__name__,
-                        "exc_message": str(exc) or repr(exc),
+                        "exc_type": type(last_exc).__name__,
+                        "exc_message": str(last_exc) or repr(last_exc),
                         "message": (
                             "No pudimos obtener el PDF desde la Registraduría en este momento. "
                             "Intentá nuevamente en unos segundos. ID: " + rid
                         ),
                     }
                     return jsonify(body), 502
+
+                fname = source_url.split("/")[-1] or "acta.pdf"
+                logger.info("pdf proxy ok crop=%s bytes=%d", crop_id, len(pdf_bytes))
+                return Response(
+                    pdf_bytes,
+                    status=200,
+                    mimetype="application/pdf",
+                    headers={
+                        "Content-Disposition": f'inline; filename="{fname}"',
+                        "Content-Length": str(len(pdf_bytes)),
+                        "Cache-Control": "private, max-age=300",
+                    },
+                )
             # Fallback: serve from local disk (dev / not-yet-backfilled actas).
             pdf_path = Path(details.get("pdf_path", "")).resolve()
             if not pdf_path.exists():
