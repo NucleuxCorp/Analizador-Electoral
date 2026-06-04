@@ -542,21 +542,13 @@
       post("/label", { crop_id: inp.dataset.cropId, value: (enmienda ? "E" : "") + d });
     };
 
-    // ── PDF viewer modal ──
+    // ── PDF viewer — opens in a new tab.
+    // The server's /pdf?v=<id> returns a 302 redirect to the Registraduria
+    // URL (Railway egress can't proxy it). The user's browser handles the
+    // PDF (download or inline depending on browser settings). The modal
+    // markup below is kept for future use when Phase B caching lands.
     window.openPdf = function (url) {
-      var m = document.getElementById("pdf-modal");
-      var frame = document.getElementById("pdf-frame");
-      var loader = document.getElementById("pdf-loader");
-      if (!m) return;
-      frame.style.display = "none";
-      loader.style.display = "flex";
-      frame.src = "";
-      m.style.display = "flex";
-      frame.onload = function () {
-        loader.style.display = "none";
-        frame.style.display = "block";
-      };
-      frame.src = url;
+      window.open(url, "_blank", "noopener");
     };
     window.closePdf = function () {
       var m = document.getElementById("pdf-modal");
