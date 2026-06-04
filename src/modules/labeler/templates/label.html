@@ -462,6 +462,18 @@
   </div><!-- end bottom section -->
 
   <script>
+  // Current crop context — kept in sync with /next responses so the WhatsApp
+  // feedback modal can prepend a complete reference (mesa + field + value)
+  // to whatever message the user writes.
+  window._currentCrop = {
+    crop_id: {{ crop_id | tojson if not done else '""' }},
+    pdf_filename: {{ pdf_filename | tojson if not done else '""' }},
+    field_name: {{ field_name | tojson if not done else '""' }},
+    digit_index: {{ digit_index if not done else -1 }},
+    label_ocr: {{ label_ocr | tojson if not done else '""' }},
+    mesa: {{ mesa | tojson if not done else '{}' }}
+  };
+
   // Concordancias toggle
   (function () {
     var visible = localStorage.getItem("conc-visible") !== "0";
@@ -573,7 +585,33 @@
     window.submitWa = function () {
       var msg = (document.getElementById("wa-msg").value || "").trim();
       if (!msg) { document.getElementById("wa-err").textContent = "Escribí tu mensaje primero."; return; }
-      var url = "https://wa.me/573233131374?text=" + encodeURIComponent(msg);
+      var c = window._currentCrop || {};
+      var m = c.mesa || {};
+      var fieldRef = c.field_name || "—";
+      if (c.digit_index !== -1 && c.digit_index !== undefined && c.digit_index !== null) {
+        fieldRef += " [" + c.digit_index + "]";
+      }
+      var mesaLine = [
+        m.departamento || "?",
+        m.municipio || "?",
+        "Z" + (m.zona || "?"),
+        "P" + (m.puesto || "?"),
+        "M" + (m.mesa || "?")
+      ].join(" / ");
+      var lines = [
+        "📋 Referencia (no editar):",
+        "Acta: " + (c.pdf_filename || "—"),
+        "Mesa: " + mesaLine
+      ];
+      if (m.lugar) lines.push("Lugar: " + m.lugar);
+      lines.push("Campo: " + fieldRef);
+      lines.push("Valor sugerido (CNN): " + (c.label_ocr || "—"));
+      lines.push("Crop: " + (c.crop_id || "?"));
+      lines.push("");
+      lines.push("💬 Mensaje:");
+      lines.push(msg);
+      var text = lines.join("\n");
+      var url = "https://wa.me/573233131374?text=" + encodeURIComponent(text);
       window.open(url, "_blank");
       closeWa();
     };
@@ -706,6 +744,16 @@
         // Update PDF link
         var pdfBtn = document.getElementById("btn-pdf");
         if (pdfBtn) pdfBtn.setAttribute("onclick", "openPdf('/pdf?v=" + item.crop_id + "')");
+
+        // Keep current crop context fresh for the WhatsApp feedback modal
+        window._currentCrop = {
+          crop_id: item.crop_id,
+          pdf_filename: item.pdf_filename,
+          field_name: item.field_name,
+          digit_index: item.digit_index,
+          label_ocr: item.label_ocr,
+          mesa: item.mesa || {}
+        };
 
         // Update fraud flags
         var fb = document.getElementById("flag-box");
