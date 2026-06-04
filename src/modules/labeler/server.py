@@ -24,12 +24,77 @@ create_app(index_path, labels_dir) signature is preserved for I5.
 from __future__ import annotations
 
 import json
+import logging
 import os
+import sys
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from flask import Flask, Response, jsonify, redirect, render_template, request, send_file, session
+from flask import Flask, Response, g, jsonify, redirect, render_template, request, send_file, session
+
+logger = logging.getLogger("labeler")
+
+
+def _configure_logging() -> None:
+    """Configure root logger once. JSON-ish line format to stdout (Railway captures it)."""
+    root = logging.getLogger()
+    if getattr(_configure_logging, "_done", False):
+        return
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(logging.Formatter(
+        "%(asctime)s %(levelname)s %(name)s rid=%(request_id)s %(message)s",
+        datefmt="%Y-%m-%dT%H:%M:%S",
+    ))
+    handler.addFilter(_RequestIdFilter())
+    root.handlers.clear()
+    root.addHandler(handler)
+    root.setLevel(logging.INFO)
+    logging.getLogger("werkzeug").setLevel(logging.WARNING)
+    _configure_logging._done = True  # type: ignore[attr-defined]
+
+
+class _RequestIdFilter(logging.Filter):
+    """Inject Flask g.request_id into log records (or '-' if outside request ctx)."""
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            record.request_id = getattr(g, "request_id", "-")
+        except Exception:
+            record.request_id = "-"
+        return True
+
+
+def _init_sentry() -> bool:
+    """Initialize Sentry if SENTRY_DSN is set. Returns True if active."""
+    dsn = os.environ.get("SENTRY_DSN", "").strip()
+    if not dsn:
+        return False
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.flask import FlaskIntegration
+        from sentry_sdk.integrations.logging import LoggingIntegration
+
+        env = os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("FLASK_ENV") or "local"
+        try:
+            from src.version import __version__ as _v
+        except Exception:
+            _v = "dev"
+        sentry_sdk.init(
+            dsn=dsn,
+            environment=env,
+            release=f"analizador-e14@{_v}",
+            integrations=[
+                FlaskIntegration(),
+                LoggingIntegration(level=logging.INFO, event_level=logging.ERROR),
+            ],
+            traces_sample_rate=0.0,
+            send_default_pii=False,
+        )
+        return True
+    except Exception as exc:
+        logger.error("sentry init failed: %s", exc)
+        return False
 
 # ---------------------------------------------------------------------------
 # Divipole lookup — puesto nombre (LUGAR)
@@ -351,6 +416,13 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
     global _STATE  # noqa: WPS420
 
     # ----------------------------------------------------------------
+    # Observability: structured logging + Sentry (no-op if SENTRY_DSN unset)
+    # ----------------------------------------------------------------
+    _configure_logging()
+    _sentry_active = _init_sentry()
+    logger.info("startup sentry=%s", "on" if _sentry_active else "off")
+
+    # ----------------------------------------------------------------
     # Mode detection (ADR-4)
     # ----------------------------------------------------------------
     _supabase_url = os.environ.get("SUPABASE_URL", "").strip()
@@ -358,6 +430,35 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
 
     templates_dir = Path(__file__).parent / "templates"
     app = Flask(__name__, template_folder=str(templates_dir))
+
+    # ----------------------------------------------------------------
+    # Request correlation + global exception handler
+    # ----------------------------------------------------------------
+    @app.before_request
+    def _assign_request_id() -> None:
+        rid = request.headers.get("X-Request-ID") or uuid.uuid4().hex[:12]
+        g.request_id = rid
+
+    @app.after_request
+    def _emit_request_id(resp: Response) -> Response:
+        rid = getattr(g, "request_id", None)
+        if rid:
+            resp.headers["X-Request-ID"] = rid
+        return resp
+
+    @app.errorhandler(Exception)
+    def _unhandled(exc: Exception):
+        rid = getattr(g, "request_id", "-")
+        from werkzeug.exceptions import HTTPException
+        if isinstance(exc, HTTPException):
+            return exc
+        logger.exception("unhandled exception in %s %s", request.method, request.path)
+        body = {
+            "error": "internal_server_error",
+            "request_id": rid,
+            "message": "Algo falló. Reportá este ID si el problema persiste.",
+        }
+        return jsonify(body), 500
 
     # Expose the project version to every template (both modes).
     try:
@@ -892,9 +993,10 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                     ctx.check_hostname = False
                     ctx.verify_mode = _ssl.CERT_NONE
                     req = _ur.Request(source_url, headers={"User-Agent": "Mozilla/5.0"})
-                    with _ur.urlopen(req, context=ctx, timeout=20) as resp:
+                    with _ur.urlopen(req, context=ctx, timeout=30) as resp:
                         pdf_bytes = resp.read()
                     fname = source_url.split("/")[-1] or "acta.pdf"
+                    logger.info("pdf proxy ok crop=%s bytes=%d", crop_id, len(pdf_bytes))
                     return Response(
                         pdf_bytes,
                         status=200,
@@ -906,7 +1008,23 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                         },
                     )
                 except Exception as exc:
-                    return Response(f"Could not fetch PDF: {exc}", status=502)
+                    rid = getattr(g, "request_id", "-")
+                    logger.exception(
+                        "pdf proxy failed crop=%s url=%s type=%s",
+                        crop_id, source_url, type(exc).__name__,
+                    )
+                    body = {
+                        "error": "pdf_upstream_failed",
+                        "request_id": rid,
+                        "crop_id": crop_id,
+                        "exc_type": type(exc).__name__,
+                        "exc_message": str(exc) or repr(exc),
+                        "message": (
+                            "No pudimos obtener el PDF desde la Registraduría en este momento. "
+                            "Intentá nuevamente en unos segundos. ID: " + rid
+                        ),
+                    }
+                    return jsonify(body), 502
             # Fallback: serve from local disk (dev / not-yet-backfilled actas).
             pdf_path = Path(details.get("pdf_path", "")).resolve()
             if not pdf_path.exists():
