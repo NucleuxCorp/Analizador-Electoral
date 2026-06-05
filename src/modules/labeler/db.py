@@ -373,8 +373,15 @@ def get_global_stats(user_id: str = "") -> dict:
     try:
         rpc_resp = cli.rpc("count_distinct_labeled_crops", {}).execute()
         global_labeled = rpc_resp.data or 0
+        if not global_labeled:
+            raise ValueError("rpc returned zero or null")
     except Exception:
-        global_labeled = 0
+        # Fallback: count crops that have at least one human annotation
+        try:
+            fb = cli.table("crops").select("crop_id", count="exact").gt("annotation_count", 0).execute()
+            global_labeled = fb.count or 0
+        except Exception:
+            global_labeled = 0
 
     my_labeled = 0
     if user_id:

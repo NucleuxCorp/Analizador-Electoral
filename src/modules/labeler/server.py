@@ -886,8 +886,14 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
 
                 try:
                     global_touched = _cli.rpc("count_distinct_labeled_crops", {}).execute().data or 0
+                    if not global_touched:
+                        raise ValueError("rpc returned zero or null")
                 except Exception:
-                    global_touched = 0
+                    try:
+                        fb = _cli.table("crops").select("crop_id", count="exact").gt("annotation_count", 0).execute()
+                        global_touched = fb.count or 0
+                    except Exception:
+                        global_touched = 0
 
                 return jsonify({
                     "labeled": labeled,
@@ -947,9 +953,18 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 label_ocr = "?"
             full_cell_crop_id = crop.get("full_cell_crop_id") or crop_id
             concordancias = _db.get_concordancias(pdf_path, label_ocr, crop_id)
-            global_labeled = session.get("global_labeled", 0)
-            my_labeled = session.get("my_labeled", 0)
-            total = session.get("total_count", 0)
+            try:
+                stats = _db.get_global_stats(g.user_id)
+                global_labeled = stats["global_labeled"]
+                my_labeled = stats["my_labeled"]
+                total = stats["total"]
+                session["global_labeled"] = global_labeled
+                session["my_labeled"] = my_labeled
+                session["total_count"] = total
+            except Exception:
+                global_labeled = session.get("global_labeled", 0)
+                my_labeled = session.get("my_labeled", 0)
+                total = session.get("total_count", 0)
             return jsonify({
                 "done": False,
                 "crop_id": crop_id,
