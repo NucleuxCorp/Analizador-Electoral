@@ -334,7 +334,7 @@
   <div style="width:100%; max-width:960px;">
   <div class="panels">
     <div class="panel">
-      <div class="panel-img-wrap"><img id="img-digit" src="/image/{{ crop_id }}" alt="digit crop" onerror="if(window.Sentry)Sentry.captureException(new Error('img-digit load failed: {{ crop_id }}'))"></div>
+      <div class="panel-img-wrap"><img id="img-digit" src="/image/{{ crop_id }}" alt="digit crop" onerror="onStaticImgError('{{ crop_id }}','digit')"></div>
       <div class="panel-lbl" id="lbl-type">{% if is_fallback %}Full cell (no segments){% else %}Digit crop{% endif %}</div>
       <div id="lbl-field" style="margin-top:6px; font-size:0.85rem; color:#7ec8e3; font-weight:bold;">
         {{ field_name }}{% if digit_index != -1 %} &nbsp;<span style="color:#555;">[{{ digit_index }}]</span>{% endif %}
@@ -352,7 +352,7 @@
       </div>
     </div>
     <div class="panel">
-      <div class="panel-img-wrap"><img id="img-full" src="/image/{{ full_cell_crop_id }}" alt="full cell" onerror="if(window.Sentry)Sentry.captureException(new Error('img-full load failed: {{ full_cell_crop_id }}'))"></div>
+      <div class="panel-img-wrap"><img id="img-full" src="/image/{{ full_cell_crop_id }}" alt="full cell" onerror="onStaticImgError('{{ crop_id }}','full')"></div>
       <div class="panel-lbl">Full cell (context)</div>
       <div id="flag-box" style="margin-top:10px; {% if not acta_flags %}display:none;{% endif %}">
         {% for f in acta_flags %}
@@ -472,6 +472,16 @@
   </div><!-- end bottom section -->
 
   <script>
+  // Auto-skip when both images on the initial (server-rendered) page fail to load.
+  var _staticBroken = 0;
+  function onStaticImgError(cropId, which) {
+    if (window.Sentry) Sentry.captureException(new Error("img-" + which + " load failed: " + cropId));
+    _staticBroken++;
+    if (_staticBroken >= 2) {
+      setTimeout(function() { post("/skip", { crop_id: cropId }); }, 800);
+    }
+  }
+
   // Current crop context — kept in sync with /next responses so the WhatsApp
   // feedback modal can prepend a complete reference (mesa + field + value)
   // to whatever message the user writes.
@@ -732,10 +742,13 @@
         if (!pending) { clearTimeout(safety); hideLoader(); }
 
         // Swap images — remove img-fade happens inside onImgDone, not here
+        var _dynBroken = 0;
         if (imgD) {
           imgD.onload  = function () { onImgDone(imgD); };
           imgD.onerror = function () {
             if (window.Sentry) Sentry.captureException(new Error("img-digit load failed: " + item.crop_id));
+            _dynBroken++;
+            if (_dynBroken >= 2) setTimeout(function() { post("/skip", { crop_id: item.crop_id }); }, 800);
             onImgDone(imgD);
           };
           imgD.src = "/image/" + item.crop_id;
@@ -744,6 +757,8 @@
           imgF.onload  = function () { onImgDone(imgF); };
           imgF.onerror = function () {
             if (window.Sentry) Sentry.captureException(new Error("img-full load failed: " + item.full_cell_crop_id));
+            _dynBroken++;
+            if (_dynBroken >= 2) setTimeout(function() { post("/skip", { crop_id: item.crop_id }); }, 800);
             onImgDone(imgF);
           };
           imgF.src = "/image/" + item.full_cell_crop_id;

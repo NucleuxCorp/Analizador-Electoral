@@ -683,7 +683,9 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
 
             # Concordancias — same PDF, same label_ocr, from local index
             pdf_path = crop.get("pdf_path", "")
-            label_ocr = crop.get("label_ocr", "?")
+            label_ocr = crop.get("label_ocr") or "?"
+            if label_ocr.lower() in ("undefined", "null", "none"):
+                label_ocr = "?"
             concordancias = _db.get_concordancias(pdf_path, label_ocr, crop_id)
 
             # Global stats — fetch real values on page load, cache in session
@@ -940,7 +942,9 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 return jsonify({"done": True})
             crop = _db.get_crop_details(crop_id)
             pdf_path = crop.get("pdf_path", "")
-            label_ocr = crop.get("label_ocr", "?")
+            label_ocr = crop.get("label_ocr") or "?"
+            if label_ocr.lower() in ("undefined", "null", "none"):
+                label_ocr = "?"
             full_cell_crop_id = crop.get("full_cell_crop_id") or crop_id
             concordancias = _db.get_concordancias(pdf_path, label_ocr, crop_id)
             global_labeled = session.get("global_labeled", 0)
