@@ -345,3 +345,45 @@ def get_conflict_crops() -> list[dict]:
         .execute()
     )
     return response.data or []
+
+
+# ---------------------------------------------------------------------------
+# 3.11  get_global_stats
+# ---------------------------------------------------------------------------
+
+def get_global_stats(user_id: str = "") -> dict:
+    """
+    Returns global labeling progress plus the personal count for user_id.
+
+    Calls the count_distinct_labeled_crops() Postgres RPC to avoid fetching
+    all labels rows just for a DISTINCT count.
+
+    Returns:
+        {
+            "global_labeled": int,  # distinct crops with >= 1 human label
+            "my_labeled":     int,  # labels submitted by user_id (0 if empty)
+            "total":          int,  # total crops in the system
+        }
+    """
+    cli = _client()
+
+    total_resp = cli.table("crops").select("crop_id", count="exact").execute()
+    total = total_resp.count or 0
+
+    try:
+        rpc_resp = cli.rpc("count_distinct_labeled_crops", {}).execute()
+        global_labeled = rpc_resp.data or 0
+    except Exception:
+        global_labeled = 0
+
+    my_labeled = 0
+    if user_id:
+        my_resp = (
+            cli.table("labels")
+            .select("id", count="exact")
+            .eq("annotator_id", user_id)
+            .execute()
+        )
+        my_labeled = my_resp.count or 0
+
+    return {"global_labeled": global_labeled, "my_labeled": my_labeled, "total": total}

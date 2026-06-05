@@ -457,6 +457,11 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
         if isinstance(exc, HTTPException):
             return exc
         logger.exception("unhandled exception in %s %s", request.method, request.path)
+        try:
+            import sentry_sdk
+            sentry_sdk.capture_exception(exc)
+        except Exception:
+            pass
         body = {
             "error": "internal_server_error",
             "request_id": rid,
@@ -470,12 +475,17 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
     except Exception:
         _app_version = "dev"
 
+    _sentry_dsn = os.environ.get("SENTRY_DSN", "").strip()
+    _flask_env = os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("FLASK_ENV") or "local"
+
     @app.context_processor
     def _inject_globals() -> dict:
         # work_url: where the labeling SPA lives (differs by mode).
         return {
             "app_version": _app_version,
             "work_url": "/work" if _production_mode else "/",
+            "sentry_dsn": _sentry_dsn,
+            "flask_env": _flask_env,
         }
 
     # Load lookup tables for both modes (mesa info + fraud flags)
@@ -676,10 +686,20 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
             label_ocr = crop.get("label_ocr", "?")
             concordancias = _db.get_concordancias(pdf_path, label_ocr, crop_id)
 
-            # Counts — use session cache to avoid extra round-trips on every load
-            labeled = session.get("labeled_count", 0)
-            total = session.get("total_count", 0)
-            remaining = max(0, total - labeled)
+            # Global stats — fetch real values on page load, cache in session
+            try:
+                stats = _db.get_global_stats(g.user_id)
+                global_labeled = stats["global_labeled"]
+                my_labeled = stats["my_labeled"]
+                total = stats["total"]
+                session["global_labeled"] = global_labeled
+                session["my_labeled"] = my_labeled
+                session["total_count"] = total
+            except Exception:
+                global_labeled = session.get("global_labeled", 0)
+                my_labeled = session.get("my_labeled", 0)
+                total = session.get("total_count", 0)
+            remaining = max(0, total - global_labeled)
 
             return render_template(
                 "label.html",
@@ -690,7 +710,8 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 field_name=crop.get("field_name", ""),
                 digit_index=crop.get("digit_index", -1),
                 is_fallback=(crop.get("digit_index", -1) == -1),
-                labeled=labeled,
+                labeled=global_labeled,
+                my_labeled=my_labeled,
                 remaining=remaining,
                 total=total,
                 priority=crop.get("priority", 2),
@@ -765,12 +786,8 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 "conf": round((crop.get("confidence") or 0) * 100),
             })
             session["recent_labels"] = recent[:30]
-            session["labeled_count"] = session.get("labeled_count", 0) + 1
-            if session.get("total_count", 0) == 0:
-                try:
-                    session["total_count"] = _db._client().table("crops").select("crop_id", count="exact").execute().count or 0
-                except Exception:
-                    pass
+            session["global_labeled"] = session.get("global_labeled", 0) + 1
+            session["my_labeled"] = session.get("my_labeled", 0) + 1
             session.modified = True
 
             return jsonify({"ok": True})
@@ -865,12 +882,18 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                     except Exception:
                         pass
 
+                try:
+                    global_touched = _cli.rpc("count_distinct_labeled_crops", {}).execute().data or 0
+                except Exception:
+                    global_touched = 0
+
                 return jsonify({
                     "labeled": labeled,
                     "remaining": remaining,
                     "confirmed": confirmed,
                     "conflicts": conflicts,
                     "my_labeled": my_labeled,
+                    "global_touched": global_touched,
                 })
             except Exception as exc:
                 return jsonify({"error": str(exc)}), 500
@@ -887,6 +910,19 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 return jsonify({"error": "Admin access required"}), 403
             conflicts = _db.get_conflict_crops()
             return jsonify({"conflicts": conflicts})
+
+        # ----------------------------------------------------------------
+        # GET /debug/sentry-test (admin only) — raises a controlled exception
+        # to verify Sentry backend capture is working end-to-end.
+        # ----------------------------------------------------------------
+
+        @app.route("/debug/sentry-test")
+        @require_auth
+        def sentry_test_view() -> Response:
+            from flask import g
+            if not _is_admin_user(g.user_id):
+                return jsonify({"error": "Admin access required"}), 403
+            raise RuntimeError("Sentry backend test — intentional exception")
 
         # ----------------------------------------------------------------
         # GET /next — return next crop as JSON (SPA update, no page reload)
@@ -907,7 +943,8 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
             label_ocr = crop.get("label_ocr", "?")
             full_cell_crop_id = crop.get("full_cell_crop_id") or crop_id
             concordancias = _db.get_concordancias(pdf_path, label_ocr, crop_id)
-            labeled = session.get("labeled_count", 0)
+            global_labeled = session.get("global_labeled", 0)
+            my_labeled = session.get("my_labeled", 0)
             total = session.get("total_count", 0)
             return jsonify({
                 "done": False,
@@ -923,7 +960,8 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 "concordancias": concordancias,
                 "acta_flags": _get_acta_flags(pdf_path),
                 "recent": session.get("recent_labels", []),
-                "labeled": labeled,
+                "labeled": global_labeled,
+                "my_labeled": my_labeled,
                 "total": total,
             })
 

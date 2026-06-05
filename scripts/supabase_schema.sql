@@ -71,3 +71,18 @@ CREATE INDEX IF NOT EXISTS idx_assignments_annotator_expires
 -- Fast lookup for expiry cleanup
 CREATE INDEX IF NOT EXISTS idx_assignments_expires_at
     ON assignments (expires_at);
+
+-- ---------------------------------------------------------------------------
+-- Functions
+-- ---------------------------------------------------------------------------
+
+-- Returns the number of distinct crops that have at least one human label.
+-- Used for the global progress counter in the labeling portal.
+CREATE OR REPLACE FUNCTION count_distinct_labeled_crops()
+RETURNS integer
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+AS $$
+  SELECT COUNT(DISTINCT crop_id)::integer FROM public.labels;
+$$;

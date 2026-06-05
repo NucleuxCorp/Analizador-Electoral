@@ -4,6 +4,16 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Digit Labeler{% if not done %} — {{ field_name }}{% endif %}</title>
+  {% if sentry_dsn %}
+  <script src="https://browser.sentry-cdn.com/8.28.0/bundle.min.js" crossorigin="anonymous"></script>
+  <script>
+    Sentry.init({
+      dsn: "{{ sentry_dsn }}",
+      environment: "{{ flask_env }}",
+      release: "analizador-e14@{{ app_version }}"
+    });
+  </script>
+  {% endif %}
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -285,25 +295,25 @@
 
     <!-- Thin bar (default) -->
     <div id="prog-thin">
-      <div class="progress-bg"><div class="progress-fill" style="width:{{ pct }}%"></div></div>
+      <div class="progress-bg"><div class="progress-fill" id="prog-fill-thin" style="width:{{ pct }}%"></div></div>
       <div class="progress-meta">
-        <span>{{ labeled }} labeled</span>
-        <span>{{ pct }}%</span>
-        <span>{{ remaining }} remaining</span>
+        <span id="prog-global-thin">{{ labeled }} global</span>
+        <span id="prog-pct-thin">{{ pct }}%</span>
+        <span id="prog-my-thin">mine: {{ my_labeled }}</span>
       </div>
     </div>
 
     <!-- Thick bar (hidden by default) -->
     <div id="prog-thick" style="display:none;">
       <div class="progress-bg thick">
-        <div class="progress-fill thick" style="width:{{ pct }}%">
-          <span class="pct-inside">{{ pct }}%</span>
+        <div class="progress-fill thick" id="prog-fill-thick" style="width:{{ pct }}%">
+          <span class="pct-inside" id="prog-pct-thick">{{ pct }}%</span>
         </div>
       </div>
       <div class="progress-meta thick">
-        <span>{{ labeled }} labeled</span>
-        <span class="pct-big">{{ pct }}%</span>
-        <span>{{ remaining }} remaining</span>
+        <span id="prog-global-thick">{{ labeled }} global</span>
+        <span class="pct-big" id="prog-pct-thick2">{{ pct }}%</span>
+        <span id="prog-my-thick">mine: {{ my_labeled }}</span>
       </div>
     </div>
   </div>
@@ -324,7 +334,7 @@
   <div style="width:100%; max-width:960px;">
   <div class="panels">
     <div class="panel">
-      <div class="panel-img-wrap"><img id="img-digit" src="/image/{{ crop_id }}" alt="digit crop"></div>
+      <div class="panel-img-wrap"><img id="img-digit" src="/image/{{ crop_id }}" alt="digit crop" onerror="if(window.Sentry)Sentry.captureException(new Error('img-digit load failed: {{ crop_id }}'))"></div>
       <div class="panel-lbl" id="lbl-type">{% if is_fallback %}Full cell (no segments){% else %}Digit crop{% endif %}</div>
       <div id="lbl-field" style="margin-top:6px; font-size:0.85rem; color:#7ec8e3; font-weight:bold;">
         {{ field_name }}{% if digit_index != -1 %} &nbsp;<span style="color:#555;">[{{ digit_index }}]</span>{% endif %}
@@ -342,7 +352,7 @@
       </div>
     </div>
     <div class="panel">
-      <div class="panel-img-wrap"><img id="img-full" src="/image/{{ full_cell_crop_id }}" alt="full cell"></div>
+      <div class="panel-img-wrap"><img id="img-full" src="/image/{{ full_cell_crop_id }}" alt="full cell" onerror="if(window.Sentry)Sentry.captureException(new Error('img-full load failed: {{ full_cell_crop_id }}'))"></div>
       <div class="panel-lbl">Full cell (context)</div>
       <div id="flag-box" style="margin-top:10px; {% if not acta_flags %}display:none;{% endif %}">
         {% for f in acta_flags %}
@@ -724,12 +734,18 @@
         // Swap images — remove img-fade happens inside onImgDone, not here
         if (imgD) {
           imgD.onload  = function () { onImgDone(imgD); };
-          imgD.onerror = function () { onImgDone(imgD); };
+          imgD.onerror = function () {
+            if (window.Sentry) Sentry.captureException(new Error("img-digit load failed: " + item.crop_id));
+            onImgDone(imgD);
+          };
           imgD.src = "/image/" + item.crop_id;
         }
         if (imgF) {
           imgF.onload  = function () { onImgDone(imgF); };
-          imgF.onerror = function () { onImgDone(imgF); };
+          imgF.onerror = function () {
+            if (window.Sentry) Sentry.captureException(new Error("img-full load failed: " + item.full_cell_crop_id));
+            onImgDone(imgF);
+          };
           imgF.src = "/image/" + item.full_cell_crop_id;
         }
 
@@ -821,6 +837,24 @@
             while (grid.children.length > 30) grid.removeChild(grid.lastChild);
             var title = document.querySelector(".recent-title");
             if (title) title.textContent = "Last labeled (" + Math.min(item.recent.length, 30) + ")";
+          }
+        }
+
+        // Update progress bar
+        if (item.total > 0) {
+          var pct = Math.round((item.labeled / item.total) * 1000) / 10;
+          var pctStr = pct + "%";
+          var el;
+          el = document.getElementById("prog-fill-thin");   if (el) el.style.width = pctStr;
+          el = document.getElementById("prog-fill-thick");  if (el) el.style.width = pctStr;
+          el = document.getElementById("prog-pct-thin");    if (el) el.textContent = pctStr;
+          el = document.getElementById("prog-pct-thick");   if (el) el.textContent = pctStr;
+          el = document.getElementById("prog-pct-thick2");  if (el) el.textContent = pctStr;
+          el = document.getElementById("prog-global-thin"); if (el) el.textContent = item.labeled + " global";
+          el = document.getElementById("prog-global-thick");if (el) el.textContent = item.labeled + " global";
+          if (item.my_labeled !== undefined) {
+            el = document.getElementById("prog-my-thin");  if (el) el.textContent = "mine: " + item.my_labeled;
+            el = document.getElementById("prog-my-thick"); if (el) el.textContent = "mine: " + item.my_labeled;
           }
         }
 
