@@ -652,11 +652,24 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
             email = body.get("email", "").strip()
             if not email:
                 return jsonify({"error": "Email is required"}), 400
-            from src.modules.labeler.auth import init_supabase_client
-            client = init_supabase_client()
-            base_url = os.environ.get("RAILWAY_STATIC_URL", "http://localhost:5000")
             try:
-                client.auth.reset_password_for_email(email, options={"redirect_to": f"{base_url}/auth/recovery"})
+                import requests as _requests
+                _supabase_url = os.environ.get("SUPABASE_URL", "").strip()
+                _anon_key = os.environ.get("SUPABASE_ANON_KEY", "").strip()
+                base_url = os.environ.get("RAILWAY_STATIC_URL", "http://localhost:5000")
+                # Use REST API directly to ensure redirect_to is honored
+                _requests.post(
+                    f"{_supabase_url}/auth/v1/recover",
+                    headers={
+                        "apikey": _anon_key,
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "email": email,
+                        "redirect_to": f"{base_url}/auth/recovery",
+                    },
+                    timeout=15,
+                )
             except Exception as exc:
                 logger.warning("forgot-password email=%s ip=%s: %s", email, request.remote_addr, exc)
             return jsonify({"message": "check your email"}), 200
