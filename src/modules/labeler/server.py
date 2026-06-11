@@ -671,7 +671,12 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                     timeout=15,
                 )
             except Exception as exc:
-                logger.warning("forgot-password email=%s ip=%s: %s", email, request.remote_addr, exc)
+                logger.error("forgot-password email=%s ip=%s: %s", email, request.remote_addr, exc)
+                try:
+                    import sentry_sdk
+                    sentry_sdk.capture_exception(exc)
+                except Exception:
+                    pass
             return jsonify({"message": "check your email"}), 200
 
         @app.route("/auth/recovery", methods=["GET"])
@@ -688,6 +693,11 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
             except Exception as exc:
                 err_str = str(exc).lower()
                 logger.warning("recovery verify token ip=%s: %s", request.remote_addr, exc)
+                try:
+                    import sentry_sdk
+                    sentry_sdk.capture_exception(exc)
+                except Exception:
+                    pass
                 if "expired" in err_str or "invalid" in err_str:
                     return render_template("reset_password.html", error="El link expiró o es inválido. Solicitá uno nuevo.")
                 return render_template("reset_password.html", error="Error al verificar el link. Intentá de nuevo.")
