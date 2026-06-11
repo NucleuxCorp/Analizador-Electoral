@@ -96,6 +96,45 @@ def _init_sentry() -> bool:
         logger.error("sentry init failed: %s", exc)
         return False
 
+
+# ---------------------------------------------------------------------------
+# reCAPTCHA verification helper
+# ---------------------------------------------------------------------------
+
+def _verify_recaptcha(response_token: str) -> bool:
+    """
+    Verify a reCAPTCHA v2 response token with Google.
+
+    Args:
+        response_token: The ``g-recaptcha-response`` value from the frontend.
+
+    Returns:
+        True if the token is valid, False otherwise.
+    """
+    secret = os.environ.get("RECAPTCHA_SECRET_KEY", "").strip()
+    if not secret:
+        # No key configured — skip verification (local dev or misconfig).
+        return True
+    try:
+        import requests as _req
+        resp = _req.post(
+            "https://www.google.com/recaptcha/api/siteverify",
+            data={"secret": secret, "response": response_token},
+            timeout=10,
+        )
+        result = resp.json()
+        return bool(result.get("success", False))
+    except Exception as exc:
+        logger.error("recaptcha verify failed: %s", exc)
+        try:
+            import sentry_sdk
+            sentry_sdk.capture_exception(exc)
+        except Exception:
+            pass
+        # Fail open — better to let a human through than block them on error.
+        return True
+
+
 # ---------------------------------------------------------------------------
 # Divipole lookup — puesto nombre (LUGAR)
 # ---------------------------------------------------------------------------
@@ -486,6 +525,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
             "work_url": "/work" if _production_mode else "/",
             "sentry_dsn": _sentry_dsn,
             "flask_env": _flask_env,
+            "RECAPTCHA_SITE_KEY": os.environ.get("RECAPTCHA_SITE_KEY", "").strip(),
         }
 
     # Load lookup tables for both modes (mesa info + fraud flags)
@@ -580,6 +620,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                     "first_name": request.form.get("first_name", ""),
                     "last_name": request.form.get("last_name", ""),
                     "phone": request.form.get("phone", ""),
+                    "g_recaptcha_response": request.form.get("g-recaptcha-response", ""),
                 }
             email = body.get("email", "").strip()
             password = body.get("password", "")
@@ -589,6 +630,11 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
 
             if not email or not password:
                 return jsonify({"error": "email and password are required"}), 400
+
+            # reCAPTCHA verification
+            recaptcha_token = body.get("g_recaptcha_response", body.get("g-recaptcha-response", ""))
+            if not _verify_recaptcha(recaptcha_token):
+                return jsonify({"error": "Verificación de seguridad fallada. Recargá la página e intentá de nuevo."}), 403
 
             from src.modules.labeler.auth import init_supabase_client
             client = init_supabase_client()
@@ -648,10 +694,19 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
         def auth_forgot_post() -> Response:
             body = request.get_json(force=True, silent=True) or {}
             if not body:
-                body = {"email": request.form.get("email", "")}
+                body = {
+                    "email": request.form.get("email", ""),
+                    "g_recaptcha_response": request.form.get("g-recaptcha-response", ""),
+                }
             email = body.get("email", "").strip()
             if not email:
                 return jsonify({"error": "Email is required"}), 400
+
+            # reCAPTCHA verification
+            recaptcha_token = body.get("g_recaptcha_response", body.get("g-recaptcha-response", ""))
+            if not _verify_recaptcha(recaptcha_token):
+                return jsonify({"error": "Verificación de seguridad fallada. Recargá la página e intentá de nuevo."}), 403
+
             try:
                 import requests as _requests
                 _supabase_url = os.environ.get("SUPABASE_URL", "").strip()
@@ -734,12 +789,18 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 body = {
                     "email": request.form.get("email", ""),
                     "password": request.form.get("password", ""),
+                    "g_recaptcha_response": request.form.get("g-recaptcha-response", ""),
                 }
             email = body.get("email", "").strip()
             password = body.get("password", "")
 
             if not email or not password:
                 return jsonify({"error": "email and password are required"}), 400
+
+            # reCAPTCHA verification
+            recaptcha_token = body.get("g_recaptcha_response", body.get("g-recaptcha-response", ""))
+            if not _verify_recaptcha(recaptcha_token):
+                return jsonify({"error": "Verificación de seguridad fallada. Recargá la página e intentá de nuevo."}), 403
 
             from src.modules.labeler.auth import init_supabase_client
             client = init_supabase_client()

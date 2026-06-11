@@ -164,6 +164,14 @@
         <span class="hint">Mínimo 8 caracteres.</span>
       </div>
 
+      <!-- reCAPTCHA -->
+      <div class="g-recaptcha" data-sitekey="{{ RECAPTCHA_SITE_KEY }}" style="margin-bottom:12px;"></div>
+      <div style="font-size:0.62rem;color:#445;margin-bottom:12px;line-height:1.4;">
+        Este sitio está protegido por reCAPTCHA y se aplican la
+        <a href="https://policies.google.com/privacy" target="_blank" rel="noopener" style="color:#7ec8e3;">Política de Privacidad</a> y los
+        <a href="https://policies.google.com/terms" target="_blank" rel="noopener" style="color:#7ec8e3;">Términos del Servicio</a> de Google.
+      </div>
+
       <button type="submit" class="btn-submit" id="submit-btn">Crear cuenta</button>
     </form>
 
@@ -172,6 +180,7 @@
     </div>
   </div>
 
+  <script src="https://www.google.com/recaptcha/api.js" async defer></script>
   <script>
   (function () {
     var form      = document.getElementById("register-form");
@@ -201,6 +210,14 @@
         return;
       }
 
+      // reCAPTCHA check
+      var recaptchaToken = grecaptcha ? grecaptcha.getResponse() : "";
+      if (!recaptchaToken) {
+        errEl.textContent = "Completá la verificación de seguridad (No soy un robot).";
+        errEl.classList.add("visible");
+        return;
+      }
+
       submitBtn.disabled = true;
       submitBtn.textContent = "Creando cuenta…";
 
@@ -212,6 +229,7 @@
           phone: phone,
           email: email,
           password: password,
+          g_recaptcha_response: recaptchaToken,
         }),
       })
         .then(function (r) { return r.json().then(function (d) { return { status: r.status, data: d }; }); })
