@@ -640,6 +640,70 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
             except Exception as exc:
                 return Response(f"Confirmation failed: {exc}", status=400)
 
+        @app.route("/auth/forgot-password", methods=["GET"])
+        def auth_forgot_get() -> str:
+            return render_template("forgot_password.html")
+
+        @app.route("/auth/forgot-password", methods=["POST"])
+        def auth_forgot_post() -> Response:
+            body = request.get_json(force=True, silent=True) or {}
+            if not body:
+                body = {"email": request.form.get("email", "")}
+            email = body.get("email", "").strip()
+            if not email:
+                return jsonify({"error": "Email is required"}), 400
+            from src.modules.labeler.auth import init_supabase_client
+            client = init_supabase_client()
+            base_url = os.environ.get("RAILWAY_STATIC_URL", "http://localhost:5000")
+            try:
+                client.auth.reset_password_for_email(email, options={"redirect_to": f"{base_url}/auth/recovery"})
+            except Exception as exc:
+                logger.warning("forgot-password email=%s ip=%s: %s", email, request.remote_addr, exc)
+            return jsonify({"message": "check your email"}), 200
+
+        @app.route("/auth/recovery", methods=["GET"])
+        def auth_recovery_get() -> str:
+            token_hash = request.args.get("token_hash", "").strip()
+            if not token_hash:
+                return render_template("reset_password.html", error="Link inválido o faltante.")
+            from src.modules.labeler.auth import init_supabase_client
+            client = init_supabase_client()
+            try:
+                client.auth.verify_otp({"token_hash": token_hash, "type": "recovery"})
+                session["recovery_verified"] = True
+                return render_template("reset_password.html", token_hash=token_hash)
+            except Exception as exc:
+                err_str = str(exc).lower()
+                logger.warning("recovery verify token ip=%s: %s", request.remote_addr, exc)
+                if "expired" in err_str or "invalid" in err_str:
+                    return render_template("reset_password.html", error="El link expiró o es inválido. Solicitá uno nuevo.")
+                return render_template("reset_password.html", error="Error al verificar el link. Intentá de nuevo.")
+
+        @app.route("/auth/recovery", methods=["POST"])
+        def auth_recovery_post() -> Response:
+            if not session.get("recovery_verified"):
+                return jsonify({"error": "No verificaste tu identidad. Usá el link del correo."}), 403
+            body = request.get_json(force=True, silent=True) or {}
+            if not body:
+                body = {"password": request.form.get("password", "")}
+            new_password = body.get("password", "")
+            if len(new_password) < 8:
+                return jsonify({"error": "La contraseña debe tener al menos 8 caracteres."}), 400
+            from src.modules.labeler.auth import init_supabase_client
+            client = init_supabase_client()
+            try:
+                client.auth.update_user({"password": new_password})
+                session.pop("recovery_verified", None)
+                return jsonify({"message": "password updated", "redirect": "/auth/login?reset=1"}), 200
+            except Exception as exc:
+                logger.error("recovery update password ip=%s: %s", request.remote_addr, exc)
+                try:
+                    import sentry_sdk
+                    sentry_sdk.capture_exception(exc)
+                except Exception:
+                    pass
+                return jsonify({"error": "No se pudo actualizar la contraseña. Intentá de nuevo."}), 400
+
         @app.route("/auth/login", methods=["POST"])
         def auth_login_post() -> Response:
             body = request.get_json(force=True, silent=True) or {}
