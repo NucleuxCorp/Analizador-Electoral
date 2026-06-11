@@ -608,7 +608,14 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
             except Exception as exc:
                 err_str = str(exc).lower()
                 if "already registered" in err_str or "already exists" in err_str or "duplicate" in err_str:
+                    logger.warning("register duplicate email=%s ip=%s", email, request.remote_addr)
                     return jsonify({"error": "email already registered"}), 409
+                logger.error("register failed email=%s ip=%s: %s", email, request.remote_addr, exc)
+                try:
+                    import sentry_sdk
+                    sentry_sdk.capture_exception(exc)
+                except Exception:
+                    pass
                 return jsonify({"error": "registration failed", "detail": str(exc)}), 400
 
         @app.route("/auth/confirm", methods=["GET"])
@@ -661,7 +668,9 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
             except Exception as exc:
                 err_str = str(exc).lower()
                 if "email not confirmed" in err_str or "not confirmed" in err_str:
+                    logger.warning("login unconfirmed email=%s ip=%s", email, request.remote_addr)
                     return jsonify({"error": "Please confirm your email before logging in"}), 403
+                logger.warning("login failed email=%s ip=%s: %s", email, request.remote_addr, exc)
                 return jsonify({"error": "Invalid credentials"}), 401
 
         @app.route("/auth/logout", methods=["POST"])
