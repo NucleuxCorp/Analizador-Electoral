@@ -524,6 +524,40 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
         _index_path = _labels_dir_env / "crops" / "index.jsonl"
 
         # ----------------------------------------------------------------
+        # Demo route — UI preview only, no DB, only when LOCAL_DEV_BYPASS set
+        # ----------------------------------------------------------------
+
+        if os.environ.get("LOCAL_DEV_BYPASS", "").strip():
+            @app.route("/demo")
+            def demo_view() -> str:
+                _FAKE_CROP_ID = "00000000-0000-0000-0000-000000000001"
+                return render_template(
+                    "label.html",
+                    done=False,
+                    crop_id=_FAKE_CROP_ID,
+                    full_cell_crop_id=_FAKE_CROP_ID,
+                    label_ocr="7",
+                    field_name="votos_blanco",
+                    digit_index=0,
+                    is_fallback=False,
+                    labeled=1284,
+                    my_labeled=47,
+                    remaining=14167,
+                    total=15451,
+                    priority=1,
+                    pdf_filename="E14_PRE_60_001_001_00_01_003_6947.pdf",
+                    mesa={"departamento": "BOLIVAR", "municipio": "CARTAGENA", "zona": "zona_01", "puesto": "puesto_01", "mesa": "053", "lugar": "COLEGIO DISTRITAL"},
+                    recent=[
+                        {"crop_id": _FAKE_CROP_ID, "label": "4", "field": "votos_candidato_1", "ocr": "4", "conf": 98},
+                        {"crop_id": _FAKE_CROP_ID, "label": "2", "field": "votos_candidato_2", "ocr": "2", "conf": 91},
+                        {"crop_id": _FAKE_CROP_ID, "label": "0", "field": "votos_blanco", "ocr": "0", "conf": 85},
+                    ],
+                    concordancias=[_FAKE_CROP_ID, _FAKE_CROP_ID, _FAKE_CROP_ID],
+                    acta_flags=[{"type": "ARITMETICA_SUMA", "description": "La suma total escrita no coincide con la suma de los votos por candidato + blancos + nulos.", "detail": "suma_total=114 != calculado=109"}],
+                    user_email="demo@local.test",
+                )
+
+        # ----------------------------------------------------------------
         # Auth routes (no auth required)
         # ----------------------------------------------------------------
 
@@ -1123,7 +1157,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                     done=True,
                     labeled=state.queue.labeled,
                     total=state.queue.total,
-                    user_email="",
+                    user_email="dev@local.test",
                 )
 
             return render_template(
@@ -1143,7 +1177,8 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 mesa=_mesa_info(item.pdf_path),
                 recent=state.recent,
                 concordancias=_get_concordancias(item.pdf_path, index_path, item.label_ocr),
-                user_email="",
+                acta_flags=_get_acta_flags(item.pdf_path),
+                user_email="dev@local.test",
             )
 
         @app.route("/image/<crop_id>")
@@ -1257,6 +1292,35 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
             except Exception as exc:
                 return jsonify({"ok": False, "error": f"Could not record: {exc}"}), 500
             return jsonify({"ok": True, "pdf_path": pdf_path})
+
+        @app.route("/next")
+        def next_view_local() -> Response:
+            """Return the next crop as JSON for SPA updates (no page reload)."""
+            state = _STATE
+            item = state.queue.current()
+            if item is None:
+                return jsonify({
+                    "done": True,
+                    "labeled": state.queue.labeled,
+                    "total": state.queue.total,
+                })
+            return jsonify({
+                "done": False,
+                "crop_id": item.crop_id,
+                "full_cell_crop_id": item.full_cell_crop_id,
+                "label_ocr": item.label_ocr,
+                "field_name": item.field_name,
+                "digit_index": item.digit_index,
+                "is_fallback": item.digit_index == -1,
+                "priority": item.priority,
+                "pdf_filename": Path(item.pdf_path).name,
+                "mesa": _mesa_info(item.pdf_path),
+                "concordancias": _get_concordancias(item.pdf_path, index_path, item.label_ocr),
+                "acta_flags": _get_acta_flags(item.pdf_path),
+                "recent": state.recent,
+                "labeled": state.queue.labeled,
+                "total": state.queue.total,
+            })
 
         @app.route("/status")
         def status_view() -> Response:

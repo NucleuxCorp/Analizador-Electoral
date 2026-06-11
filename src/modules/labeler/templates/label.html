@@ -4,487 +4,513 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Digit Labeler{% if not done %} — {{ field_name }}{% endif %}</title>
+
+  <script>
+    (function(){
+      var t = localStorage.getItem('lab-theme');
+      if (!t) t = (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-bs-theme', t);
+    })();
+  </script>
+
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" crossorigin="anonymous">
+
   {% if sentry_dsn %}
   <script src="https://browser.sentry-cdn.com/8.28.0/bundle.min.js" crossorigin="anonymous"></script>
   <script>
-    Sentry.init({
-      dsn: "{{ sentry_dsn }}",
-      environment: "{{ flask_env }}",
-      release: "analizador-e14@{{ app_version }}"
-    });
+    Sentry.init({ dsn: "{{ sentry_dsn }}", environment: "{{ flask_env }}", release: "analizador-e14@{{ app_version }}" });
   </script>
   {% endif %}
+
   <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: monospace;
-      background: #1a1a2e;
-      color: #eee;
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: 12px 16px;
-      gap: 10px;
+    /* ── Theme overrides ── */
+    [data-bs-theme="dark"] {
+      --bs-body-bg:           #1a1a2e;
+      --bs-body-color:        #e2e8f0;
+      --bs-card-bg:           #16213e;
+      --bs-card-border-color: #2a3a5a;
+      --bs-border-color:      #2a3a5a;
+      --bs-secondary-bg:      #0d1520;
+      --lab-accent:           #7ec8e3;
+      --lab-muted:            #8899bb;
     }
+    [data-bs-theme="light"] {
+      --lab-accent:  #1565c0;
+      --lab-muted:   #5a6a80;
+    }
+
+    body { min-height: 100vh; font-family: monospace; }
 
     /* ── Progress ── */
-    .progress-wrap { width: 100%; max-width: 960px; }
-
-    /* Thin mode */
-    .progress-bg   { background: #2a2a4a; border-radius: 4px; height: 10px; }
-    .progress-fill { height: 10px; background: linear-gradient(90deg, #2e7d32, #66bb6a); border-radius: 4px; transition: width 0.6s ease; box-shadow: 0 0 6px #4caf5066; }
-    .progress-meta { display: flex; justify-content: space-between; font-size: 0.7rem; color: #555; margin-top: 3px; }
-
-    /* Thick mode */
-    .progress-bg.thick   { height: 28px; border-radius: 8px; position: relative; overflow: hidden; }
-    .progress-fill.thick {
-      height: 28px; border-radius: 8px;
-      background: linear-gradient(90deg, #1b5e20, #388e3c, #66bb6a);
-      box-shadow: 0 0 12px #4caf5055;
-      display: flex; align-items: center; justify-content: flex-end; padding-right: 10px;
-      min-width: 32px;
+    .prog-fill-custom {
+      background: linear-gradient(90deg, #2e7d32, #66bb6a);
+      box-shadow: 0 0 6px rgba(76,175,80,.4);
+      transition: width .6s ease;
     }
-    .progress-fill.thick .pct-inside { font-size: 0.78rem; font-weight: bold; color: #fff; white-space: nowrap; }
-    .progress-meta.thick { font-size: 0.75rem; color: #556; margin-top: 5px; font-weight: bold; }
-    .progress-meta.thick .pct-big { font-size: 1.1rem; color: #66bb6a; font-weight: bold; }
-
-    /* Toggle button */
-    .prog-toggle { background: none; border: 1px solid #2a3a4a; border-radius: 4px; color: #445; font-size: 0.65rem; padding: 2px 7px; cursor: pointer; float: right; margin-bottom: 4px; }
-    .prog-toggle:hover { border-color: #7ec8e3; color: #7ec8e3; }
-
-    /* ── Mesa info bar ── */
-    .mesa-bar {
-      width: 100%; max-width: 960px;
-      background: linear-gradient(135deg, #0d1b2a, #0a1520);
-      border: 1px solid #1e3050;
-      border-radius: 8px;
-      padding: 7px 16px;
-      display: flex; gap: 18px; flex-wrap: wrap; align-items: center;
-      font-size: 0.72rem;
-      box-shadow: 0 2px 8px #00000044;
+    .prog-toggle {
+      background: none; border: 1px solid var(--bs-border-color);
+      border-radius: 4px; color: var(--lab-muted);
+      font-size: .65rem; padding: 2px 7px; cursor: pointer; float: right; margin-bottom: 4px;
     }
-    .mesa-bar .lbl  { color: #445; text-transform: uppercase; font-size: 0.65rem; }
-    .mesa-bar .val  { color: #ccc; font-weight: bold; }
-    .mesa-bar .lugar { color: #7ec8e3; }
+    .prog-toggle:hover { border-color: var(--lab-accent); color: var(--lab-accent); }
+
+    /* ── Field badge ── */
     .field-badge {
-      background: #0f3460; color: #7ec8e3;
-      border-radius: 4px; padding: 2px 10px;
-      font-size: 0.75rem; white-space: nowrap;
+      background: #0f3460; color: var(--lab-accent);
+      border-radius: 4px; padding: 2px 10px; font-size: .75rem; white-space: nowrap;
+    }
+    [data-bs-theme="light"] .field-badge { background: #dbeafe; }
+
+    /* ── 3-col layout: Bootstrap row/col 4-5-3 ── */
+    .lab-row { min-height: 380px; }
+    .col-recent { display:flex; flex-direction:column; }
+    .col-center { display:flex; flex-direction:column; }
+    .col-info   { display:flex; flex-direction:column; }
+    .col-recent .card { flex:1; }
+    .col-recent .card-body { display:flex; flex-direction:column; }
+    .col-recent .recent-grid, .col-recent .recent-list { flex:1; }
+
+    @media (max-width: 650px) {
+      /* Mobile numpad: hide digit keys (system keyboard handles them) */
+      .nk-7, .nk-8, .nk-9,
+      .nk-4, .nk-5, .nk-6,
+      .nk-1, .nk-2, .nk-3,
+      .nk-0 { display: none; }
+      /* Compact 2-row layout: actions + specials */
+      .numpad {
+        grid-template-columns: repeat(4, 1fr);
+        grid-template-rows: repeat(2, 52px);
+      }
+      .nk-dash  { grid-column:1; grid-row:2; }
+      .nk-star  { grid-column:2; grid-row:2; }
+      .nk-dot   { grid-column:3; grid-row:2; }
+      .nk-enter { grid-column:4; grid-row:2; }
     }
 
-    /* ── Image panels ── */
-    .panels { display: flex; gap: 14px; width: 100%; max-width: 960px; }
-    .panel  {
-      flex: 1;
-      background: linear-gradient(180deg, #16213e, #111827);
-      border: 1px solid #2a3a5a; border-radius: 10px;
-      padding: 10px; text-align: center;
-      box-shadow: 0 4px 12px #00000055;
-      transition: border-color 0.2s;
-    }
-    .panel:hover { border-color: #3a5a8a; }
+    /* ── Image wrapper ── */
     .panel-img-wrap {
       width: 100%; height: 200px;
       display: flex; align-items: center; justify-content: center;
-      background: #fff; border-radius: 4px; overflow: hidden;
+      background: #dde2ea; border-radius: 6px; overflow: hidden;
     }
+    [data-bs-theme="light"] .panel-img-wrap { background: #f0f2f5; }
     .panel-img-wrap img { max-width: 100%; max-height: 200px; object-fit: contain; }
-    .panel-lbl { font-size: 0.65rem; color: #555; margin-top: 5px; }
+    .panel-lbl { font-size: .65rem; color: var(--lab-muted); margin-top: 5px; text-align: center; }
 
-    /* ── OCR row ── */
-    .ocr-row {
-      width: 100%; max-width: 960px;
-      display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
-    }
-    .ocr-hint { font-size: 0.9rem; color: #888; }
+    /* ── OCR ── */
     .ocr-hint strong { color: #ffd700; font-size: 1.3rem; }
-    .badge { border-radius: 3px; padding: 1px 8px; font-size: 0.7rem; font-weight: bold; }
-    .badge-review     { background: #7f0000; color: #ff8a80; }
-    .badge-suspicious { background: #7f3d00; color: #ffcc80; }
-
+    [data-bs-theme="light"] .ocr-hint strong { color: #e65100; }
     input#answer {
       font-size: 1.5rem; width: 100px; padding: 5px 10px;
-      border-radius: 6px; border: 2px solid #3a3a6a;
-      background: #111; color: #fff; text-align: center; outline: none;
+      border-radius: 6px; border: 2px solid var(--bs-border-color);
+      background: var(--bs-secondary-bg); color: var(--bs-body-color);
+      text-align: center; outline: none; font-family: monospace;
     }
-    input#answer:focus { border-color: #7ec8e3; }
-    #mode-ind { font-size: 0.78rem; color: #ff9800; min-height: 1.1em; }
+    input#answer:focus { border-color: var(--lab-accent); }
+    #mode-ind { font-size: .78rem; color: #ff9800; min-height: 1.1em; }
 
-    /* ── Controls layout ── */
-    .controls-area {
-      width: 100%; max-width: 960px;
-      display: flex; flex-direction: row; gap: 16px; align-items: flex-start;
-    }
-
-    /* Numpad — 5 rows × 4 cols, all equal width */
+    /* ── Numpad ── */
     .numpad {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
       grid-template-rows: repeat(5, 52px);
       gap: 5px;
-      width: 260px;
-      flex-shrink: 0;
     }
-    /* Row 1 — actions: Back, E, F (fraude), Esc */
     .nk-act-back  { grid-column:1; grid-row:1; }
     .nk-act-e     { grid-column:2; grid-row:1; }
     .nk-act-fraud { grid-column:3; grid-row:1; }
     .nk-act-esc   { grid-column:4; grid-row:1; }
-    /* Row 2 */
-    .nk-7     { grid-column:1; grid-row:2; }
-    .nk-8     { grid-column:2; grid-row:2; }
-    .nk-9     { grid-column:3; grid-row:2; }
-    .nk-dash  { grid-column:4; grid-row:2; }
-    /* Row 3 */
-    .nk-4     { grid-column:1; grid-row:3; }
-    .nk-5     { grid-column:2; grid-row:3; }
-    .nk-6     { grid-column:3; grid-row:3; }
-    .nk-star  { grid-column:4; grid-row:3; }
-    /* + shares the asterisco slot visually — shown as a 2-label button */
-    /* Row 4 */
-    .nk-1     { grid-column:1; grid-row:4; }
-    .nk-2     { grid-column:2; grid-row:4; }
-    .nk-3     { grid-column:3; grid-row:4; }
+    .nk-7    { grid-column:1; grid-row:2; }
+    .nk-8    { grid-column:2; grid-row:2; }
+    .nk-9    { grid-column:3; grid-row:2; }
+    .nk-dash { grid-column:4; grid-row:2; }
+    .nk-4    { grid-column:1; grid-row:3; }
+    .nk-5    { grid-column:2; grid-row:3; }
+    .nk-6    { grid-column:3; grid-row:3; }
+    .nk-star { grid-column:4; grid-row:3; }
+    .nk-1    { grid-column:1; grid-row:4; }
+    .nk-2    { grid-column:2; grid-row:4; }
+    .nk-3    { grid-column:3; grid-row:4; }
     .nk-enter { grid-column:4; grid-row:4/6; align-items:center; }
-    /* Row 5 */
-    .nk-0     { grid-column:1/3; grid-row:5; }
-    .nk-dot   { grid-column:3; grid-row:5; }
+    .nk-0    { grid-column:1/3; grid-row:5; }
+    .nk-dot  { grid-column:3; grid-row:5; }
 
-    /* Base button */
-    .btn {
+    .nk-btn {
       display: flex; flex-direction: column; align-items: center; justify-content: center;
-      gap: 2px; padding: 9px 8px;
-      border-radius: 9px; border: 1px solid #2a4060;
+      gap: 2px; padding: 6px; border-radius: 9px; border: 1px solid #2a4060;
       background: linear-gradient(180deg, #1a2a40, #111827);
       cursor: pointer; user-select: none;
-      transition: background 0.12s, border-color 0.12s, box-shadow 0.12s, transform 0.08s;
-      text-decoration: none;
-      box-shadow: 0 2px 6px #00000044;
+      transition: background .12s, border-color .12s, box-shadow .12s, transform .08s;
+      box-shadow: 0 2px 6px rgba(0,0,0,.3);
     }
-    .btn:hover  { background: linear-gradient(180deg, #1e3a5a, #16263a); border-color: #7ec8e3; box-shadow: 0 0 10px #7ec8e322; }
-    .btn:active { transform: scale(0.96); box-shadow: none; }
-    .btn .k     { font-size: 1.05rem; font-weight: bold; color: #7ec8e3; }
-    .btn .d     { font-size: 0.6rem; color: #556; text-align: center; line-height: 1.2; }
+    [data-bs-theme="light"] .nk-btn { background: #f8f9fa; border-color: #dee2e6; box-shadow: 0 1px 3px rgba(0,0,0,.1); }
+    .nk-btn:hover { border-color: var(--lab-accent); box-shadow: 0 0 8px rgba(126,200,227,.2); }
+    .nk-btn:active { transform: scale(.96); box-shadow: none; }
+    .nk-btn .k { font-size: 1.05rem; font-weight: bold; color: var(--lab-accent); }
+    .nk-btn .d { font-size: .58rem; color: var(--lab-muted); text-align: center; line-height: 1.2; }
 
-    .btn.green  { border-color: #1b4020; } .btn.green .k  { color: #66bb6a; }
-    .btn.green:hover  { background: #142814; border-color: #66bb6a; }
+    .nk-btn.nk-green  { border-color: #1b4020; } .nk-btn.nk-green  .k { color: #66bb6a; }
+    .nk-btn.nk-green:hover  { background: #142814; border-color: #66bb6a; }
+    .nk-btn.nk-yellow { border-color: #5a4000; } .nk-btn.nk-yellow .k { color: #ffd740; }
+    .nk-btn.nk-yellow:hover { background: #2a2000; border-color: #ffd740; }
+    .nk-btn.nk-red    { border-color: #5a1010; } .nk-btn.nk-red    .k { color: #ef5350; }
+    .nk-btn.nk-red:hover    { background: #2a0a0a; border-color: #ef5350; }
+    .nk-btn.nk-gray   { border-color: #2a2a3a; } .nk-btn.nk-gray   .k { color: #888; }
+    .nk-btn.nk-purple { border-color: #4a2060; } .nk-btn.nk-purple .k { color: #ce93d8; }
+    .nk-btn.nk-purple:hover { background: #2a1040; border-color: #ce93d8; }
+    .nk-btn.nk-orange { border-color: #6a3000; background: linear-gradient(180deg,#2a1505,#1a0f08); }
+    .nk-btn.nk-orange .k { color: #ff9100; }
+    .nk-btn.nk-orange:hover { border-color: #ff9100; }
 
-    .btn.yellow { border-color: #5a4000; } .btn.yellow .k { color: #ffd740; }
-    .btn.yellow:hover { background: #2a2000; border-color: #ffd740; }
+    [data-bs-theme="light"] .nk-btn.nk-green  { background: #f1f8f1; border-color: #a5d6a7; } [data-bs-theme="light"] .nk-btn.nk-green  .k { color: #2e7d32; }
+    [data-bs-theme="light"] .nk-btn.nk-yellow { background: #fffde7; border-color: #fff176; } [data-bs-theme="light"] .nk-btn.nk-yellow .k { color: #f57f17; }
+    [data-bs-theme="light"] .nk-btn.nk-red    { background: #ffebee; border-color: #ef9a9a; } [data-bs-theme="light"] .nk-btn.nk-red    .k { color: #c62828; }
+    [data-bs-theme="light"] .nk-btn.nk-orange { background: #fff3e0; border-color: #ffcc80; } [data-bs-theme="light"] .nk-btn.nk-orange .k { color: #e65100; }
+    [data-bs-theme="light"] .nk-btn.nk-purple { background: #f3e5f5; border-color: #ce93d8; } [data-bs-theme="light"] .nk-btn.nk-purple .k { color: #6a1b9a; }
 
-    .btn.red    { border-color: #5a1010; } .btn.red .k    { color: #ef5350; }
-    .btn.red:hover    { background: #2a0a0a; border-color: #ef5350; }
+    /* ── Badges (OCR priority) ── */
+    .badge-review     { background: #7f0000 !important; color: #ff8a80 !important; }
+    .badge-suspicious { background: #7f3d00 !important; color: #ffcc80 !important; }
 
-    .btn.gray   { border-color: #2a2a3a; } .btn.gray .k   { color: #888; }
+    /* ── Fraud flags ── */
+    .flag-item { background: #2a1810; border: 1px solid #5a3010; border-radius: 6px; padding: 7px 10px; margin-bottom: 5px; }
+    [data-bs-theme="light"] .flag-item { background: #fff3e0; border-color: #ffab40; }
+    .flag-type   { font-size: .62rem; color: #ffab40; font-weight: bold; text-transform: uppercase; letter-spacing: .5px; }
+    [data-bs-theme="light"] .flag-type  { color: #e65100; }
+    .flag-desc   { font-size: .7rem; color: #bbb; margin-top: 2px; }
+    [data-bs-theme="light"] .flag-desc  { color: #424242; }
+    .flag-detail { font-size: .66rem; color: #888; margin-top: 3px; }
+    [data-bs-theme="light"] .flag-detail { color: #616161; }
 
-    .btn.purple { border-color: #4a2060; } .btn.purple .k { color: #ce93d8; }
-    .btn.purple:hover { background: #2a1040; border-color: #ce93d8; }
+    /* ── Concordancias image ── */
+    .conc-img { width: 44px; height: 36px; object-fit: contain; background: #dde2ea; border-radius: 3px; border: 1px solid var(--bs-border-color); }
 
-    .btn.orange { border-color: #6a3000; background: linear-gradient(180deg, #2a1505, #1a0f08); }
-    .btn.orange .k { color: #ff9100; }
-    .btn.orange:hover { background: #3a2008; border-color: #ff9100; box-shadow: 0 0 10px #ff910033; }
-
-    /* Recent log */
-    .recent-log {
-      border-top: 1px solid #1e2a3a;
-      padding-top: 10px;
-    }
-
-    /* Smooth image swap */
-    #img-digit, #img-full { transition: opacity 0.15s ease; }
-    .img-fade { opacity: 0 !important; }
-
-    /* New log item slide-in */
-    @keyframes slideIn { from { opacity:0; transform:translateY(-8px); } to { opacity:1; transform:translateY(0); } }
-    .log-new { animation: slideIn 0.2s ease forwards; }
-    .recent-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-    .recent-title  { font-size: 0.65rem; color: #444; text-transform: uppercase; letter-spacing: 1px; }
-    .view-toggle   { display: flex; gap: 4px; }
-    .view-btn {
-      background: none; border: 1px solid #2a3a4a; border-radius: 4px;
-      color: #445; font-size: 0.7rem; padding: 2px 8px; cursor: pointer;
-    }
-    .view-btn.active { border-color: #7ec8e3; color: #7ec8e3; background: #0d1a2a; }
-    .view-btn:hover  { border-color: #7ec8e3; color: #7ec8e3; }
-
-    /* Grid view */
+    /* ── Recent log ── */
     .recent-grid { display: flex; gap: 6px; flex-wrap: wrap; }
     .recent-item {
       display: flex; flex-direction: column; align-items: center; gap: 2px;
-      background: #0d1520; border: 1px solid #1e2a3a; border-radius: 6px;
-      padding: 5px 7px; min-width: 64px;
+      background: var(--bs-secondary-bg); border: 1px solid var(--bs-border-color);
+      border-radius: 6px; padding: 5px 7px; min-width: 64px;
     }
-    .recent-item img    { width: 52px; height: 38px; object-fit: contain; background: #fff; border-radius: 3px; }
+    .recent-item img    { width: 52px; height: 38px; object-fit: contain; background: #dde2ea; border-radius: 3px; }
     .recent-item .r-row { display: flex; gap: 5px; align-items: baseline; }
-    .recent-item .r-lbl { font-size: 1.05rem; font-weight: bold; color: #7ec8e3; }
-    .recent-item .r-ocr { font-size: 0.7rem; color: #4caf50; }
-    .recent-item .r-conf { font-size: 0.58rem; color: #445; }
-    .recent-item .r-fld { font-size: 0.55rem; color: #344; text-align: center; max-width: 64px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .recent-item .r-lbl { font-size: 1.05rem; font-weight: bold; color: var(--lab-accent); }
+    .recent-item .r-ocr { font-size: .7rem; color: #4caf50; }
+    .recent-item .r-conf{ font-size: .58rem; color: var(--lab-muted); }
+    .recent-item .r-fld { font-size: .55rem; color: var(--lab-muted); text-align: center; max-width: 64px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 
-    /* List view */
-    .recent-list { display: flex; flex-direction: column; gap: 3px; max-height: 340px; overflow-y: auto; }
+    .recent-list { display: flex; flex-direction: column; gap: 3px; max-height: 420px; overflow-y: auto; }
     .recent-list::-webkit-scrollbar { width: 4px; }
-    .recent-list::-webkit-scrollbar-thumb { background: #2a3a4a; border-radius: 2px; }
+    .recent-list::-webkit-scrollbar-thumb { background: var(--bs-border-color); border-radius: 2px; }
     .recent-row {
-      display: flex; align-items: center; gap: 10px;
-      background: #0d1520; border: 1px solid #1a2530; border-radius: 5px;
-      padding: 4px 10px;
+      display: flex; align-items: center; gap: 8px;
+      background: var(--bs-secondary-bg); border: 1px solid var(--bs-border-color);
+      border-radius: 5px; padding: 4px 8px;
     }
-    .recent-row img    { width: 40px; height: 30px; object-fit: contain; background: #fff; border-radius: 3px; flex-shrink: 0; }
-    .recent-row .r-lbl { font-size: 1.1rem; font-weight: bold; color: #7ec8e3; min-width: 20px; }
-    .recent-row .r-ocr { font-size: 0.72rem; color: #4caf50; }
-    .recent-row .r-fld { font-size: 0.7rem; color: #445; flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-    .recent-row .r-conf{ font-size: 0.65rem; color: #334; min-width: 36px; text-align: right; }
+    .recent-row img    { width: 40px; height: 30px; object-fit: contain; background: #dde2ea; border-radius: 3px; flex-shrink: 0; }
+    .recent-row .r-lbl { font-size: 1.1rem; font-weight: bold; color: var(--lab-accent); min-width: 18px; }
+    .recent-row .r-ocr { font-size: .72rem; color: #4caf50; }
+    .recent-row .r-fld { font-size: .7rem; color: var(--lab-muted); flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .recent-row .r-conf{ font-size: .65rem; color: var(--lab-muted); min-width: 32px; text-align: right; }
 
-    /* Done */
+    /* ── Info card ── */
+    .info-acta { font-size: .62rem; color: var(--lab-muted); word-break: break-all; }
+    .info-row {
+      display: flex; justify-content: space-between; align-items: baseline;
+      padding: 3px 0; border-bottom: 1px solid var(--bs-border-color); font-size: .72rem;
+    }
+    .info-row:last-child { border-bottom: none; }
+    .info-row .lbl { color: var(--lab-muted); text-transform: uppercase; font-size: .62rem; }
+    .info-row .val { font-weight: bold; }
+    .info-row .val.lugar { color: var(--lab-accent); }
+
+    /* ── Animations ── */
+    #img-digit, #img-full { transition: opacity .15s ease; }
+    .img-fade { opacity: 0 !important; }
+    @keyframes slideIn { from { opacity:0; transform:translateY(-8px); } to { opacity:1; transform:translateY(0); } }
+    .log-new { animation: slideIn .2s ease forwards; }
+
+    /* ── Done ── */
     .done-box { text-align: center; margin-top: 80px; }
-    .done-box h2 { color: #4caf50; font-size: 1.4rem; margin-bottom: 8px; }
+    .done-box h2 { color: #4caf50; }
   </style>
 </head>
-<body>
+<body class="font-monospace">
+
+<script>
+  window.toggleTheme = function() {
+    var html = document.documentElement;
+    var next = html.getAttribute('data-bs-theme') === 'dark' ? 'light' : 'dark';
+    html.setAttribute('data-bs-theme', next);
+    localStorage.setItem('lab-theme', next);
+    var ic = document.getElementById('theme-icon');
+    if (ic) ic.textContent = next === 'dark' ? '☀' : '🌙';
+  };
+  // Init icon to match current theme
+  (function(){
+    var t = document.documentElement.getAttribute('data-bs-theme');
+    document.addEventListener('DOMContentLoaded', function() {
+      var ic = document.getElementById('theme-icon');
+      if (ic) ic.textContent = t === 'dark' ? '☀' : '🌙';
+    });
+  })();
+</script>
 
 {% if user_email %}
-<div style="
-  width: 100%;
-  max-width: 960px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 6px 0;
-  margin-bottom: 2px;
-">
-  <span style="font-size: 0.68rem; color: #445;">
-    Signed in as <span style="color: #7ec8e3;">{{ user_email }}</span>
-  </span>
-  <div style="display:flex; gap:8px; align-items:center;">
-    <button onclick="openWa()" style="
-      background:none; border:1px solid #1a4a1a; border-radius:4px;
-      color:#66bb6a; font-family:monospace; font-size:0.65rem;
-      padding:3px 10px; cursor:pointer;"
-      onmouseover="this.style.borderColor='#66bb6a';"
-      onmouseout="this.style.borderColor='#1a4a1a';">
-      💬 Feedback
-    </button>
-    <form action="/auth/logout" method="post" style="margin:0;">
-      <button type="submit" style="
-        background: none; border: 1px solid #2a3a4a; border-radius: 4px;
-        color: #556; font-family: monospace; font-size: 0.65rem;
-        padding: 3px 10px; cursor: pointer;"
-        onmouseover="this.style.borderColor='#ef5350'; this.style.color='#ef5350';"
-        onmouseout="this.style.borderColor='#2a3a4a'; this.style.color='#556';">
-        Sign out
+<div class="container-fluid py-1 border-bottom mb-1" style="max-width:1000px;">
+  <div class="d-flex align-items-center justify-content-between">
+    <span style="font-size:.68rem;color:var(--lab-muted);">
+      Signed in as <span style="color:var(--lab-accent);">{{ user_email }}</span>
+    </span>
+    <div class="d-flex gap-2 align-items-center">
+      <button onclick="openWa()" class="btn btn-sm btn-outline-success py-0 px-2" style="font-size:.65rem;">💬 Feedback</button>
+      <button id="theme-toggle" onclick="toggleTheme()" class="btn btn-sm btn-outline-secondary py-0 px-2" style="font-size:.8rem;line-height:1.6;" title="Toggle dark/light mode">
+        <span id="theme-icon">☀</span>
       </button>
-    </form>
+      <form action="/auth/logout" method="post" style="margin:0;">
+        <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-2" style="font-size:.65rem;">Sign out</button>
+      </form>
+    </div>
   </div>
 </div>
 {% endif %}
 
 {% if done %}
-  <div class="done-box">
-    <h2>All done!</h2>
-    <p>{{ labeled }} items labeled. The queue is exhausted.</p>
-  </div>
+<div class="done-box">
+  <h2>All done!</h2>
+  <p>{{ labeled }} items labeled. The queue is exhausted.</p>
+</div>
 
 {% else %}
 
-  <!-- Progress bar -->
-  {% set pct = ((labeled / total) * 100) | round(1) if total > 0 else 0 %}
-  <div class="progress-wrap" id="prog-wrap">
-    <button class="prog-toggle" onclick="toggleProg()" id="prog-btn">&#9643; thick</button>
+<!-- Progress bar -->
+{% set pct = ((labeled / total) * 100) | round(1) if total > 0 else 0 %}
+<div class="container-fluid mb-1" style="max-width:1000px;" id="prog-wrap">
+  <button class="prog-toggle" onclick="toggleProg()" id="prog-btn">&#9643; thick</button>
 
-    <!-- Thin bar (default) -->
-    <div id="prog-thin">
-      <div class="progress-bg"><div class="progress-fill" id="prog-fill-thin" style="width:{{ pct }}%"></div></div>
-      <div class="progress-meta">
-        <span id="prog-global-thin">{{ labeled }} global</span>
-        <span id="prog-pct-thin">{{ pct }}%</span>
-        <span id="prog-my-thin">mine: {{ my_labeled }}</span>
-      </div>
+  <div id="prog-thin">
+    <div class="progress" style="height:10px;background:var(--bs-secondary-bg);">
+      <div class="progress-bar prog-fill-custom" id="prog-fill-thin" style="width:{{ pct }}%;"></div>
     </div>
-
-    <!-- Thick bar (hidden by default) -->
-    <div id="prog-thick" style="display:none;">
-      <div class="progress-bg thick">
-        <div class="progress-fill thick" id="prog-fill-thick" style="width:{{ pct }}%">
-          <span class="pct-inside" id="prog-pct-thick">{{ pct }}%</span>
-        </div>
-      </div>
-      <div class="progress-meta thick">
-        <span id="prog-global-thick">{{ labeled }} global</span>
-        <span class="pct-big" id="prog-pct-thick2">{{ pct }}%</span>
-        <span id="prog-my-thick">mine: {{ my_labeled }}</span>
-      </div>
+    <div class="d-flex justify-content-between mt-1" style="font-size:.7rem;color:var(--lab-muted);">
+      <span id="prog-global-thin">{{ labeled }} global</span>
+      <span id="prog-pct-thin">{{ pct }}%</span>
+      <span id="prog-my-thin">mine: {{ my_labeled }}</span>
     </div>
   </div>
 
-  <!-- Mesa info bar -->
-  <div class="mesa-bar">
-    <span class="field-badge">{{ field_name }}{% if digit_index != -1 %} [{{ digit_index }}]{% endif %}</span>
-    <span><span class="lbl">Dpto </span><span class="val">{{ mesa.departamento }}</span></span>
-    <span><span class="lbl">Mpio </span><span class="val">{{ mesa.municipio }}</span></span>
-    <span><span class="lbl">Zona </span><span class="val">{{ mesa.zona }}</span></span>
-    <span><span class="lbl">Puesto </span><span class="val">{{ mesa.puesto }}</span></span>
-    <span><span class="lbl">Mesa </span><span class="val">{{ mesa.mesa }}</span></span>
-    {% if mesa.lugar %}<span><span class="lbl">Lugar </span><span class="val lugar">{{ mesa.lugar }}</span></span>{% endif %}
-    <span style="margin-left:auto;"><span class="lbl">Acta </span><span style="color:#666; font-size:0.68rem;">{{ pdf_filename }}</span></span>
-  </div>
-
-  <!-- Image panels — full width -->
-  <div style="width:100%; max-width:960px;">
-  <div class="panels">
-    <div class="panel">
-      <div class="panel-img-wrap"><img id="img-digit" src="/image/{{ crop_id }}" alt="digit crop" onerror="onStaticImgError('{{ crop_id }}','digit')"></div>
-      <div class="panel-lbl" id="lbl-type">{% if is_fallback %}Full cell (no segments){% else %}Digit crop{% endif %}</div>
-      <div id="lbl-field" style="margin-top:6px; font-size:0.85rem; color:#7ec8e3; font-weight:bold;">
-        {{ field_name }}{% if digit_index != -1 %} &nbsp;<span style="color:#555;">[{{ digit_index }}]</span>{% endif %}
+  <div id="prog-thick" style="display:none;">
+    <div class="progress" style="height:28px;background:var(--bs-secondary-bg);border-radius:8px;">
+      <div class="progress-bar prog-fill-custom d-flex align-items-center justify-content-end pe-2"
+           id="prog-fill-thick" style="width:{{ pct }}%;min-width:32px;border-radius:8px;">
+        <span style="font-size:.78rem;font-weight:bold;color:#fff;white-space:nowrap;" id="prog-pct-thick">{{ pct }}%</span>
       </div>
-      <div id="conc-wrap" style="margin-top:10px; border-top:1px solid #1e2a3a; padding-top:8px; {% if not concordancias %}display:none;{% endif %}">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
-          <span style="font-size:0.62rem; color:#445; text-transform:uppercase; letter-spacing:1px;">Concordancias — mismo E-14</span>
-          <button onclick="toggleConc()" id="conc-btn" style="background:none; border:1px solid #2a3a4a; border-radius:3px; color:#556; font-size:0.62rem; padding:1px 6px; cursor:pointer;">ocultar</button>
+    </div>
+    <div class="d-flex justify-content-between mt-1" style="font-size:.75rem;color:var(--lab-muted);font-weight:bold;">
+      <span id="prog-global-thick">{{ labeled }} global</span>
+      <span style="font-size:1.1rem;color:#66bb6a;font-weight:bold;" id="prog-pct-thick2">{{ pct }}%</span>
+      <span id="prog-my-thick">mine: {{ my_labeled }}</span>
+    </div>
+  </div>
+</div>
+
+<!-- Mesa bar -->
+<div class="container-fluid d-flex flex-wrap gap-2 align-items-center py-2 px-3 rounded-2 border mb-2"
+     style="max-width:1000px;font-size:.72rem;background:var(--bs-secondary-bg);">
+  <span class="field-badge">{{ field_name }}{% if digit_index != -1 %} [{{ digit_index }}]{% endif %}</span>
+  <span><span style="color:var(--lab-muted);font-size:.65rem;text-transform:uppercase;">Dpto </span><strong>{{ mesa.departamento }}</strong></span>
+  <span><span style="color:var(--lab-muted);font-size:.65rem;text-transform:uppercase;">Mpio </span><strong>{{ mesa.municipio }}</strong></span>
+  <span><span style="color:var(--lab-muted);font-size:.65rem;text-transform:uppercase;">Zona </span><strong>{{ mesa.zona }}</strong></span>
+  <span><span style="color:var(--lab-muted);font-size:.65rem;text-transform:uppercase;">Puesto </span><strong>{{ mesa.puesto }}</strong></span>
+  <span><span style="color:var(--lab-muted);font-size:.65rem;text-transform:uppercase;">Mesa </span><strong>{{ mesa.mesa }}</strong></span>
+  {% if mesa.lugar %}<span style="color:var(--lab-accent);"><strong>{{ mesa.lugar }}</strong></span>{% endif %}
+  <span class="ms-auto" style="font-size:.66rem;color:var(--lab-muted);">{{ pdf_filename }}</span>
+</div>
+
+<!-- 3-column labeling grid -->
+<div class="container-fluid px-0" style="max-width:1000px;">
+<div class="row g-2 lab-row">
+
+  <!-- ── COL 1: Recent history ── -->
+  <aside class="col-lg-4 col-12 order-3 order-lg-1 col-recent">
+    <div class="card">
+      <div class="card-body p-2">
+        <div class="d-flex align-items-center justify-content-between mb-2">
+          <span class="recent-title" style="font-size:.65rem;color:var(--lab-muted);text-transform:uppercase;letter-spacing:1px;">Last labeled ({{ recent|length }})</span>
+          <div class="d-flex gap-1">
+            <button class="btn btn-sm btn-secondary py-0 px-2" id="btn-list" onclick="setView('list')" style="font-size:.7rem;">&#9776; Lista</button>
+            <button class="btn btn-sm btn-outline-secondary py-0 px-2" id="btn-grid" onclick="setView('grid')" style="font-size:.7rem;">&#9633; Grid</button>
+          </div>
         </div>
-        <div id="conc-imgs" style="display:flex; gap:5px; flex-wrap:wrap; justify-content:center;">
-          {% for cid in concordancias %}
-          <img src="/image/{{ cid }}" style="width:44px; height:36px; object-fit:contain; background:#fff; border-radius:3px; border:1px solid #2a3a4a;">
+        <div id="view-grid" class="recent-grid">
+          {% for r in recent %}
+          <div class="recent-item">
+            <img src="/image/{{ r.crop_id }}" alt="{{ r.label }}">
+            <div class="r-row"><span class="r-lbl">{{ r.label }}</span>{% if r.ocr and r.ocr == r.label %}<span class="r-ocr">✓</span>{% endif %}</div>
+            {% if r.conf > 0 %}<span class="r-conf">{{ r.conf }}%</span>{% endif %}
+            <span class="r-fld">{{ r.field }}</span>
+          </div>
+          {% endfor %}
+        </div>
+        <div id="view-list" class="recent-list" style="display:none;">
+          {% for r in recent %}
+          <div class="recent-row">
+            <img src="/image/{{ r.crop_id }}" alt="{{ r.label }}">
+            <span class="r-lbl">{{ r.label }}</span>
+            {% if r.ocr and r.ocr == r.label %}<span class="r-ocr">✓</span>{% endif %}
+            <span class="r-fld">{{ r.field }}</span>
+            {% if r.conf > 0 %}<span class="r-conf">{{ r.conf }}%</span>{% endif %}
+          </div>
           {% endfor %}
         </div>
       </div>
     </div>
-    <div class="panel">
-      <div class="panel-img-wrap"><img id="img-full" src="/image/{{ full_cell_crop_id }}" alt="full cell" onerror="onStaticImgError('{{ crop_id }}','full')"></div>
-      <div class="panel-lbl">Full cell (context)</div>
-      <div id="flag-box" style="margin-top:10px; {% if not acta_flags %}display:none;{% endif %}">
-        {% for f in acta_flags %}
-        <div style="background:#2a1810; border:1px solid #5a3010; border-radius:5px; padding:7px 10px; margin-bottom:5px; text-align:left;">
-          <div style="font-size:0.62rem; color:#ffab40; font-weight:bold; text-transform:uppercase; letter-spacing:0.5px;">⚠ {{ f.type }}</div>
-          <div style="font-size:0.7rem; color:#bbb; margin-top:2px;">{{ f.description }}</div>
-          {% if f.detail %}<div style="font-size:0.66rem; color:#888; margin-top:3px; font-family:monospace;">{{ f.detail }}</div>{% endif %}
+  </aside>
+
+  <!-- ── COL 2: Center labeling area ── -->
+  <main class="col-lg-5 col-md-7 col-12 order-1 col-center gap-2">
+
+    <!-- Digit crop -->
+    <div class="card">
+      <div class="card-body p-2 text-center">
+        <div style="font-size:1rem;font-weight:600;color:var(--bs-body-color);margin-bottom:8px;">¿Qué dígito es este?</div>
+        <div class="panel-img-wrap">
+          <img id="img-digit" src="/image/{{ crop_id }}" alt="digit crop" onerror="onStaticImgError('{{ crop_id }}','digit')">
         </div>
-        {% endfor %}
+        <div class="panel-lbl" id="lbl-type">{% if is_fallback %}Full cell (no segments){% else %}Digit crop{% endif %}</div>
+        <div id="lbl-field" style="margin-top:6px;font-size:.85rem;color:var(--lab-accent);font-weight:bold;">
+          {{ field_name }}{% if digit_index != -1 %} &nbsp;<span style="color:var(--lab-muted);">[{{ digit_index }}]</span>{% endif %}
+        </div>
       </div>
-      <!-- Ver acta (PDF) — opens inline modal viewer -->
-      <button id="btn-pdf" class="btn purple"
-              onclick="openPdf('/pdf?v={{ crop_id }}')"
-              style="margin-top:10px; flex-direction:row; gap:8px; padding:9px 14px; width:100%; border:none; cursor:pointer;">
-        <span class="k">PDF</span><span class="d" style="font-size:0.72rem;">Ver acta completa</span>
-      </button>
     </div>
-  </div>
 
-  </div><!-- end image panels full-width wrapper -->
-
-  <!-- Bottom section: keyboard column + log column -->
-  <div style="display:flex; gap:16px; align-items:flex-start; width:100%; max-width:960px; border-top:1px solid #1e2a3a; padding-top:10px; margin-top:10px;">
-
-    <!-- Left column: OCR + keyboard (fixed 260px) -->
-    <div style="flex:0 0 260px; display:flex; flex-direction:column; gap:6px;">
+    <!-- Concordancias -->
+    <div id="conc-wrap" class="card" {% if not concordancias %}style="display:none;"{% endif %}>
+      <div class="card-body p-2">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <span style="font-size:.62rem;color:var(--lab-muted);text-transform:uppercase;letter-spacing:1px;">Concordancias — mismo E-14</span>
+          <button onclick="toggleConc()" id="conc-btn" class="btn btn-sm btn-outline-secondary py-0 px-2" style="font-size:.62rem;">ocultar</button>
+        </div>
+        <div id="conc-imgs" class="d-flex gap-1 flex-wrap justify-content-center">
+          {% for cid in concordancias %}
+          <img src="/image/{{ cid }}" class="conc-img">
+          {% endfor %}
+        </div>
+      </div>
+    </div>
 
     <!-- OCR hint + input -->
-    <div class="ocr-row" style="width:260px;">
-      <div class="ocr-hint">OCR: <strong id="ocr-val">{{ label_ocr }}</strong></div>
-      <span id="badge-area">{% if priority == 0 %}<span class="badge badge-review">needs review</span>{% endif %}{% if priority == 1 %}<span class="badge badge-suspicious">suspicious</span>{% endif %}</span>
-      <input id="answer" type="text" autocomplete="off" autocorrect="off" spellcheck="false"
-             value="{{ label_ocr }}"
-             maxlength="{% if is_fallback %}5{% else %}3{% endif %}"
-             data-ocr="{{ label_ocr }}"
-             data-fallback="{{ 'true' if is_fallback else 'false' }}"
-             data-crop-id="{{ crop_id }}">
-      <div id="mode-ind"></div>
-    </div>
-
-  <!-- Controls: numpad -->
-  <div class="controls-area" style="flex-direction:row;">
-    <div class="numpad">
-      <!-- Row 1: actions -->
-      <button class="btn gray nk-act-back" onclick="doBack()"><span class="k">&larr;</span><span class="d">Back</span></button>
-      <button class="btn yellow nk-act-e"  onclick="toggleEnmienda()"><span class="k">E</span><span class="d">Enmienda</span></button>
-      <button class="btn orange nk-act-fraud" onclick="markFraud()"><span class="k">F</span><span class="d">Fraude</span></button>
-      <button class="btn red nk-act-esc"   onclick="doSkip()"><span class="k">Esc</span><span class="d">Skip</span></button>
-
-      <!-- Row 2: 7 8 9 — -->
-      <button class="btn nk-7" onclick="doDigit('7')"><span class="k">7</span></button>
-      <button class="btn nk-8" onclick="doDigit('8')"><span class="k">8</span></button>
-      <button class="btn nk-9" onclick="doDigit('9')"><span class="k">9</span></button>
-      <button class="btn nk-dash" onclick="doVariant('-')" style="border-color:#4a4010;"><span class="k" style="color:#ffd740;">—</span><span class="d">Guión</span></button>
-
-      <!-- Row 3: 4 5 6 * -->
-      <button class="btn nk-4" onclick="doDigit('4')"><span class="k">4</span></button>
-      <button class="btn nk-5" onclick="doDigit('5')"><span class="k">5</span></button>
-      <button class="btn nk-6" onclick="doDigit('6')"><span class="k">6</span></button>
-      <button class="btn nk-star" onclick="doVariant('*')" style="border-color:#4a4010;" title="También: tecla +"><span class="k" style="color:#ffd740;">* <span style="font-size:0.8em;opacity:0.7">+</span></span><span class="d">Asterisco</span></button>
-
-      <!-- Row 4: 1 2 3 | Enter tall -->
-      <button class="btn nk-1" onclick="doDigit('1')"><span class="k">1</span></button>
-      <button class="btn nk-2" onclick="doDigit('2')"><span class="k">2</span></button>
-      <button class="btn nk-3" onclick="doDigit('3')"><span class="k">3</span></button>
-      <button class="btn green nk-enter" onclick="doConfirmOCR()"><span class="k">Enter</span><span class="d">Confirm OCR</span></button>
-
-      <!-- Row 5: 0(wide) • -->
-      <button class="btn nk-0" onclick="doDigit('0')"><span class="k">0</span></button>
-      <button class="btn nk-dot" onclick="doVariant('.')" style="border-color:#4a4010;"><span class="k" style="color:#ffd740;">•</span><span class="d">Punto</span></button>
-    </div>
-
-  </div><!-- end controls-area -->
-  </div><!-- end left column (OCR+keyboard) -->
-
-  <!-- Right column: Last Labeled — always rendered so the SPA can append after the first label -->
-  <div style="flex:1; min-width:0; border-left:2px solid #1e2a3a; padding-left:14px; overflow:hidden;">
-    <div class="recent-log" style="border-top:none; padding-top:0; overflow-y:auto; max-height:340px;">
-      <div class="recent-header">
-        <span class="recent-title">Last labeled ({{ recent|length }})</span>
-        <div class="view-toggle">
-          <button class="view-btn" id="btn-grid" onclick="setView('grid')">&#9633; Grid</button>
-          <button class="view-btn" id="btn-list" onclick="setView('list')">&#9776; Lista</button>
+    <div class="card">
+      <div class="card-body p-2">
+        <div class="d-flex align-items-center gap-2 flex-wrap">
+          <div class="ocr-hint">OCR: <strong id="ocr-val">{{ label_ocr }}</strong></div>
+          <span id="badge-area">
+            {% if priority == 0 %}<span class="badge badge-review">needs review</span>{% endif %}
+            {% if priority == 1 %}<span class="badge badge-suspicious">suspicious</span>{% endif %}
+          </span>
+          <input id="answer" type="text" inputmode="numeric" autocomplete="off" autocorrect="off" spellcheck="false"
+                 value="{{ label_ocr }}"
+                 maxlength="{% if is_fallback %}5{% else %}3{% endif %}"
+                 data-ocr="{{ label_ocr }}"
+                 data-fallback="{{ 'true' if is_fallback else 'false' }}"
+                 data-crop-id="{{ crop_id }}">
+          <div id="mode-ind"></div>
         </div>
       </div>
+    </div>
 
-    <!-- Grid view -->
-    <div id="view-grid" class="recent-grid" id="log-grid">
-      {% for r in recent %}
-      <div class="recent-item">
-        <img src="/image/{{ r.crop_id }}" alt="{{ r.label }}">
-        <div class="r-row">
-          <span class="r-lbl">{{ r.label }}</span>
-          {% if r.ocr and r.ocr == r.label %}<span class="r-ocr">✓</span>{% endif %}
+    <!-- Numpad -->
+    <div class="card">
+      <div class="card-body p-2">
+        <div class="numpad">
+          <button class="nk-btn nk-gray nk-act-back" onclick="doBack()"><span class="k">&larr;</span><span class="d">Back</span></button>
+          <button class="nk-btn nk-yellow nk-act-e" onclick="toggleEnmienda()"><span class="k">E</span><span class="d">Enmienda</span></button>
+          <button class="nk-btn nk-orange nk-act-fraud" onclick="markFraud()"><span class="k">F</span><span class="d">Fraude</span></button>
+          <button class="nk-btn nk-red nk-act-esc" onclick="doSkip()"><span class="k">Esc</span><span class="d">Skip</span></button>
+          <button class="nk-btn nk-7" onclick="doDigit('7')"><span class="k">7</span></button>
+          <button class="nk-btn nk-8" onclick="doDigit('8')"><span class="k">8</span></button>
+          <button class="nk-btn nk-9" onclick="doDigit('9')"><span class="k">9</span></button>
+          <button class="nk-btn nk-dash" onclick="doVariant('-')" style="border-color:#4a4010;"><span class="k" style="color:#ffd740;">—</span><span class="d">Guión</span></button>
+          <button class="nk-btn nk-4" onclick="doDigit('4')"><span class="k">4</span></button>
+          <button class="nk-btn nk-5" onclick="doDigit('5')"><span class="k">5</span></button>
+          <button class="nk-btn nk-6" onclick="doDigit('6')"><span class="k">6</span></button>
+          <button class="nk-btn nk-star" onclick="doVariant('*')" style="border-color:#4a4010;" title="También: tecla +"><span class="k" style="color:#ffd740;">* <span style="font-size:.8em;opacity:.7">+</span></span><span class="d">Asterisco</span></button>
+          <button class="nk-btn nk-1" onclick="doDigit('1')"><span class="k">1</span></button>
+          <button class="nk-btn nk-2" onclick="doDigit('2')"><span class="k">2</span></button>
+          <button class="nk-btn nk-3" onclick="doDigit('3')"><span class="k">3</span></button>
+          <button class="nk-btn nk-green nk-enter" onclick="doConfirmOCR()"><span class="k">Enter</span><span class="d">Confirm OCR</span></button>
+          <button class="nk-btn nk-0" onclick="doDigit('0')"><span class="k">0</span></button>
+          <button class="nk-btn nk-dot" onclick="doVariant('.')" style="border-color:#4a4010;"><span class="k" style="color:#ffd740;">•</span><span class="d">Punto</span></button>
         </div>
-        {% if r.conf > 0 %}<span class="r-conf">{{ r.conf }}%</span>{% endif %}
-        <span class="r-fld">{{ r.field }}</span>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ── COL 3: Info / context ── -->
+  <aside class="col-lg-3 col-md-5 col-12 order-2 col-info gap-2">
+
+    <!-- Field header -->
+    <div class="card text-center py-2 px-3">
+      <div style="font-size:.72rem;color:var(--lab-accent);text-transform:uppercase;letter-spacing:2px;margin-bottom:3px;opacity:.75;">Analizando</div>
+      <div style="font-size:.9rem;color:var(--lab-accent);font-weight:bold;" id="col-info-field" class="d-lg-none">{{ field_name }}</div>
+    </div>
+
+    <!-- Full cell (context) -->
+    <div class="card">
+      <div class="card-body p-2 text-center">
+        <div class="panel-img-wrap">
+          <img id="img-full" src="/image/{{ full_cell_crop_id }}" alt="full cell" onerror="onStaticImgError('{{ crop_id }}','full')">
+        </div>
+        <div class="panel-lbl">Full cell (context)</div>
+      </div>
+    </div>
+
+    <!-- Fraud flags -->
+    <div id="flag-box" {% if not acta_flags %}style="display:none;"{% endif %}>
+      {% for f in acta_flags %}
+      <div class="flag-item">
+        <div class="flag-type">⚠ {{ f.type }}</div>
+        <div class="flag-desc">{{ f.description }}</div>
+        {% if f.detail %}<div class="flag-detail font-monospace">{{ f.detail }}</div>{% endif %}
       </div>
       {% endfor %}
     </div>
 
-    <!-- List view -->
-    <div id="view-list" class="recent-list" style="display:none;">
-      {% for r in recent %}
-      <div class="recent-row">
-        <img src="/image/{{ r.crop_id }}" alt="{{ r.label }}">
-        <span class="r-lbl">{{ r.label }}</span>
-        {% if r.ocr and r.ocr == r.label %}<span class="r-ocr">✓</span>{% endif %}
-        <span class="r-fld">{{ r.field }}</span>
-        {% if r.conf > 0 %}<span class="r-conf">{{ r.conf }}%</span>{% endif %}
-      </div>
-      {% endfor %}
-    </div>
-    </div><!-- end recent-log -->
-  </div><!-- end right log column -->
+    <!-- PDF button -->
+    <button id="btn-pdf" class="btn btn-outline-secondary w-100 d-flex align-items-center justify-content-center gap-2"
+            onclick="openPdf('/pdf?v={{ crop_id }}')"
+            style="font-family:monospace;padding:10px 14px;">
+      <strong style="color:var(--lab-accent);">PDF</strong>
+      <span style="font-size:.72rem;">Ver acta completa</span>
+    </button>
 
-  </div><!-- end bottom section -->
+    <!-- Mesa metadata -->
+    <div class="card">
+      <div class="card-body p-2">
+        <div class="info-acta mb-2 pb-2 border-bottom" id="info-acta">{{ pdf_filename }}</div>
+        <div class="info-row"><span class="lbl">Mesa</span><span class="val" id="info-mesa">{{ mesa.mesa }}</span></div>
+        <div class="info-row"><span class="lbl">Puesto</span><span class="val" id="info-puesto">{{ mesa.puesto }}</span></div>
+        <div class="info-row"><span class="lbl">Zona</span><span class="val" id="info-zona">{{ mesa.zona }}</span></div>
+        <div class="info-row"><span class="lbl">Municipio</span><span class="val" id="info-mpio">{{ mesa.municipio }}</span></div>
+        <div class="info-row"><span class="lbl">Departamento</span><span class="val" id="info-dept">{{ mesa.departamento }}</span></div>
+        {% if mesa.lugar %}<div class="info-row"><span class="lbl">Lugar</span><span class="val lugar" id="info-lugar">{{ mesa.lugar }}</span></div>{% endif %}
+      </div>
+    </div>
+
+  </aside>
+
+</div><!-- end lab-row -->
+</div><!-- end container-fluid -->
 
   <script>
-  // Auto-skip when both images on the initial (server-rendered) page fail to load.
   var _staticBroken = 0;
   function onStaticImgError(cropId, which) {
     if (window.Sentry) Sentry.captureException(new Error("img-" + which + " load failed: " + cropId));
     _staticBroken++;
-    if (_staticBroken >= 2) {
-      setTimeout(function() { post("/skip", { crop_id: cropId }); }, 800);
-    }
+    if (_staticBroken >= 2) setTimeout(function() { post("/skip", { crop_id: cropId }); }, 800);
   }
 
-  // Current crop context — kept in sync with /next responses so the WhatsApp
-  // feedback modal can prepend a complete reference (mesa + field + value)
-  // to whatever message the user writes.
   window._currentCrop = {
     crop_id: {{ crop_id | tojson if not done else '""' }},
     pdf_filename: {{ pdf_filename | tojson if not done else '""' }},
@@ -511,7 +537,7 @@
 
   // Recent log view toggle
   (function () {
-    var view = localStorage.getItem("log-view") || "grid";
+    var view = localStorage.getItem("log-view") || "list";
     function applyView(v) {
       view = v;
       localStorage.setItem("log-view", v);
@@ -522,14 +548,14 @@
       if (!g) return;
       g.style.display  = v === "grid" ? "flex"  : "none";
       l.style.display  = v === "list" ? "flex"  : "none";
-      bg.className = "view-btn" + (v === "grid" ? " active" : "");
-      bl.className = "view-btn" + (v === "list" ? " active" : "");
+      bg.className = "btn btn-sm py-0 px-2 " + (v === "grid" ? "btn-secondary" : "btn-outline-secondary");
+      bl.className = "btn btn-sm py-0 px-2 " + (v === "list" ? "btn-secondary" : "btn-outline-secondary");
     }
     window.setView = applyView;
     applyView(view);
   })();
 
-  // Progress toggle — persist preference in localStorage
+  // Progress toggle
   (function () {
     var thick = localStorage.getItem("prog-thick") === "1";
     function applyProg() {
@@ -559,29 +585,19 @@
     }
 
     window.toggleEnmienda = function () { setEnmienda(!enmienda); };
-    window.doVariant = function (v) {
-      post("/label", { crop_id: inp.dataset.cropId, value: v });
-    };
+    window.doVariant = function (v) { post("/label", { crop_id: inp.dataset.cropId, value: v }); };
     window.doBack         = function () { post("/back", {}); };
     window.doSkip         = function () { post("/skip", { crop_id: inp.dataset.cropId }); };
     window.doConfirmOCR   = function () { post("/label", { crop_id: inp.dataset.cropId, value: inp.value.trim() }); };
     window.doDigit        = function (d) {
       if (inp.dataset.fallback === "true") {
-        // Replace placeholder "?" on the first digit instead of appending to it
         if (inp.value === "?" || inp.value === inp.dataset.ocr && inp.dataset.ocr === "?") inp.value = "";
         inp.value = inp.value + d; inp.focus(); return;
       }
       post("/label", { crop_id: inp.dataset.cropId, value: (enmienda ? "E" : "") + d });
     };
 
-    // ── PDF viewer — opens in a new tab.
-    // The server's /pdf?v=<id> returns a 302 redirect to the Registraduria
-    // URL (Railway egress can't proxy it). The user's browser handles the
-    // PDF (download or inline depending on browser settings). The modal
-    // markup below is kept for future use when Phase B caching lands.
-    window.openPdf = function (url) {
-      window.open(url, "_blank", "noopener");
-    };
+    window.openPdf = function (url) { window.open(url, "_blank", "noopener"); };
     window.closePdf = function () {
       var m = document.getElementById("pdf-modal");
       var frame = document.getElementById("pdf-frame");
@@ -589,7 +605,6 @@
       if (frame) frame.src = "";
     };
 
-    // ── WhatsApp feedback modal ──
     window.openWa = function () {
       var m = document.getElementById("wa-modal");
       if (!m) return;
@@ -608,35 +623,15 @@
       var c = window._currentCrop || {};
       var m = c.mesa || {};
       var fieldRef = c.field_name || "—";
-      if (c.digit_index !== -1 && c.digit_index !== undefined && c.digit_index !== null) {
-        fieldRef += " [" + c.digit_index + "]";
-      }
-      var mesaLine = [
-        m.departamento || "?",
-        m.municipio || "?",
-        "Z" + (m.zona || "?"),
-        "P" + (m.puesto || "?"),
-        "M" + (m.mesa || "?")
-      ].join(" / ");
-      var lines = [
-        "📋 Referencia (no editar):",
-        "Acta: " + (c.pdf_filename || "—"),
-        "Mesa: " + mesaLine
-      ];
-      if (m.lugar) lines.push("Lugar: " + m.lugar);
-      lines.push("Campo: " + fieldRef);
-      lines.push("Valor sugerido (CNN): " + (c.label_ocr || "—"));
-      lines.push("Crop: " + (c.crop_id || "?"));
-      lines.push("");
-      lines.push("💬 Mensaje:");
-      lines.push(msg);
-      var text = lines.join("\n");
-      var url = "https://wa.me/573233131374?text=" + encodeURIComponent(text);
-      window.open(url, "_blank");
+      if (c.digit_index !== -1 && c.digit_index !== undefined && c.digit_index !== null) fieldRef += " [" + c.digit_index + "]";
+      var mesaLine = [m.departamento||"?", m.municipio||"?", "Z"+(m.zona||"?"), "P"+(m.puesto||"?"), "M"+(m.mesa||"?")].join(" / ");
+      var lines = ["📋 Referencia (no editar):", "Acta: "+(c.pdf_filename||"—"), "Mesa: "+mesaLine];
+      if (m.lugar) lines.push("Lugar: "+m.lugar);
+      lines.push("Campo: "+fieldRef, "Valor sugerido (CNN): "+(c.label_ocr||"—"), "Crop: "+(c.crop_id||"?"), "", "💬 Mensaje:", msg);
+      window.open("https://wa.me/573233131374?text="+encodeURIComponent(lines.join("\n")), "_blank");
       closeWa();
     };
 
-    // ── Fraud modal ──
     function fraudModal() { return document.getElementById("fraud-modal"); }
     function fraudOpen()  { return fraudModal() && fraudModal().style.display === "flex"; }
 
@@ -660,25 +655,18 @@
       if (!reason) { m.querySelector("#fraud-err").textContent = "Escribí el motivo del fraude."; return; }
       var btn = m.querySelector("#fraud-submit");
       btn.disabled = true; btn.textContent = "Guardando…";
-      fetch("/mark-fraud", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ crop_id: inp.dataset.cropId, reason: reason })
-      })
+      fetch("/mark-fraud", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ crop_id: inp.dataset.cropId, reason: reason }) })
         .then(function (r) { return r.json(); })
         .then(function (d) {
           btn.disabled = false; btn.textContent = "Confirmar fraude";
           if (d.ok === false) { m.querySelector("#fraud-err").textContent = "Error: " + (d.error || "?"); return; }
           closeFraud();
         })
-        .catch(function () {
-          btn.disabled = false; btn.textContent = "Confirmar fraude";
-          m.querySelector("#fraud-err").textContent = "Error de red.";
-        });
+        .catch(function () { btn.disabled = false; btn.textContent = "Confirmar fraude"; m.querySelector("#fraud-err").textContent = "Error de red."; });
     };
 
     inp.addEventListener("keydown", function (e) {
-      if (fraudOpen()) return; // modal handles its own keys
+      if (fraudOpen()) return;
       var fb = inp.dataset.fallback === "true";
       if (e.key === "f" || e.key === "F") { e.preventDefault(); markFraud(); return; }
       if (e.key === "Escape")    { e.preventDefault(); doSkip(); return; }
@@ -687,13 +675,11 @@
       if (e.key === "Enter")     { e.preventDefault(); doConfirmOCR(); return; }
       if (!fb && /^[0-9]$/.test(e.key)) { e.preventDefault(); doDigit(e.key); return; }
       if (e.key === "+" || e.key === "*") { e.preventDefault(); doVariant("*"); return; }
-      if (e.key === ".")                 { e.preventDefault(); doVariant("."); return; }
-      if (e.key === "-")                 { e.preventDefault(); doVariant("-"); return; }
+      if (e.key === ".")                  { e.preventDefault(); doVariant("."); return; }
+      if (e.key === "-")                  { e.preventDefault(); doVariant("-"); return; }
     });
 
-    // Global fallback so Esc/arrows work even when input loses focus
     document.addEventListener("keydown", function (e) {
-      // close PDF/WA/fraud modals on Esc
       if (document.getElementById("pdf-modal").style.display === "flex") {
         if (e.key === "Escape") { e.preventDefault(); closePdf(); return; }
         return;
@@ -705,34 +691,25 @@
       if (fraudOpen()) {
         if (e.key === "Escape") { e.preventDefault(); closeFraud(); return; }
         if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); submitFraud(); return; }
-        return; // let the textarea handle everything else
+        return;
       }
-      if (document.activeElement === inp) return; // already handled above
+      if (document.activeElement === inp) return;
       if (e.key === "f" || e.key === "F") { e.preventDefault(); markFraud(); return; }
       if (e.key === "Escape")    { e.preventDefault(); doSkip(); return; }
       if (e.key === "ArrowLeft") { e.preventDefault(); doBack(); return; }
       if (e.key === "Enter")     { e.preventDefault(); inp.focus(); return; }
     });
 
-    function showLoader() {
-      var ov = document.getElementById("load-overlay");
-      if (ov) ov.style.opacity = "1";
-    }
-    function hideLoader() {
-      var ov = document.getElementById("load-overlay");
-      if (ov) ov.style.opacity = "0";
-    }
+    function showLoader() { var ov = document.getElementById("load-overlay"); if (ov) ov.style.opacity = "1"; }
+    function hideLoader() { var ov = document.getElementById("load-overlay"); if (ov) ov.style.opacity = "0"; }
 
     function updateDOM(item) {
-      // Fade out images
       var imgD = document.getElementById("img-digit");
       var imgF = document.getElementById("img-full");
       if (imgD) imgD.classList.add("img-fade");
       if (imgF) imgF.classList.add("img-fade");
 
       setTimeout(function() {
-        // Hide overlay only after both images have actually painted.
-        // Safety fallback fires after 3 s if a load event never arrives.
         var pending = (imgD ? 1 : 0) + (imgF ? 1 : 0);
         var safety = setTimeout(hideLoader, 3000);
         function onImgDone(el) {
@@ -741,7 +718,6 @@
         }
         if (!pending) { clearTimeout(safety); hideLoader(); }
 
-        // Swap images — remove img-fade happens inside onImgDone, not here
         var _dynBroken = 0;
         if (imgD) {
           imgD.onload  = function () { onImgDone(imgD); };
@@ -764,14 +740,12 @@
           imgF.src = "/image/" + item.full_cell_crop_id;
         }
 
-        // Update input
         inp.value = item.label_ocr;
         inp.dataset.ocr = item.label_ocr;
         inp.dataset.cropId = item.crop_id;
         inp.dataset.fallback = item.is_fallback ? "true" : "false";
         inp.maxLength = item.is_fallback ? 5 : 3;
 
-        // Update OCR + badge
         var ocv = document.getElementById("ocr-val");
         if (ocv) ocv.textContent = item.label_ocr;
         var badge = document.getElementById("badge-area");
@@ -783,36 +757,42 @@
             : '';
         }
 
-        // Update field name
         var lf = document.getElementById("lbl-field");
         if (lf) lf.innerHTML = item.field_name + (item.digit_index !== -1
-          ? ' &nbsp;<span style="color:#555;">[' + item.digit_index + ']</span>' : '');
+          ? ' &nbsp;<span style="color:var(--lab-muted);">[' + item.digit_index + ']</span>' : '');
         var lt = document.getElementById("lbl-type");
         if (lt) lt.textContent = item.is_fallback ? "Full cell (no segments)" : "Digit crop";
 
-        // Update PDF link
         var pdfBtn = document.getElementById("btn-pdf");
         if (pdfBtn) pdfBtn.setAttribute("onclick", "openPdf('/pdf?v=" + item.crop_id + "')");
 
-        // Keep current crop context fresh for the WhatsApp feedback modal
+        // Update right column info
+        var el;
+        el = document.getElementById("col-info-field"); if (el) el.textContent = item.field_name;
+        el = document.getElementById("info-acta");      if (el) el.textContent = item.pdf_filename;
+        if (item.mesa) {
+          el = document.getElementById("info-mesa");   if (el) el.textContent = item.mesa.mesa || "";
+          el = document.getElementById("info-puesto"); if (el) el.textContent = item.mesa.puesto || "";
+          el = document.getElementById("info-zona");   if (el) el.textContent = item.mesa.zona || "";
+          el = document.getElementById("info-mpio");   if (el) el.textContent = item.mesa.municipio || "";
+          el = document.getElementById("info-dept");   if (el) el.textContent = item.mesa.departamento || "";
+          el = document.getElementById("info-lugar");  if (el && item.mesa.lugar) el.textContent = item.mesa.lugar;
+        }
+
         window._currentCrop = {
-          crop_id: item.crop_id,
-          pdf_filename: item.pdf_filename,
-          field_name: item.field_name,
-          digit_index: item.digit_index,
-          label_ocr: item.label_ocr,
-          mesa: item.mesa || {}
+          crop_id: item.crop_id, pdf_filename: item.pdf_filename,
+          field_name: item.field_name, digit_index: item.digit_index,
+          label_ocr: item.label_ocr, mesa: item.mesa || {}
         };
 
-        // Update fraud flags
         var fb = document.getElementById("flag-box");
         if (fb) {
           if (item.acta_flags && item.acta_flags.length) {
             fb.innerHTML = item.acta_flags.map(function(f) {
-              return '<div style="background:#2a1810;border:1px solid #5a3010;border-radius:5px;padding:7px 10px;margin-bottom:5px;text-align:left;">'
-                + '<div style="font-size:0.62rem;color:#ffab40;font-weight:bold;text-transform:uppercase;letter-spacing:0.5px;">⚠ ' + f.type + '</div>'
-                + '<div style="font-size:0.7rem;color:#bbb;margin-top:2px;">' + f.description + '</div>'
-                + (f.detail ? '<div style="font-size:0.66rem;color:#888;margin-top:3px;font-family:monospace;">' + f.detail + '</div>' : '')
+              return '<div class="flag-item">'
+                + '<div class="flag-type">⚠ ' + f.type + '</div>'
+                + '<div class="flag-desc">' + f.description + '</div>'
+                + (f.detail ? '<div class="flag-detail font-monospace">' + f.detail + '</div>' : '')
                 + '</div>';
             }).join("");
             fb.style.display = "";
@@ -821,13 +801,12 @@
           }
         }
 
-        // Update concordancias
         var cw = document.getElementById("conc-wrap");
         var ci = document.getElementById("conc-imgs");
         if (cw && ci) {
           if (item.concordancias && item.concordancias.length) {
             ci.innerHTML = item.concordancias.map(function(cid) {
-              return '<img src="/image/' + cid + '" style="width:44px;height:36px;object-fit:contain;background:#fff;border-radius:3px;border:1px solid #2a3a4a;">';
+              return '<img src="/image/' + cid + '" class="conc-img">';
             }).join("");
             cw.style.display = "";
           } else {
@@ -835,31 +814,27 @@
           }
         }
 
-        // Prepend to recent log grid
         if (item.recent && item.recent.length) {
           var newest = item.recent[0];
           var grid = document.getElementById("view-grid");
           if (grid && newest) {
-            var el = document.createElement("div");
-            el.className = "recent-item log-new";
-            el.innerHTML = '<img src="/image/' + newest.crop_id + '" alt="' + newest.label + '">'
+            var newEl = document.createElement("div");
+            newEl.className = "recent-item log-new";
+            newEl.innerHTML = '<img src="/image/' + newest.crop_id + '" alt="' + newest.label + '">'
               + '<div class="r-row"><span class="r-lbl">' + newest.label + '</span>'
               + (newest.ocr === newest.label ? '<span class="r-ocr">✓</span>' : '') + '</div>'
               + (newest.conf > 0 ? '<span class="r-conf">' + newest.conf + '%</span>' : '')
               + '<span class="r-fld">' + newest.field + '</span>';
-            grid.insertBefore(el, grid.firstChild);
-            // Keep max 30 items
+            grid.insertBefore(newEl, grid.firstChild);
             while (grid.children.length > 30) grid.removeChild(grid.lastChild);
             var title = document.querySelector(".recent-title");
             if (title) title.textContent = "Last labeled (" + Math.min(item.recent.length, 30) + ")";
           }
         }
 
-        // Update progress bar
         if (item.total > 0) {
           var pct = Math.round((item.labeled / item.total) * 1000) / 10;
           var pctStr = pct + "%";
-          var el;
           el = document.getElementById("prog-fill-thin");   if (el) el.style.width = pctStr;
           el = document.getElementById("prog-fill-thick");  if (el) el.style.width = pctStr;
           el = document.getElementById("prog-pct-thin");    if (el) el.textContent = pctStr;
@@ -873,11 +848,10 @@
           }
         }
 
-        // Reset enmienda mode
         setEnmienda(false);
         inp.focus();
-        inp.select();  // select placeholder so first keystroke replaces it
-      }, 120); // wait for fade
+        inp.select();
+      }, 120);
     }
 
     function post(url, body) {
@@ -886,7 +860,6 @@
         .then(function (r) { return r.json(); })
         .then(function (d) {
           if (d.ok !== false || url === "/skip" || url === "/back") {
-            // Back always does full reload (cursor management is server-side)
             if (url === "/back") { location.href = "{{ work_url }}"; return; }
             fetch("/next")
               .then(function(r) { return r.json(); })
@@ -908,128 +881,61 @@
 
 {% endif %}
 
-<!-- Version badge (always visible — identifies the running build) -->
-<div style="
-  position:fixed; bottom:8px; left:10px; z-index:9998;
-  font-family:monospace; font-size:0.62rem; letter-spacing:0.5px;
-  color:#445; background:rgba(13,17,25,0.7); border:1px solid #1e2a3a;
-  border-radius:5px; padding:2px 7px; pointer-events:none; user-select:none;
-">v{{ app_version }}</div>
+<!-- Version badge -->
+<div style="position:fixed;bottom:8px;left:10px;z-index:9998;font-family:monospace;font-size:.62rem;letter-spacing:.5px;color:var(--lab-muted);background:var(--bs-secondary-bg);border:1px solid var(--bs-border-color);border-radius:5px;padding:2px 7px;pointer-events:none;user-select:none;">v{{ app_version }}</div>
 
 <!-- PDF viewer modal -->
-<div id="pdf-modal" style="
-  position:fixed; inset:0; z-index:10001;
-  background:rgba(8,10,16,0.88);
-  display:none; flex-direction:column; align-items:center; justify-content:center;
-">
-  <div style="
-    width:min(900px,95vw); height:min(88vh,860px);
-    display:flex; flex-direction:column;
-    background:#141a26; border:1px solid #2a3a5a; border-radius:12px;
-    box-shadow:0 12px 40px #000c; overflow:hidden;
-  ">
-    <div style="display:flex; align-items:center; justify-content:space-between;
-                padding:10px 16px; border-bottom:1px solid #1e2a3a; flex-shrink:0;">
-      <span style="font-size:0.78rem; color:#7ec8e3; font-weight:bold;">Acta E-14 — Vista completa</span>
-      <button onclick="closePdf()" style="
-        background:none; border:1px solid #2a3a4a; border-radius:6px;
-        color:#889; font-size:0.8rem; padding:4px 12px; cursor:pointer;">✕ Cerrar</button>
+<div id="pdf-modal" style="position:fixed;inset:0;z-index:10001;background:rgba(8,10,16,.88);display:none;flex-direction:column;align-items:center;justify-content:center;">
+  <div style="width:min(900px,95vw);height:min(88vh,860px);display:flex;flex-direction:column;background:var(--bs-card-bg);border:1px solid var(--bs-border-color);border-radius:12px;box-shadow:0 12px 40px #000c;overflow:hidden;">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px;border-bottom:1px solid var(--bs-border-color);flex-shrink:0;">
+      <span style="font-size:.78rem;color:var(--lab-accent);font-weight:bold;">Acta E-14 — Vista completa</span>
+      <button onclick="closePdf()" class="btn btn-sm btn-outline-secondary">✕ Cerrar</button>
     </div>
-    <div id="pdf-loader" style="flex:1; display:flex; align-items:center; justify-content:center; color:#445; font-size:0.8rem;">
-      Cargando acta…
-    </div>
-    <iframe id="pdf-frame" src="" style="flex:1; border:none; display:none;"></iframe>
+    <div id="pdf-loader" style="flex:1;display:flex;align-items:center;justify-content:center;color:var(--lab-muted);font-size:.8rem;">Cargando acta…</div>
+    <iframe id="pdf-frame" src="" style="flex:1;border:none;display:none;"></iframe>
   </div>
 </div>
 
 <!-- WhatsApp feedback modal -->
-<div id="wa-modal" style="
-  position:fixed; inset:0; z-index:10001;
-  background:rgba(8,10,16,0.8);
-  display:none; align-items:center; justify-content:center;
-">
-  <div style="
-    width:min(420px,92vw); background:#141a26; border:1px solid #1a4a1a;
-    border-radius:12px; padding:22px 24px; box-shadow:0 12px 40px #000a;
-  ">
-    <div style="font-size:1rem; font-weight:bold; color:#66bb6a; display:flex; align-items:center; gap:8px;">
-      💬 Enviar feedback
-    </div>
-    <div style="font-size:0.74rem; color:#889; margin-top:8px; line-height:1.5;">
-      Escribí tu duda, sugerencia o problema. Se va a abrir WhatsApp con el mensaje listo para enviar.
-    </div>
+<div id="wa-modal" style="position:fixed;inset:0;z-index:10001;background:rgba(8,10,16,.8);display:none;align-items:center;justify-content:center;">
+  <div style="width:min(420px,92vw);background:var(--bs-card-bg);border:1px solid #1a4a1a;border-radius:12px;padding:22px 24px;box-shadow:0 12px 40px rgba(0,0,0,.6);">
+    <div style="font-size:1rem;font-weight:bold;color:#66bb6a;display:flex;align-items:center;gap:8px;">💬 Enviar feedback</div>
+    <div style="font-size:.74rem;color:var(--lab-muted);margin-top:8px;line-height:1.5;">Escribí tu duda, sugerencia o problema. Se va a abrir WhatsApp con el mensaje listo para enviar.</div>
     <textarea id="wa-msg" rows="4" placeholder="Ej: no entiendo bien cómo marcar este dígito..."
-      style="width:100%; margin-top:12px; background:#0d1119; border:1px solid #2a3a4a; border-radius:8px;
-             color:#dce3ea; font-size:0.85rem; padding:10px; resize:vertical; box-sizing:border-box;
-             font-family:inherit;"></textarea>
-    <div id="wa-err" style="color:#ef5350; font-size:0.72rem; min-height:14px; margin-top:4px;"></div>
-    <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:10px;">
-      <button onclick="closeWa()" style="
-        background:none; border:1px solid #2a3a4a; border-radius:8px; color:#889;
-        padding:8px 16px; cursor:pointer; font-size:0.82rem;">Cancelar</button>
-      <button onclick="submitWa()" style="
-        background:linear-gradient(180deg,#0a3a0a,#061506); border:1px solid #1a5a1a; border-radius:8px;
-        color:#66bb6a; padding:8px 16px; cursor:pointer; font-size:0.82rem; font-weight:bold;">
-        Enviar por WhatsApp
-      </button>
+      style="width:100%;margin-top:12px;background:var(--bs-secondary-bg);border:1px solid var(--bs-border-color);border-radius:8px;color:var(--bs-body-color);font-size:.85rem;padding:10px;resize:vertical;box-sizing:border-box;font-family:inherit;"></textarea>
+    <div id="wa-err" style="color:#ef5350;font-size:.72rem;min-height:14px;margin-top:4px;"></div>
+    <div class="d-flex gap-2 justify-content-end mt-2">
+      <button onclick="closeWa()" class="btn btn-sm btn-outline-secondary">Cancelar</button>
+      <button onclick="submitWa()" class="btn btn-sm btn-success fw-bold">Enviar por WhatsApp</button>
     </div>
   </div>
 </div>
 
 <!-- Fraud modal -->
-<div id="fraud-modal" style="
-  position:fixed; inset:0; z-index:10000;
-  background:rgba(8,10,16,0.8);
-  display:none; align-items:center; justify-content:center;
-">
-  <div style="
-    width:min(440px, 92vw); background:#141a26; border:1px solid #5a3010;
-    border-radius:12px; padding:22px 24px; box-shadow:0 12px 40px #000a;
-  ">
-    <div style="font-size:1rem; font-weight:bold; color:#ff9100; display:flex; align-items:center; gap:8px;">
-      ⚠ Marcar acta como fraude
-    </div>
-    <div style="font-size:0.74rem; color:#889; margin-top:8px; line-height:1.5;">
-      Esto registra la mesa actual como fraude manual. Indicá el motivo (qué viste que no cuadra).
-    </div>
+<div id="fraud-modal" style="position:fixed;inset:0;z-index:10000;background:rgba(8,10,16,.8);display:none;align-items:center;justify-content:center;">
+  <div style="width:min(440px,92vw);background:var(--bs-card-bg);border:1px solid #5a3010;border-radius:12px;padding:22px 24px;box-shadow:0 12px 40px rgba(0,0,0,.6);">
+    <div style="font-size:1rem;font-weight:bold;color:#ff9100;display:flex;align-items:center;gap:8px;">⚠ Marcar acta como fraude</div>
+    <div style="font-size:.74rem;color:var(--lab-muted);margin-top:8px;line-height:1.5;">Esto registra la mesa actual como fraude manual. Indicá el motivo (qué viste que no cuadra).</div>
     <textarea id="fraud-reason" rows="4" placeholder="Ej: el total escrito fue alterado, dígitos sobrescritos en candidato 3…"
-      style="width:100%; margin-top:12px; background:#0d1119; border:1px solid #2a3a4a; border-radius:8px;
-             color:#dce3ea; font-size:0.85rem; padding:10px; resize:vertical; box-sizing:border-box;
-             font-family:inherit;"></textarea>
-    <div id="fraud-err" style="color:#ef5350; font-size:0.72rem; min-height:14px; margin-top:6px;"></div>
-    <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:10px;">
-      <button onclick="closeFraud()" style="
-        background:none; border:1px solid #2a3a4a; border-radius:8px; color:#889;
-        padding:8px 16px; cursor:pointer; font-size:0.82rem;">Cancelar</button>
-      <button id="fraud-submit" onclick="submitFraud()" style="
-        background:linear-gradient(180deg,#3a2008,#2a1505); border:1px solid #6a3000; border-radius:8px;
-        color:#ff9100; padding:8px 16px; cursor:pointer; font-size:0.82rem; font-weight:bold;">Confirmar fraude</button>
+      style="width:100%;margin-top:12px;background:var(--bs-secondary-bg);border:1px solid var(--bs-border-color);border-radius:8px;color:var(--bs-body-color);font-size:.85rem;padding:10px;resize:vertical;box-sizing:border-box;font-family:inherit;"></textarea>
+    <div id="fraud-err" style="color:#ef5350;font-size:.72rem;min-height:14px;margin-top:6px;"></div>
+    <div class="d-flex gap-2 justify-content-end mt-2">
+      <button onclick="closeFraud()" class="btn btn-sm btn-outline-secondary">Cancelar</button>
+      <button id="fraud-submit" onclick="submitFraud()" class="btn btn-sm fw-bold" style="background:#3a2008;border-color:#6a3000;color:#ff9100;">Confirmar fraude</button>
     </div>
-    <div style="font-size:0.64rem; color:#445; margin-top:10px; text-align:right;">Esc para cancelar · Ctrl+Enter para confirmar</div>
+    <div style="font-size:.64rem;color:var(--lab-muted);margin-top:10px;text-align:right;">Esc para cancelar · Ctrl+Enter para confirmar</div>
   </div>
 </div>
 
 <!-- Loading overlay -->
-<div id="load-overlay" style="
-  position:fixed; inset:0; z-index:9999;
-  background:rgba(10,14,22,0.75);
-  display:flex; align-items:center; justify-content:center;
-  opacity:0; pointer-events:none;
-  transition:opacity 0.15s ease;
-">
-  <div style="display:flex; flex-direction:column; align-items:center; gap:14px;">
-    <div style="
-      width:40px; height:40px;
-      border:3px solid #1e2a3a;
-      border-top-color:#7ec8e3;
-      border-radius:50%;
-      animation:spin 0.7s linear infinite;
-    "></div>
-    <span style="font-size:0.7rem; color:#445; letter-spacing:1px; text-transform:uppercase;">Analizando</span>
+<div id="load-overlay" style="position:fixed;inset:0;z-index:9999;background:rgba(10,14,22,.75);display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity .15s ease;">
+  <div style="display:flex;flex-direction:column;align-items:center;gap:14px;">
+    <div style="width:40px;height:40px;border:3px solid var(--bs-border-color);border-top-color:var(--lab-accent);border-radius:50%;animation:spin .7s linear infinite;"></div>
+    <span style="font-size:.7rem;color:var(--lab-muted);letter-spacing:1px;text-transform:uppercase;">Analizando</span>
   </div>
 </div>
-<style>
-@keyframes spin { to { transform: rotate(360deg); } }
-</style>
+<style>@keyframes spin { to { transform: rotate(360deg); } }</style>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" crossorigin="anonymous"></script>
 </body>
 </html>

@@ -155,9 +155,18 @@ def require_auth(view_func: Callable) -> Callable:
     """
     @functools.wraps(view_func)
     def decorated(*args: Any, **kwargs: Any) -> Any:
+        # --- Local dev bypass: set LOCAL_DEV_BYPASS=1 to skip auth on localhost ---
+        if os.environ.get("LOCAL_DEV_BYPASS", "").strip():
+            g.user_id = os.environ.get("FAKE_USER_ID", "dev-user")
+            if not session.get("user_email"):
+                session["user_email"] = os.environ.get("FAKE_USER_EMAIL", "dev@local.test")
+            return view_func(*args, **kwargs)
+
         # --- Dev bypass (ADR-4) ---
         if not os.environ.get("SUPABASE_URL", "").strip():
             g.user_id = os.environ.get("FAKE_USER_ID", "dev-user")
+            if not session.get("user_email"):
+                session["user_email"] = os.environ.get("FAKE_USER_EMAIL", "dev@local.test")
             return view_func(*args, **kwargs)
 
         # --- Normal auth path ---
