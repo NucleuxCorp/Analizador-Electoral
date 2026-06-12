@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sign In — Digit Labeler</title>
+  <title>Iniciar sesión — Validador de Votos</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -141,20 +141,20 @@
 </head>
 <body>
   <div class="card">
-    <h1>Digit Labeler</h1>
-    <div class="subtitle">E-14C Validation Portal — Sign In</div>
+    <h1>Validador de Votos</h1>
+    <div class="subtitle">Portal de Validación E-14C</div>
 
     <div id="error-msg" class="error-msg"></div>
     <div id="info-msg" class="info-msg"></div>
 
     <form id="login-form" novalidate>
       <div class="field">
-        <label for="email">Email</label>
+        <label for="email">Correo electrónico</label>
         <input type="email" id="email" name="email" autocomplete="email" autofocus required>
       </div>
 
       <div class="field">
-        <label for="password">Password</label>
+        <label for="password">Contraseña</label>
         <input type="password" id="password" name="password" autocomplete="current-password" required>
         <div style="text-align:right;margin-top:4px;">
           <a href="/auth/forgot-password" style="color:#7ec8e3;font-size:0.72rem;">¿Olvidaste tu contraseña?</a>
@@ -168,11 +168,11 @@
         <a href="https://policies.google.com/terms" target="_blank" rel="noopener" style="color:#7ec8e3;">Términos del Servicio</a> de Google.
       </div>
 
-      <button type="submit" class="btn-submit">Sign In</button>
+      <button type="submit" class="btn-submit">Iniciar sesión</button>
     </form>
 
     <div class="footer-link">
-      No account? <a href="/auth/register">Register</a>
+      ¿No tenés cuenta? <a href="/auth/register">Registrarse</a>
     </div>
   </div>
 
@@ -186,7 +186,7 @@
     // Show info message if redirected here after registration
     var params = new URLSearchParams(window.location.search);
     if (params.get("registered") === "1") {
-      infoEl.textContent = "Registration successful — check your email to confirm your account.";
+      infoEl.textContent = "Registro exitoso — revisá tu correo para confirmar tu cuenta.";
       infoEl.classList.add("visible");
     }
 
@@ -199,7 +199,7 @@
       var password = document.getElementById("password").value;
 
       if (!email || !password) {
-        errEl.textContent = "Email and password are required.";
+        errEl.textContent = "Correo y contraseña son obligatorios.";
         errEl.classList.add("visible");
         return;
       }
@@ -231,11 +231,11 @@
         })
         .then(function (data) {
           if (data === null) return;
-          errEl.textContent = data.error || "Login failed.";
+          errEl.textContent = data.error || "Inicio de sesión fallido.";
           errEl.classList.add("visible");
         })
         .catch(function () {
-          errEl.textContent = "Network error — please try again.";
+          errEl.textContent = "Error de red — intentá de nuevo.";
           errEl.classList.add("visible");
         });
       });

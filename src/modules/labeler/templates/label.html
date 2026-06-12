@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Digit Labeler{% if not done %} — {{ field_name }}{% endif %}</title>
+  <title>Validador de Votos{% if not done %} — {{ field_name }}{% endif %}</title>
 
   <script>
     (function(){
@@ -170,7 +170,7 @@
 
     /* ── Badges (OCR priority) ── */
     .badge-review     { background: #7f0000 !important; color: #ff8a80 !important; }
-    .badge-suspicious { background: #7f3d00 !important; color: #ffcc80 !important; }
+    .badge-sospechoso { background: #7f3d00 !important; color: #ffcc80 !important; }
 
     /* ── Fraud flags ── */
     .flag-item { background: #2a1810; border: 1px solid #5a3010; border-radius: 6px; padding: 7px 10px; margin-bottom: 5px; }
@@ -260,15 +260,15 @@
 <div class="container-fluid py-1 border-bottom mb-1" style="max-width:1000px;">
   <div class="d-flex align-items-center justify-content-between">
     <span style="font-size:.68rem;color:var(--lab-muted);">
-      Signed in as <span style="color:var(--lab-accent);">{{ user_email }}</span>
+      Conectado como <span style="color:var(--lab-accent);">{{ user_email }}</span>
     </span>
     <div class="d-flex gap-2 align-items-center">
       <button onclick="openWa()" class="btn btn-sm btn-outline-success py-0 px-2" style="font-size:.65rem;">💬 Feedback</button>
-      <button id="theme-toggle" onclick="toggleTheme()" class="btn btn-sm btn-outline-secondary py-0 px-2" style="font-size:.8rem;line-height:1.6;" title="Toggle dark/light mode">
+      <button id="theme-toggle" onclick="toggleTheme()" class="btn btn-sm btn-outline-secondary py-0 px-2" style="font-size:.8rem;line-height:1.6;" title="Cambiar modo oscuro/claro">
         <span id="theme-icon">☀</span>
       </button>
       <form action="/auth/logout" method="post" style="margin:0;">
-        <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-2" style="font-size:.65rem;">Sign out</button>
+        <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-2" style="font-size:.65rem;">Cerrar sesión</button>
       </form>
     </div>
   </div>
@@ -277,8 +277,8 @@
 
 {% if done %}
 <div class="done-box">
-  <h2>All done!</h2>
-  <p>{{ labeled }} items labeled. The queue is exhausted.</p>
+  <h2>¡Todo listo!</h2>
+  <p>{{ labeled }} elementos etiquetados. La cola está agotada.</p>
 </div>
 
 {% else %}
@@ -286,30 +286,30 @@
 <!-- Progress bar -->
 {% set pct = ((labeled / total) * 100) | round(1) if total > 0 else 0 %}
 <div class="container-fluid mb-1" style="max-width:1000px;" id="prog-wrap">
-  <button class="prog-toggle" onclick="toggleProg()" id="prog-btn">&#9643; thick</button>
+  <button class="prog-toggle" onclick="toggleProg()" id="prog-btn">&#9643; gruesa</button>
 
-  <div id="prog-thin">
+  <div id="prog-delgada">
     <div class="progress" style="height:10px;background:var(--bs-secondary-bg);">
-      <div class="progress-bar prog-fill-custom" id="prog-fill-thin" style="width:{{ pct }}%;"></div>
+      <div class="progress-bar prog-fill-custom" id="prog-fill-delgada" style="width:{{ pct }}%;"></div>
     </div>
     <div class="d-flex justify-content-between mt-1" style="font-size:.7rem;color:var(--lab-muted);">
-      <span id="prog-global-thin">{{ labeled }} global</span>
-      <span id="prog-pct-thin">{{ pct }}%</span>
-      <span id="prog-my-thin">mine: {{ my_labeled }}</span>
+      <span id="prog-global-delgada">{{ labeled }} global</span>
+      <span id="prog-pct-delgada">{{ pct }}%</span>
+      <span id="prog-my-delgada">míos: {{ my_labeled }}</span>
     </div>
   </div>
 
-  <div id="prog-thick" style="display:none;">
+  <div id="prog-gruesa" style="display:none;">
     <div class="progress" style="height:28px;background:var(--bs-secondary-bg);border-radius:8px;">
       <div class="progress-bar prog-fill-custom d-flex align-items-center justify-content-end pe-2"
-           id="prog-fill-thick" style="width:{{ pct }}%;min-width:32px;border-radius:8px;">
-        <span style="font-size:.78rem;font-weight:bold;color:#fff;white-space:nowrap;" id="prog-pct-thick">{{ pct }}%</span>
+           id="prog-fill-gruesa" style="width:{{ pct }}%;min-width:32px;border-radius:8px;">
+        <span style="font-size:.78rem;font-weight:bold;color:#fff;white-space:nowrap;" id="prog-pct-gruesa">{{ pct }}%</span>
       </div>
     </div>
     <div class="d-flex justify-content-between mt-1" style="font-size:.75rem;color:var(--lab-muted);font-weight:bold;">
-      <span id="prog-global-thick">{{ labeled }} global</span>
-      <span style="font-size:1.1rem;color:#66bb6a;font-weight:bold;" id="prog-pct-thick2">{{ pct }}%</span>
-      <span id="prog-my-thick">mine: {{ my_labeled }}</span>
+      <span id="prog-global-gruesa">{{ labeled }} global</span>
+      <span style="font-size:1.1rem;color:#66bb6a;font-weight:bold;" id="prog-pct-gruesa2">{{ pct }}%</span>
+      <span id="prog-my-gruesa">míos: {{ my_labeled }}</span>
     </div>
   </div>
 </div>
@@ -336,10 +336,10 @@
     <div class="card">
       <div class="card-body p-2">
         <div class="d-flex align-items-center justify-content-between mb-2">
-          <span class="recent-title" style="font-size:.65rem;color:var(--lab-muted);text-transform:uppercase;letter-spacing:1px;">Last labeled ({{ recent|length }})</span>
+          <span class="recent-title" style="font-size:.65rem;color:var(--lab-muted);text-transform:uppercase;letter-spacing:1px;">Últimos etiquetados ({{ recent|length }})</span>
           <div class="d-flex gap-1">
             <button class="btn btn-sm btn-secondary py-0 px-2" id="btn-list" onclick="setView('list')" style="font-size:.7rem;">&#9776; Lista</button>
-            <button class="btn btn-sm btn-outline-secondary py-0 px-2" id="btn-grid" onclick="setView('grid')" style="font-size:.7rem;">&#9633; Grid</button>
+            <button class="btn btn-sm btn-outline-secondary py-0 px-2" id="btn-grid" onclick="setView('grid')" style="font-size:.7rem;">&#9633; Cuadrícula</button>
           </div>
         </div>
         <div id="view-grid" class="recent-grid">
@@ -370,14 +370,14 @@
   <!-- ── COL 2: Center labeling area ── -->
   <main class="col-lg-5 col-md-7 col-12 order-1 col-center gap-2">
 
-    <!-- Digit crop -->
+    <!-- Recorte de dígito -->
     <div class="card">
       <div class="card-body p-2 text-center">
         <div style="font-size:1rem;font-weight:600;color:var(--bs-body-color);margin-bottom:8px;">¿Qué dígito es este?</div>
         <div class="panel-img-wrap">
           <img id="img-digit" src="/image/{{ crop_id }}" alt="digit crop" onerror="onStaticImgError('{{ crop_id }}','digit')">
         </div>
-        <div class="panel-lbl" id="lbl-type">{% if is_fallback %}Full cell (no segments){% else %}Digit crop{% endif %}</div>
+        <div class="panel-lbl" id="lbl-type">{% if is_fallback %}Celda completa (sin segmentos){% else %}Recorte de dígito{% endif %}</div>
         <div id="lbl-field" style="margin-top:6px;font-size:.85rem;color:var(--lab-accent);font-weight:bold;">
           {{ field_name }}{% if digit_index != -1 %} &nbsp;<span style="color:var(--lab-muted);">[{{ digit_index }}]</span>{% endif %}
         </div>
@@ -405,8 +405,8 @@
         <div class="d-flex align-items-center gap-2 flex-wrap">
           <div class="ocr-hint">OCR: <strong id="ocr-val">{{ label_ocr }}</strong></div>
           <span id="badge-area">
-            {% if priority == 0 %}<span class="badge badge-review">needs review</span>{% endif %}
-            {% if priority == 1 %}<span class="badge badge-suspicious">suspicious</span>{% endif %}
+            {% if priority == 0 %}<span class="badge badge-review">requiere revisión</span>{% endif %}
+            {% if priority == 1 %}<span class="badge badge-sospechoso">sospechoso</span>{% endif %}
           </span>
           <input id="answer" type="text" inputmode="numeric" autocomplete="off" autocorrect="off" spellcheck="false"
                  value="{{ label_ocr }}"
@@ -423,10 +423,10 @@
     <div class="card">
       <div class="card-body p-2">
         <div class="numpad">
-          <button class="nk-btn nk-gray nk-act-back" onclick="doBack()"><span class="k">&larr;</span><span class="d">Back</span></button>
+          <button class="nk-btn nk-gray nk-act-back" onclick="doAtrás()"><span class="k">&larr;</span><span class="d">Atrás</span></button>
           <button class="nk-btn nk-yellow nk-act-e" onclick="toggleEnmienda()"><span class="k">E</span><span class="d">Enmienda</span></button>
           <button class="nk-btn nk-orange nk-act-fraud" onclick="markFraud()"><span class="k">F</span><span class="d">Fraude</span></button>
-          <button class="nk-btn nk-red nk-act-esc" onclick="doSkip()"><span class="k">Esc</span><span class="d">Skip</span></button>
+          <button class="nk-btn nk-red nk-act-esc" onclick="doSaltar()"><span class="k">Esc</span><span class="d">Saltar</span></button>
           <button class="nk-btn nk-7" onclick="doDigit('7')"><span class="k">7</span></button>
           <button class="nk-btn nk-8" onclick="doDigit('8')"><span class="k">8</span></button>
           <button class="nk-btn nk-9" onclick="doDigit('9')"><span class="k">9</span></button>
@@ -438,7 +438,7 @@
           <button class="nk-btn nk-1" onclick="doDigit('1')"><span class="k">1</span></button>
           <button class="nk-btn nk-2" onclick="doDigit('2')"><span class="k">2</span></button>
           <button class="nk-btn nk-3" onclick="doDigit('3')"><span class="k">3</span></button>
-          <button class="nk-btn nk-green nk-enter" onclick="doConfirmOCR()"><span class="k">Enter</span><span class="d">Confirm OCR</span></button>
+          <button class="nk-btn nk-green nk-enter" onclick="doConfirmOCR()"><span class="k">Enter</span><span class="d">Confirmar OCR</span></button>
           <button class="nk-btn nk-0" onclick="doDigit('0')"><span class="k">0</span></button>
           <button class="nk-btn nk-dot" onclick="doVariant('.')" style="border-color:#4a4010;"><span class="k" style="color:#ffd740;">•</span><span class="d">Punto</span></button>
         </div>
@@ -456,13 +456,13 @@
       <div style="font-size:.9rem;color:var(--lab-accent);font-weight:bold;" id="col-info-field" class="d-lg-none">{{ field_name }}</div>
     </div>
 
-    <!-- Full cell (context) -->
+    <!-- Celda completa (contexto) -->
     <div class="card">
       <div class="card-body p-2 text-center">
         <div class="panel-img-wrap">
           <img id="img-full" src="/image/{{ full_cell_crop_id }}" alt="full cell" onerror="onStaticImgError('{{ crop_id }}','full')">
         </div>
-        <div class="panel-lbl">Full cell (context)</div>
+        <div class="panel-lbl">Celda completa (contexto)</div>
       </div>
     </div>
 
@@ -557,16 +557,16 @@
 
   // Progress toggle
   (function () {
-    var thick = localStorage.getItem("prog-thick") === "1";
+    var gruesa = localStorage.getItem("prog-gruesa") === "1";
     function applyProg() {
-      document.getElementById("prog-thin").style.display  = thick ? "none" : "block";
-      document.getElementById("prog-thick").style.display = thick ? "block" : "none";
-      document.getElementById("prog-btn").textContent     = thick ? "▣ thin" : "▣ thick";
+      document.getElementById("prog-delgada").style.display  = gruesa ? "none" : "block";
+      document.getElementById("prog-gruesa").style.display = gruesa ? "block" : "none";
+      document.getElementById("prog-btn").textContent     = gruesa ? "▣ delgada" : "▣ gruesa";
     }
     applyProg();
     window.toggleProg = function () {
-      thick = !thick;
-      localStorage.setItem("prog-thick", thick ? "1" : "0");
+      gruesa = !gruesa;
+      localStorage.setItem("prog-gruesa", gruesa ? "1" : "0");
       applyProg();
     };
   })();
@@ -586,8 +586,8 @@
 
     window.toggleEnmienda = function () { setEnmienda(!enmienda); };
     window.doVariant = function (v) { post("/label", { crop_id: inp.dataset.cropId, value: v }); };
-    window.doBack         = function () { post("/back", {}); };
-    window.doSkip         = function () { post("/skip", { crop_id: inp.dataset.cropId }); };
+    window.doAtrás         = function () { post("/back", {}); };
+    window.doSaltar         = function () { post("/skip", { crop_id: inp.dataset.cropId }); };
     window.doConfirmOCR   = function () { post("/label", { crop_id: inp.dataset.cropId, value: inp.value.trim() }); };
     window.doDigit        = function (d) {
       if (inp.dataset.fallback === "true") {
@@ -669,8 +669,8 @@
       if (fraudOpen()) return;
       var fb = inp.dataset.fallback === "true";
       if (e.key === "f" || e.key === "F") { e.preventDefault(); markFraud(); return; }
-      if (e.key === "Escape")    { e.preventDefault(); doSkip(); return; }
-      if (e.key === "ArrowLeft") { e.preventDefault(); doBack(); return; }
+      if (e.key === "Escape")    { e.preventDefault(); doSaltar(); return; }
+      if (e.key === "ArrowLeft") { e.preventDefault(); doAtrás(); return; }
       if (e.key === "e" || e.key === "E") { if (!fb) { e.preventDefault(); setEnmienda(true); return; } }
       if (e.key === "Enter")     { e.preventDefault(); doConfirmOCR(); return; }
       if (!fb && /^[0-9]$/.test(e.key)) { e.preventDefault(); doDigit(e.key); return; }
@@ -695,8 +695,8 @@
       }
       if (document.activeElement === inp) return;
       if (e.key === "f" || e.key === "F") { e.preventDefault(); markFraud(); return; }
-      if (e.key === "Escape")    { e.preventDefault(); doSkip(); return; }
-      if (e.key === "ArrowLeft") { e.preventDefault(); doBack(); return; }
+      if (e.key === "Escape")    { e.preventDefault(); doSaltar(); return; }
+      if (e.key === "ArrowLeft") { e.preventDefault(); doAtrás(); return; }
       if (e.key === "Enter")     { e.preventDefault(); inp.focus(); return; }
     });
 
@@ -751,9 +751,9 @@
         var badge = document.getElementById("badge-area");
         if (badge) {
           badge.innerHTML = item.priority === 0
-            ? '<span class="badge badge-review">needs review</span>'
+            ? '<span class="badge badge-review">requiere revisión</span>'
             : item.priority === 1
-            ? '<span class="badge badge-suspicious">suspicious</span>'
+            ? '<span class="badge badge-sospechoso">sospechoso</span>'
             : '';
         }
 
@@ -761,7 +761,7 @@
         if (lf) lf.innerHTML = item.field_name + (item.digit_index !== -1
           ? ' &nbsp;<span style="color:var(--lab-muted);">[' + item.digit_index + ']</span>' : '');
         var lt = document.getElementById("lbl-type");
-        if (lt) lt.textContent = item.is_fallback ? "Full cell (no segments)" : "Digit crop";
+        if (lt) lt.textContent = item.is_fallback ? "Celda completa (sin segmentos)" : "Recorte de dígito";
 
         var pdfBtn = document.getElementById("btn-pdf");
         if (pdfBtn) pdfBtn.setAttribute("onclick", "openPdf('/pdf?v=" + item.crop_id + "')");
@@ -828,23 +828,23 @@
             grid.insertBefore(newEl, grid.firstChild);
             while (grid.children.length > 30) grid.removeChild(grid.lastChild);
             var title = document.querySelector(".recent-title");
-            if (title) title.textContent = "Last labeled (" + Math.min(item.recent.length, 30) + ")";
+            if (title) title.textContent = "Últimos etiquetados (" + Math.min(item.recent.length, 30) + ")";
           }
         }
 
         if (item.total > 0) {
           var pct = Math.round((item.labeled / item.total) * 1000) / 10;
           var pctStr = pct + "%";
-          el = document.getElementById("prog-fill-thin");   if (el) el.style.width = pctStr;
-          el = document.getElementById("prog-fill-thick");  if (el) el.style.width = pctStr;
-          el = document.getElementById("prog-pct-thin");    if (el) el.textContent = pctStr;
-          el = document.getElementById("prog-pct-thick");   if (el) el.textContent = pctStr;
-          el = document.getElementById("prog-pct-thick2");  if (el) el.textContent = pctStr;
-          el = document.getElementById("prog-global-thin"); if (el) el.textContent = item.labeled + " global";
-          el = document.getElementById("prog-global-thick");if (el) el.textContent = item.labeled + " global";
+          el = document.getElementById("prog-fill-delgada");   if (el) el.style.width = pctStr;
+          el = document.getElementById("prog-fill-gruesa");  if (el) el.style.width = pctStr;
+          el = document.getElementById("prog-pct-delgada");    if (el) el.textContent = pctStr;
+          el = document.getElementById("prog-pct-gruesa");   if (el) el.textContent = pctStr;
+          el = document.getElementById("prog-pct-gruesa2");  if (el) el.textContent = pctStr;
+          el = document.getElementById("prog-global-delgada"); if (el) el.textContent = item.labeled + " global";
+          el = document.getElementById("prog-global-gruesa");if (el) el.textContent = item.labeled + " global";
           if (item.my_labeled !== undefined) {
-            el = document.getElementById("prog-my-thin");  if (el) el.textContent = "mine: " + item.my_labeled;
-            el = document.getElementById("prog-my-thick"); if (el) el.textContent = "mine: " + item.my_labeled;
+            el = document.getElementById("prog-my-delgada");  if (el) el.textContent = "míos: " + item.my_labeled;
+            el = document.getElementById("prog-my-gruesa"); if (el) el.textContent = "míos: " + item.my_labeled;
           }
         }
 
