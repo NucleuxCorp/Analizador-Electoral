@@ -62,10 +62,13 @@
     [data-bs-theme="light"] .field-badge { background: #dbeafe; }
 
     /* ── 3-col layout: Bootstrap row/col 4-5-3 ── */
-    .lab-row { min-height: 380px; }
-    .col-recent { display:flex; flex-direction:column; }
-    .col-center { display:flex; flex-direction:column; }
-    .col-info   { display:flex; flex-direction:column; }
+    .lab-row {
+      min-height: 380px;
+      height: calc(100vh - 160px);
+    }
+    .col-recent { display:flex; flex-direction:column; overflow:hidden; }
+    .col-center { display:flex; flex-direction:column; overflow-y:auto; min-height:0; }
+    .col-info   { display:flex; flex-direction:column; overflow-y:auto; min-height:0; }
     .col-recent .card { flex:1; min-height:0; }
     .col-recent .card-body { display:flex; flex-direction:column; flex:1; min-height:0; }
     .col-recent .recent-grid { flex: 1; min-height: 0; }
@@ -187,13 +190,13 @@
     .conc-img { width: 44px; height: 36px; object-fit: contain; background: #dde2ea; border-radius: 3px; border: 1px solid var(--bs-border-color); }
 
     /* ── Recent log ── */
-    .recent-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+    .recent-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; }
     .recent-item {
       display: flex; flex-direction: column; align-items: center; gap: 2px;
       background: var(--bs-secondary-bg); border: 1px solid var(--bs-border-color);
-      border-radius: 6px; padding: 5px 4px; min-width: 0; overflow: hidden;
+      border-radius: 6px; padding: 5px 3px; min-width: 0;
     }
-    .recent-item img { width: 100%; height: auto; max-width: 52px; aspect-ratio: 52/38; object-fit: contain; background: #dde2ea; border-radius: 3px; }
+    .recent-item img { width: 44px; height: 32px; object-fit: contain; background: #dde2ea; border-radius: 3px; flex-shrink: 0; }
     .recent-item .r-fld { font-size: .55rem; color: var(--lab-muted); text-align: center; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
     .recent-item .r-row { display: flex; gap: 5px; align-items: baseline; }
     .recent-item .r-lbl { font-size: 1.05rem; font-weight: bold; color: var(--lab-accent); }
