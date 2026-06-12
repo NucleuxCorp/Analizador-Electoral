@@ -69,7 +69,7 @@
     .col-recent .card { flex:1; min-height:0; }
     .col-recent .card-body { display:flex; flex-direction:column; flex:1; min-height:0; }
     .col-recent .recent-grid { flex: 1; min-height: 0; }
-    .col-recent .recent-list { flex: 1; min-height: 0; overflow-y: auto; }
+    .col-recent .recent-list { flex: 1; min-height: 0; }
 
     @media (max-width: 650px) {
       /* Mobile numpad: hide digit keys (system keyboard handles them) */
@@ -200,9 +200,21 @@
     .recent-item .r-ocr { font-size: .7rem; color: #4caf50; }
     .recent-item .r-conf{ font-size: .58rem; color: var(--lab-muted); }
 
-    .recent-list { display: flex; flex-direction: column; gap: 3px; overflow-y: auto; min-height: 60px; }
-    .recent-list::-webkit-scrollbar { width: 4px; }
-    .recent-list::-webkit-scrollbar-thumb { background: var(--bs-border-color); border-radius: 2px; }
+    .recent-list { display: flex; flex-direction: column; gap: 3px; min-height: 60px; }
+    .list-pagination {
+      display: flex; align-items: center; justify-content: center; gap: 10px;
+      padding: 6px 0 2px; margin-top: auto;
+      border-top: 1px solid var(--bs-border-color);
+      font-size: .7rem; color: var(--lab-muted);
+    }
+    .lp-btn {
+      background: none; border: 1px solid var(--bs-border-color);
+      border-radius: 4px; color: var(--lab-accent); cursor: pointer;
+      padding: 2px 10px; font-size: .8rem; font-family: monospace;
+    }
+    .lp-btn:hover { border-color: var(--lab-accent); }
+    .lp-btn:disabled { opacity: .35; cursor: default; }
+    .lp-info { min-width: 40px; text-align: center; }
     .recent-row {
       display: flex; align-items: center; gap: 8px;
       background: var(--bs-secondary-bg); border: 1px solid var(--bs-border-color);
@@ -354,6 +366,7 @@
           {% endfor %}
         </div>
         <div id="view-list" class="recent-list" style="display:none;">
+          <div id="list-items">
           {% for r in recent %}
           <div class="recent-row">
             <img src="/image/{{ r.crop_id }}" alt="{{ r.label }}">
@@ -363,6 +376,12 @@
             {% if r.conf > 0 %}<span class="r-conf">{{ r.conf }}%</span>{% endif %}
           </div>
           {% endfor %}
+          </div>
+          <div class="list-pagination" id="list-pagination">
+            <button class="lp-btn" id="lp-prev" onclick="lpPage(-1)">‹ Anterior</button>
+            <span class="lp-info" id="lp-info">1/1</span>
+            <button class="lp-btn" id="lp-next" onclick="lpPage(1)">Siguiente ›</button>
+          </div>
         </div>
       </div>
     </div>
@@ -554,6 +573,43 @@
     }
     window.setView = applyView;
     applyView(view);
+  })();
+
+  // List pagination
+  (function () {
+    var _page = 0;
+    var _pageSize = 16;
+
+    function lpRender() {
+      var items = document.querySelectorAll('#list-items .recent-row');
+      var total = items.length;
+      var pages = Math.max(1, Math.ceil(total / _pageSize));
+      if (_page >= pages) _page = pages - 1;
+      var start = _page * _pageSize;
+      var end   = Math.min(start + _pageSize, total);
+      for (var i = 0; i < total; i++) {
+        items[i].style.display = (i >= start && i < end) ? '' : 'none';
+      }
+      var info = document.getElementById('lp-info');
+      if (info) info.textContent = (_page + 1) + '/' + pages;
+      var prev = document.getElementById('lp-prev');
+      var next = document.getElementById('lp-next');
+      if (prev) prev.disabled = _page === 0;
+      if (next) next.disabled = _page >= pages - 1;
+    }
+
+    window.lpPage = function (delta) {
+      var items = document.querySelectorAll('#list-items .recent-row');
+      var pages = Math.max(1, Math.ceil(items.length / _pageSize));
+      _page = Math.max(0, Math.min(_page + delta, pages - 1));
+      lpRender();
+    };
+
+    // Expose to updateDOM
+    window.lpRefresh = lpRender;
+
+    // Initial render
+    lpRender();
   })();
 
   // Progress toggle
@@ -849,8 +905,8 @@
           }
 
           // ── List ──
-          var list = document.getElementById("view-list");
-          if (list && newest) {
+          var listItems = document.getElementById("list-items");
+          if (listItems && newest) {
             var lel = document.createElement("div");
             lel.className = "recent-row log-new";
             lel.innerHTML = '<img src="/image/' + newest.crop_id + '" alt="' + newest.label + '">'
@@ -858,8 +914,9 @@
               + (newest.ocr === newest.label ? '<span class="r-ocr">✓</span>' : '')
               + '<span class="r-fld">' + newest.field + '</span>'
               + (newest.conf > 0 ? '<span class="r-conf">' + newest.conf + '%</span>' : '');
-            list.insertBefore(lel, list.firstChild);
-            while (list.children.length > 30) list.removeChild(list.lastChild);
+            listItems.insertBefore(lel, listItems.firstChild);
+            while (listItems.children.length > 30) listItems.removeChild(listItems.lastChild);
+            if (window.lpRefresh) setTimeout(function () { window.lpRefresh(); }, 20);
           }
         }
 
