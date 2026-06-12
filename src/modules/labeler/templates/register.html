@@ -1,9 +1,9 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Crear cuenta â€” VerificaciÃ³n E-14</title>
+  <title>Crear cuenta — Verificación E-14</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -137,7 +137,7 @@
 <body>
   <div class="card">
     <h1>Crear cuenta</h1>
-    <div class="subtitle">VerificaciÃ³n Ciudadana de Actas E-14</div>
+    <div class="subtitle">Verificación Ciudadana de Actas E-14</div>
 
     <div id="error-msg" class="error-msg"></div>
     <div id="success-msg" class="success-msg"></div>
@@ -149,33 +149,33 @@
       </div>
 
       <div class="field">
-        <label for="phone">TelÃ©fono <span style="text-transform:none; color:#445;">(opcional)</span></label>
+        <label for="phone">Teléfono <span style="text-transform:none; color:#445;">(opcional)</span></label>
         <input type="tel" id="phone" name="phone" autocomplete="tel" inputmode="tel" placeholder="+57 300 000 0000">
       </div>
 
       <div class="field">
-        <label for="email">Correo electrÃ³nico</label>
+        <label for="email">Correo electrónico</label>
         <input type="email" id="email" name="email" autocomplete="email" required>
       </div>
 
       <div class="field">
-        <label for="password">ContraseÃ±a</label>
+        <label for="password">Contraseña</label>
         <input type="password" id="password" name="password" autocomplete="new-password" required minlength="8">
-        <span class="hint">MÃ­nimo 8 caracteres.</span>
+        <span class="hint">Mínimo 8 caracteres.</span>
       </div>
 
       <!-- reCAPTCHA Enterprise (invisible score-based) -->
       <div style="font-size:0.62rem;color:#445;margin-bottom:12px;line-height:1.4;">
-        Este sitio estÃ¡ protegido por reCAPTCHA Enterprise y se aplican la
-        <a href="https://policies.google.com/privacy" target="_blank" rel="noopener" style="color:#7ec8e3;">PolÃ­tica de Privacidad</a> y los
-        <a href="https://policies.google.com/terms" target="_blank" rel="noopener" style="color:#7ec8e3;">TÃ©rminos del Servicio</a> de Google.
+        Este sitio est\u00e1 protegido por reCAPTCHA Enterprise y se aplican la
+        <a href="https://policies.google.com/privacy" target="_blank" rel="noopener" style="color:#7ec8e3;">Pol\u00edtica de Privacidad</a> y los
+        <a href="https://policies.google.com/terms" target="_blank" rel="noopener" style="color:#7ec8e3;">T\u00e9rminos del Servicio</a> de Google.
       </div>
 
       <button type="submit" class="btn-submit" id="submit-btn">Crear cuenta</button>
     </form>
 
     <div class="footer-link">
-      Â¿Ya tenÃ©s cuenta? <a href="/auth/login">Iniciar sesiÃ³n</a>
+      ¿Ya tenés cuenta? <a href="/auth/login">Iniciar sesión</a>
     </div>
   </div>
 
@@ -186,7 +186,6 @@
     var errEl     = document.getElementById("error-msg");
     var successEl = document.getElementById("success-msg");
     var submitBtn = document.getElementById("submit-btn");
-    var siteKey   = {{ RECAPTCHA_SITE_KEY | tojson }};
 
     form.addEventListener("submit", function (e) {
       e.preventDefault();
@@ -199,58 +198,58 @@
       var password  = document.getElementById("password").value;
 
       if (!firstName || !email || !password) {
-        errEl.textContent = "CompletÃ¡ nombre, correo y contraseÃ±a.";
+        errEl.textContent = "Completá nombre, correo y contraseña.";
         errEl.classList.add("visible");
         return;
       }
 
       if (password.length < 8) {
-        errEl.textContent = "La contraseÃ±a debe tener al menos 8 caracteres.";
+        errEl.textContent = "La contraseña debe tener al menos 8 caracteres.";
         errEl.classList.add("visible");
         return;
       }
 
       if (typeof grecaptcha === "undefined" || !grecaptcha.enterprise) {
-        errEl.textContent = "Error de seguridad. RecargÃ¡ la pÃ¡gina e intentÃ¡ de nuevo.";
+        errEl.textContent = "Error de seguridad. Recarg\u00e1 la p\u00e1gina e intent\u00e1 de nuevo.";
         errEl.classList.add("visible");
         return;
       }
-
+      var siteKey = {{ RECAPTCHA_SITE_KEY | tojson }};
       grecaptcha.enterprise.execute(siteKey, {action: "register"}).then(function(token) {
         submitBtn.disabled = true;
-        submitBtn.textContent = "Creando cuentaâ€¦";
+        submitBtn.textContent = "Creando cuenta\u2026";
         fetch("/auth/register", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          first_name: firstName,
-          phone: phone,
-          email: email,
-          password: password,
-          g_recaptcha_response: recaptchaToken,
-        }),
-      })
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            first_name: firstName,
+            phone: phone,
+            email: email,
+            password: password,
+            g_recaptcha_response: token,
+          }),
+        })
         .then(function (r) { return r.json().then(function (d) { return { status: r.status, data: d }; }); })
         .then(function (res) {
           if (res.status === 201) {
             form.style.display = "none";
             successEl.textContent =
-              "Â¡Cuenta creada! RevisÃ¡ tu correo, confirmÃ¡ la cuenta y luego iniciÃ¡ sesiÃ³n.";
+              "¡Cuenta creada! Revisá tu correo, confirmá la cuenta y luego iniciá sesión.";
             successEl.classList.add("visible");
           } else if (res.status === 409) {
-            errEl.textContent = "Ese correo ya estÃ¡ registrado. ProbÃ¡ iniciar sesiÃ³n.";
+            errEl.textContent = "Ese correo ya está registrado. Probá iniciar sesión.";
             errEl.classList.add("visible");
             submitBtn.disabled = false;
             submitBtn.textContent = "Crear cuenta";
           } else {
-            errEl.textContent = res.data.error || "No se pudo crear la cuenta â€” intentÃ¡ de nuevo.";
+            errEl.textContent = res.data.error || "No se pudo crear la cuenta — intentá de nuevo.";
             errEl.classList.add("visible");
             submitBtn.disabled = false;
             submitBtn.textContent = "Crear cuenta";
           }
         })
         .catch(function () {
-          errEl.textContent = "Error de red â€” intentÃ¡ de nuevo.";
+          errEl.textContent = "Error de red — intentá de nuevo.";
           errEl.classList.add("visible");
           submitBtn.disabled = false;
           submitBtn.textContent = "Crear cuenta";
