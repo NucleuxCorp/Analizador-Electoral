@@ -12,4 +12,4 @@ Convention (v0.25.0b+):
 Example: 0.25.0b = second deploy of batch 0.25.0.
 """
 
-__version__ = "0.25.0f"
+__version__ = "0.25.0g"
