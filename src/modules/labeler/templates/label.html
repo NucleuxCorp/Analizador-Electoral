@@ -356,6 +356,7 @@
           </div>
         </div>
         <div id="view-grid" class="recent-grid">
+          <div id="grid-items">
           {% for r in recent %}
           <div class="recent-item">
             <img src="/image/{{ r.crop_id }}" alt="{{ r.label }}">
@@ -364,6 +365,12 @@
             <span class="r-fld">{{ r.field }}</span>
           </div>
           {% endfor %}
+          </div>
+          <div class="list-pagination" id="grid-pagination">
+            <button class="lp-btn" id="gp-prev" onclick="gpPage(-1)">‹ Anterior</button>
+            <span class="lp-info" id="gp-info">1/1</span>
+            <button class="lp-btn" id="gp-next" onclick="gpPage(1)">Siguiente ›</button>
+          </div>
         </div>
         <div id="view-list" class="recent-list" style="display:none;">
           <div id="list-items">
@@ -570,6 +577,9 @@
       l.style.display  = v === "list" ? "flex"  : "none";
       bg.className = "btn btn-sm py-0 px-2 " + (v === "grid" ? "btn-secondary" : "btn-outline-secondary");
       bl.className = "btn btn-sm py-0 px-2 " + (v === "list" ? "btn-secondary" : "btn-outline-secondary");
+      // Reset pagination on view switch
+      if (v === "grid" && window.gpRefresh) setTimeout(window.gpRefresh, 10);
+      if (v === "list" && window.lpRefresh) setTimeout(window.lpRefresh, 10);
     }
     window.setView = applyView;
     applyView(view);
@@ -610,6 +620,40 @@
 
     // Initial render
     lpRender();
+  })();
+
+  // Grid pagination (24 items = 6 rows x 4 cols)
+  (function () {
+    var _gPage = 0;
+    var _gPageSize = 24;
+
+    function gpRender() {
+      var items = document.querySelectorAll('#grid-items .recent-item');
+      var total = items.length;
+      var pages = Math.max(1, Math.ceil(total / _gPageSize));
+      if (_gPage >= pages) _gPage = pages - 1;
+      var start = _gPage * _gPageSize;
+      var end   = Math.min(start + _gPageSize, total);
+      for (var i = 0; i < total; i++) {
+        items[i].style.display = (i >= start && i < end) ? '' : 'none';
+      }
+      var info = document.getElementById('gp-info');
+      if (info) info.textContent = (_gPage + 1) + '/' + pages;
+      var prev = document.getElementById('gp-prev');
+      var next = document.getElementById('gp-next');
+      if (prev) prev.disabled = _gPage === 0;
+      if (next) next.disabled = _gPage >= pages - 1;
+    }
+
+    window.gpPage = function (delta) {
+      var items = document.querySelectorAll('#grid-items .recent-item');
+      var pages = Math.max(1, Math.ceil(items.length / _gPageSize));
+      _gPage = Math.max(0, Math.min(_gPage + delta, pages - 1));
+      gpRender();
+    };
+
+    window.gpRefresh = gpRender;
+    gpRender();
   })();
 
   // Progress toggle
@@ -891,8 +935,8 @@
           if (title) title.textContent = "Últimos etiquetados (" + count + ")";
 
           // ── Grid ──
-          var grid = document.getElementById("view-grid");
-          if (grid && newest) {
+          var gridItems = document.getElementById("grid-items");
+          if (gridItems && newest) {
             var gel = document.createElement("div");
             gel.className = "recent-item log-new";
             gel.innerHTML = '<img src="/image/' + newest.crop_id + '" alt="' + newest.label + '">'
@@ -900,8 +944,9 @@
               + (newest.ocr === newest.label ? '<span class="r-ocr">✓</span>' : '') + '</div>'
               + (newest.conf > 0 ? '<span class="r-conf">' + newest.conf + '%</span>' : '')
               + '<span class="r-fld">' + newest.field + '</span>';
-            grid.insertBefore(gel, grid.firstChild);
-            while (grid.children.length > 30) grid.removeChild(grid.lastChild);
+            gridItems.insertBefore(gel, gridItems.firstChild);
+            while (gridItems.children.length > 30) gridItems.removeChild(gridItems.lastChild);
+            if (window.gpRefresh) setTimeout(function () { window.gpRefresh(); }, 20);
           }
 
           // ── List ──
