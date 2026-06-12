@@ -62,17 +62,14 @@
     [data-bs-theme="light"] .field-badge { background: #dbeafe; }
 
     /* ── 3-col layout: Bootstrap row/col 4-5-3 ── */
-    .lab-row {
-      min-height: 380px;
-      height: calc(100vh - 160px);
-    }
-    .col-recent { display:flex; flex-direction:column; overflow:hidden; }
-    .col-center { display:flex; flex-direction:column; overflow-y:auto; min-height:0; }
-    .col-info   { display:flex; flex-direction:column; overflow-y:auto; min-height:0; }
+    .lab-row { min-height: 380px; height: calc(100vh - 155px); }
+    .col-recent { display:flex; flex-direction:column; min-height:0; }
+    .col-center { display:flex; flex-direction:column; min-height:0; overflow-y:auto; }
+    .col-info   { display:flex; flex-direction:column; min-height:0; overflow-y:auto; }
     .col-recent .card { flex:1; min-height:0; }
     .col-recent .card-body { display:flex; flex-direction:column; flex:1; min-height:0; }
     .col-recent .recent-grid { flex: 1; min-height: 0; }
-    .col-recent .recent-list { flex: 1; min-height: 0; }
+    .col-recent .recent-list { flex: 1; min-height: 0; overflow-y: auto; }
 
     @media (max-width: 650px) {
       /* Mobile numpad: hide digit keys (system keyboard handles them) */
@@ -203,7 +200,7 @@
     .recent-item .r-ocr { font-size: .7rem; color: #4caf50; }
     .recent-item .r-conf{ font-size: .58rem; color: var(--lab-muted); }
 
-    .recent-list { display: flex; flex-direction: column; gap: 3px; overflow-y: auto; min-height: 60px; flex: 1; }
+    .recent-list { display: flex; flex-direction: column; gap: 3px; overflow-y: auto; min-height: 60px; }
     .recent-list::-webkit-scrollbar { width: 4px; }
     .recent-list::-webkit-scrollbar-thumb { background: var(--bs-border-color); border-radius: 2px; }
     .recent-row {
