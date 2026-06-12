@@ -576,6 +576,7 @@
     var inp      = document.getElementById("answer");
     var modeEl   = document.getElementById("mode-ind");
     var enmienda = false;
+    var _busy    = false;
 
     inp.focus(); inp.select();
 
@@ -585,11 +586,13 @@
       if (on) { inp.value = ""; inp.focus(); }
     }
 
-    window.toggleEnmienda = function () { setEnmienda(!enmienda); };
-    window.doVariant = function (v) { post("/label", { crop_id: inp.dataset.cropId, value: v }); };
-    window.doAtrás         = function () { post("/back", {}); };
-    window.doSaltar         = function () { post("/skip", { crop_id: inp.dataset.cropId }); };
-    window.doConfirmOCR   = function () { post("/label", { crop_id: inp.dataset.cropId, value: inp.value.trim() }); };
+    function _guard() { if (_busy) return true; return false; }
+
+    window.toggleEnmienda = function () { if (_guard()) return; setEnmienda(!enmienda); };
+    window.doVariant = function (v) { if (_guard()) return; post("/label", { crop_id: inp.dataset.cropId, value: v }); };
+    window.doAtrás         = function () { if (_guard()) return; post("/back", {}); };
+    window.doSaltar         = function () { if (_guard()) return; post("/skip", { crop_id: inp.dataset.cropId }); };
+    window.doConfirmOCR   = function () { if (_guard()) return; post("/label", { crop_id: inp.dataset.cropId, value: inp.value.trim() }); };
     window.doDigit        = function (d) {
       if (inp.dataset.fallback === "true") {
         if (inp.value === "?" || inp.value === inp.dataset.ocr && inp.dataset.ocr === "?") inp.value = "";
@@ -667,6 +670,7 @@
     };
 
     inp.addEventListener("keydown", function (e) {
+      if (_busy) { e.preventDefault(); return; }
       if (fraudOpen()) return;
       var fb = inp.dataset.fallback === "true";
       if (e.key === "f" || e.key === "F") { e.preventDefault(); markFraud(); return; }
@@ -681,6 +685,7 @@
     });
 
     document.addEventListener("keydown", function (e) {
+      if (_busy) { e.preventDefault(); return; }
       if (document.getElementById("pdf-modal").style.display === "flex") {
         if (e.key === "Escape") { e.preventDefault(); closePdf(); return; }
         return;
@@ -701,8 +706,16 @@
       if (e.key === "Enter")     { e.preventDefault(); inp.focus(); return; }
     });
 
-    function showLoader() { var ov = document.getElementById("load-overlay"); if (ov) ov.style.opacity = "1"; }
-    function hideLoader() { var ov = document.getElementById("load-overlay"); if (ov) ov.style.opacity = "0"; }
+    function showLoader() {
+      _busy = true;
+      var ov = document.getElementById("load-overlay");
+      if (ov) { ov.style.opacity = "1"; ov.style.pointerEvents = "auto"; }
+    }
+    function hideLoader() {
+      _busy = false;
+      var ov = document.getElementById("load-overlay");
+      if (ov) { ov.style.opacity = "0"; ov.style.pointerEvents = "none"; }
+    }
 
     function updateDOM(item) {
       var imgD = document.getElementById("img-digit");

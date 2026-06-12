@@ -1023,7 +1023,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                                 "is_admin_resolution": False,
                             }).execute()
                     except Exception:
-                        pass
+                        logger.warning("skip_view: _skip label insert failed for crop=%s user=%s", crop_id, g.user_id)
             except Exception as exc:
                 return jsonify({"ok": False, "error": f"Skip failed: {exc}"}), 500
             return jsonify({"ok": True})
