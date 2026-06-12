@@ -166,9 +166,9 @@
 
       <!-- reCAPTCHA Enterprise (invisible score-based) -->
       <div style="font-size:0.62rem;color:#445;margin-bottom:12px;line-height:1.4;">
-        Este sitio est\u00e1 protegido por reCAPTCHA Enterprise y se aplican la
-        <a href="https://policies.google.com/privacy" target="_blank" rel="noopener" style="color:#7ec8e3;">Pol\u00edtica de Privacidad</a> y los
-        <a href="https://policies.google.com/terms" target="_blank" rel="noopener" style="color:#7ec8e3;">T\u00e9rminos del Servicio</a> de Google.
+        Este sitio está protegido por reCAPTCHA Enterprise y se aplican la
+        <a href="https://policies.google.com/privacy" target="_blank" rel="noopener" style="color:#7ec8e3;">Política de Privacidad</a> y los
+        <a href="https://policies.google.com/terms" target="_blank" rel="noopener" style="color:#7ec8e3;">Términos del Servicio</a> de Google.
       </div>
 
       <button type="submit" class="btn-submit" id="submit-btn">Crear cuenta</button>
@@ -210,14 +210,14 @@
       }
 
       if (typeof grecaptcha === "undefined" || !grecaptcha.enterprise) {
-        errEl.textContent = "Error de seguridad. Recarg\u00e1 la p\u00e1gina e intent\u00e1 de nuevo.";
+        errEl.textContent = "Error de seguridad. Recargá la página e intentá de nuevo.";
         errEl.classList.add("visible");
         return;
       }
       var siteKey = {{ RECAPTCHA_SITE_KEY | tojson }};
       grecaptcha.enterprise.execute(siteKey, {action: "register"}).then(function(token) {
         submitBtn.disabled = true;
-        submitBtn.textContent = "Creando cuenta\u2026";
+        submitBtn.textContent = "Creando cuenta…";
         fetch("/auth/register", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
