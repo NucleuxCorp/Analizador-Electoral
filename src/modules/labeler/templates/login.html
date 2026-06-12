@@ -161,10 +161,9 @@
         </div>
       </div>
 
-      <!-- reCAPTCHA -->
-      <div class="g-recaptcha" data-sitekey="{{ RECAPTCHA_SITE_KEY }}" style="margin-bottom:12px;"></div>
+      <!-- reCAPTCHA Enterprise (invisible score-based) -->
       <div style="font-size:0.62rem;color:#445;margin-bottom:12px;line-height:1.4;">
-        Este sitio estÃ¡ protegido por reCAPTCHA y se aplican la
+        Este sitio estÃ¡ protegido por reCAPTCHA Enterprise y se aplican la
         <a href="https://policies.google.com/privacy" target="_blank" rel="noopener" style="color:#7ec8e3;">PolÃ­tica de Privacidad</a> y los
         <a href="https://policies.google.com/terms" target="_blank" rel="noopener" style="color:#7ec8e3;">TÃ©rminos del Servicio</a> de Google.
       </div>
@@ -177,12 +176,13 @@
     </div>
   </div>
 
-  <script src="https://www.google.com/recaptcha/enterprise.js" async defer></script>
+  <script src="https://www.google.com/recaptcha/enterprise.js?render={{ RECAPTCHA_SITE_KEY }}" async defer></script>
   <script>
   (function () {
     var form     = document.getElementById("login-form");
     var errEl    = document.getElementById("error-msg");
     var infoEl   = document.getElementById("info-msg");
+    var siteKey  = {{ RECAPTCHA_SITE_KEY | tojson }};
 
     // Show info message if redirected here after registration
     var params = new URLSearchParams(window.location.search);
@@ -205,24 +205,23 @@
         return;
       }
 
-      // reCAPTCHA check
-      var recaptchaToken = grecaptcha ? grecaptcha.enterprise.getResponse() : "";
-      if (!recaptchaToken) {
-        errEl.textContent = "CompletÃ¡ la verificaciÃ³n de seguridad (No soy un robot).";
+      // reCAPTCHA Enterprise: execute returns a Promise with the token
+      if (typeof grecaptcha === "undefined" || !grecaptcha.enterprise) {
+        errEl.textContent = "Error de seguridad. RecargÃ¡ la pÃ¡gina e intentÃ¡ de nuevo.";
         errEl.classList.add("visible");
         return;
       }
-
-      fetch("/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: email,
-          password: password,
-          g_recaptcha_response: recaptchaToken,
-        }),
-        redirect: "follow",
-      })
+      grecaptcha.enterprise.execute(siteKey, {action: "login"}).then(function(token) {
+        fetch("/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: email,
+            password: password,
+            g_recaptcha_response: token,
+          }),
+          redirect: "follow",
+        })
         .then(function (r) {
           // A 302 redirect to "/" means success â€” the browser followed it
           if (r.ok || r.redirected) {
@@ -240,6 +239,7 @@
           errEl.textContent = "Network error â€” please try again.";
           errEl.classList.add("visible");
         });
+      });
     });
   })();
   </script>
