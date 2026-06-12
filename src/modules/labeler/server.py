@@ -98,32 +98,43 @@ def _init_sentry() -> bool:
 
 
 # ---------------------------------------------------------------------------
-# reCAPTCHA verification helper
+# reCAPTCHA Enterprise verification helper
 # ---------------------------------------------------------------------------
 
-def _verify_recaptcha(response_token: str) -> bool:
+def _verify_recaptcha(response_token: str, action: str = "") -> bool:
     """
-    Verify a reCAPTCHA v2 response token with Google.
+    Verify a reCAPTCHA Enterprise token using the Assessment API.
 
     Args:
         response_token: The ``g-recaptcha-response`` value from the frontend.
+        action: The expected action name (e.g. "register", "login", "forgot").
 
     Returns:
         True if the token is valid, False otherwise.
     """
-    secret = os.environ.get("RECAPTCHA_SECRET_KEY", "").strip()
-    if not secret:
+    site_key = os.environ.get("RECAPTCHA_SITE_KEY", "").strip()
+    project_id = os.environ.get("RECAPTCHA_PROJECT_ID", "").strip()
+    api_key = os.environ.get("RECAPTCHA_API_KEY", "").strip()
+    if not site_key or not project_id or not api_key:
         # No key configured — skip verification (local dev or misconfig).
         return True
     try:
         import requests as _req
         resp = _req.post(
-            "https://www.google.com/recaptcha/api/siteverify",
-            data={"secret": secret, "response": response_token},
+            f"https://recaptchaenterprise.googleapis.com/v1/projects/{project_id}/assessments?key={api_key}",
+            json={
+                "event": {
+                    "token": response_token,
+                    "siteKey": site_key,
+                    "expectedAction": action,
+                }
+            },
             timeout=10,
         )
         result = resp.json()
-        return bool(result.get("success", False))
+        # The assessment is valid if the token was successfully verified.
+        # score is 0.0-1.0 for score-based keys; for checkbox keys it's 0.0.
+        return result.get("tokenProperties", {}).get("valid", False)
     except Exception as exc:
         logger.error("recaptcha verify failed: %s", exc)
         try:
@@ -633,7 +644,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
 
             # reCAPTCHA verification
             recaptcha_token = body.get("g_recaptcha_response", body.get("g-recaptcha-response", ""))
-            if not _verify_recaptcha(recaptcha_token):
+            if not _verify_recaptcha(recaptcha_token, "register"):
                 return jsonify({"error": "Verificación de seguridad fallada. Recargá la página e intentá de nuevo."}), 403
 
             from src.modules.labeler.auth import init_supabase_client
@@ -704,7 +715,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
 
             # reCAPTCHA verification
             recaptcha_token = body.get("g_recaptcha_response", body.get("g-recaptcha-response", ""))
-            if not _verify_recaptcha(recaptcha_token):
+            if not _verify_recaptcha(recaptcha_token, "forgot"):
                 return jsonify({"error": "Verificación de seguridad fallada. Recargá la página e intentá de nuevo."}), 403
 
             try:
@@ -799,7 +810,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
 
             # reCAPTCHA verification
             recaptcha_token = body.get("g_recaptcha_response", body.get("g-recaptcha-response", ""))
-            if not _verify_recaptcha(recaptcha_token):
+            if not _verify_recaptcha(recaptcha_token, "login"):
                 return jsonify({"error": "Verificación de seguridad fallada. Recargá la página e intentá de nuevo."}), 403
 
             from src.modules.labeler.auth import init_supabase_client

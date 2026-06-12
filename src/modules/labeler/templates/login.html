@@ -1,9 +1,9 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sign In — Digit Labeler</title>
+  <title>Sign In â€” Digit Labeler</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -142,7 +142,7 @@
 <body>
   <div class="card">
     <h1>Digit Labeler</h1>
-    <div class="subtitle">E-14C Validation Portal — Sign In</div>
+    <div class="subtitle">E-14C Validation Portal â€” Sign In</div>
 
     <div id="error-msg" class="error-msg"></div>
     <div id="info-msg" class="info-msg"></div>
@@ -157,16 +157,16 @@
         <label for="password">Password</label>
         <input type="password" id="password" name="password" autocomplete="current-password" required>
         <div style="text-align:right;margin-top:4px;">
-          <a href="/auth/forgot-password" style="color:#7ec8e3;font-size:0.72rem;">¿Olvidaste tu contraseña?</a>
+          <a href="/auth/forgot-password" style="color:#7ec8e3;font-size:0.72rem;">Â¿Olvidaste tu contraseÃ±a?</a>
         </div>
       </div>
 
       <!-- reCAPTCHA -->
       <div class="g-recaptcha" data-sitekey="{{ RECAPTCHA_SITE_KEY }}" style="margin-bottom:12px;"></div>
       <div style="font-size:0.62rem;color:#445;margin-bottom:12px;line-height:1.4;">
-        Este sitio está protegido por reCAPTCHA y se aplican la
-        <a href="https://policies.google.com/privacy" target="_blank" rel="noopener" style="color:#7ec8e3;">Política de Privacidad</a> y los
-        <a href="https://policies.google.com/terms" target="_blank" rel="noopener" style="color:#7ec8e3;">Términos del Servicio</a> de Google.
+        Este sitio estÃ¡ protegido por reCAPTCHA y se aplican la
+        <a href="https://policies.google.com/privacy" target="_blank" rel="noopener" style="color:#7ec8e3;">PolÃ­tica de Privacidad</a> y los
+        <a href="https://policies.google.com/terms" target="_blank" rel="noopener" style="color:#7ec8e3;">TÃ©rminos del Servicio</a> de Google.
       </div>
 
       <button type="submit" class="btn-submit">Sign In</button>
@@ -177,7 +177,7 @@
     </div>
   </div>
 
-  <script src="https://www.google.com/recaptcha/api.js" async defer></script>
+  <script src="https://www.google.com/recaptcha/enterprise.js" async defer></script>
   <script>
   (function () {
     var form     = document.getElementById("login-form");
@@ -187,7 +187,7 @@
     // Show info message if redirected here after registration
     var params = new URLSearchParams(window.location.search);
     if (params.get("registered") === "1") {
-      infoEl.textContent = "Registration successful — check your email to confirm your account.";
+      infoEl.textContent = "Registration successful â€” check your email to confirm your account.";
       infoEl.classList.add("visible");
     }
 
@@ -206,9 +206,9 @@
       }
 
       // reCAPTCHA check
-      var recaptchaToken = grecaptcha ? grecaptcha.getResponse() : "";
+      var recaptchaToken = grecaptcha ? grecaptcha.enterprise.getResponse() : "";
       if (!recaptchaToken) {
-        errEl.textContent = "Completá la verificación de seguridad (No soy un robot).";
+        errEl.textContent = "CompletÃ¡ la verificaciÃ³n de seguridad (No soy un robot).";
         errEl.classList.add("visible");
         return;
       }
@@ -224,7 +224,7 @@
         redirect: "follow",
       })
         .then(function (r) {
-          // A 302 redirect to "/" means success — the browser followed it
+          // A 302 redirect to "/" means success â€” the browser followed it
           if (r.ok || r.redirected) {
             window.location.href = r.url || "/";
             return null;
@@ -237,7 +237,7 @@
           errEl.classList.add("visible");
         })
         .catch(function () {
-          errEl.textContent = "Network error — please try again.";
+          errEl.textContent = "Network error â€” please try again.";
           errEl.classList.add("visible");
         });
     });

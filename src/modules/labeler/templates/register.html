@@ -1,9 +1,9 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Crear cuenta — Verificación E-14</title>
+  <title>Crear cuenta â€” VerificaciÃ³n E-14</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -137,7 +137,7 @@
 <body>
   <div class="card">
     <h1>Crear cuenta</h1>
-    <div class="subtitle">Verificación Ciudadana de Actas E-14</div>
+    <div class="subtitle">VerificaciÃ³n Ciudadana de Actas E-14</div>
 
     <div id="error-msg" class="error-msg"></div>
     <div id="success-msg" class="success-msg"></div>
@@ -149,38 +149,38 @@
       </div>
 
       <div class="field">
-        <label for="phone">Teléfono <span style="text-transform:none; color:#445;">(opcional)</span></label>
+        <label for="phone">TelÃ©fono <span style="text-transform:none; color:#445;">(opcional)</span></label>
         <input type="tel" id="phone" name="phone" autocomplete="tel" inputmode="tel" placeholder="+57 300 000 0000">
       </div>
 
       <div class="field">
-        <label for="email">Correo electrónico</label>
+        <label for="email">Correo electrÃ³nico</label>
         <input type="email" id="email" name="email" autocomplete="email" required>
       </div>
 
       <div class="field">
-        <label for="password">Contraseña</label>
+        <label for="password">ContraseÃ±a</label>
         <input type="password" id="password" name="password" autocomplete="new-password" required minlength="8">
-        <span class="hint">Mínimo 8 caracteres.</span>
+        <span class="hint">MÃ­nimo 8 caracteres.</span>
       </div>
 
       <!-- reCAPTCHA -->
       <div class="g-recaptcha" data-sitekey="{{ RECAPTCHA_SITE_KEY }}" style="margin-bottom:12px;"></div>
       <div style="font-size:0.62rem;color:#445;margin-bottom:12px;line-height:1.4;">
-        Este sitio está protegido por reCAPTCHA y se aplican la
-        <a href="https://policies.google.com/privacy" target="_blank" rel="noopener" style="color:#7ec8e3;">Política de Privacidad</a> y los
-        <a href="https://policies.google.com/terms" target="_blank" rel="noopener" style="color:#7ec8e3;">Términos del Servicio</a> de Google.
+        Este sitio estÃ¡ protegido por reCAPTCHA y se aplican la
+        <a href="https://policies.google.com/privacy" target="_blank" rel="noopener" style="color:#7ec8e3;">PolÃ­tica de Privacidad</a> y los
+        <a href="https://policies.google.com/terms" target="_blank" rel="noopener" style="color:#7ec8e3;">TÃ©rminos del Servicio</a> de Google.
       </div>
 
       <button type="submit" class="btn-submit" id="submit-btn">Crear cuenta</button>
     </form>
 
     <div class="footer-link">
-      ¿Ya tenés cuenta? <a href="/auth/login">Iniciar sesión</a>
+      Â¿Ya tenÃ©s cuenta? <a href="/auth/login">Iniciar sesiÃ³n</a>
     </div>
   </div>
 
-  <script src="https://www.google.com/recaptcha/api.js" async defer></script>
+  <script src="https://www.google.com/recaptcha/enterprise.js" async defer></script>
   <script>
   (function () {
     var form      = document.getElementById("register-form");
@@ -199,27 +199,27 @@
       var password  = document.getElementById("password").value;
 
       if (!firstName || !email || !password) {
-        errEl.textContent = "Completá nombre, correo y contraseña.";
+        errEl.textContent = "CompletÃ¡ nombre, correo y contraseÃ±a.";
         errEl.classList.add("visible");
         return;
       }
 
       if (password.length < 8) {
-        errEl.textContent = "La contraseña debe tener al menos 8 caracteres.";
+        errEl.textContent = "La contraseÃ±a debe tener al menos 8 caracteres.";
         errEl.classList.add("visible");
         return;
       }
 
       // reCAPTCHA check
-      var recaptchaToken = grecaptcha ? grecaptcha.getResponse() : "";
+      var recaptchaToken = grecaptcha ? grecaptcha.enterprise.getResponse() : "";
       if (!recaptchaToken) {
-        errEl.textContent = "Completá la verificación de seguridad (No soy un robot).";
+        errEl.textContent = "CompletÃ¡ la verificaciÃ³n de seguridad (No soy un robot).";
         errEl.classList.add("visible");
         return;
       }
 
       submitBtn.disabled = true;
-      submitBtn.textContent = "Creando cuenta…";
+      submitBtn.textContent = "Creando cuentaâ€¦";
 
       fetch("/auth/register", {
         method: "POST",
@@ -237,22 +237,22 @@
           if (res.status === 201) {
             form.style.display = "none";
             successEl.textContent =
-              "¡Cuenta creada! Revisá tu correo, confirmá la cuenta y luego iniciá sesión.";
+              "Â¡Cuenta creada! RevisÃ¡ tu correo, confirmÃ¡ la cuenta y luego iniciÃ¡ sesiÃ³n.";
             successEl.classList.add("visible");
           } else if (res.status === 409) {
-            errEl.textContent = "Ese correo ya está registrado. Probá iniciar sesión.";
+            errEl.textContent = "Ese correo ya estÃ¡ registrado. ProbÃ¡ iniciar sesiÃ³n.";
             errEl.classList.add("visible");
             submitBtn.disabled = false;
             submitBtn.textContent = "Crear cuenta";
           } else {
-            errEl.textContent = res.data.error || "No se pudo crear la cuenta — intentá de nuevo.";
+            errEl.textContent = res.data.error || "No se pudo crear la cuenta â€” intentÃ¡ de nuevo.";
             errEl.classList.add("visible");
             submitBtn.disabled = false;
             submitBtn.textContent = "Crear cuenta";
           }
         })
         .catch(function () {
-          errEl.textContent = "Error de red — intentá de nuevo.";
+          errEl.textContent = "Error de red â€” intentÃ¡ de nuevo.";
           errEl.classList.add("visible");
           submitBtn.disabled = false;
           submitBtn.textContent = "Crear cuenta";
