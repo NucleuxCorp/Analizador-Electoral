@@ -1,21 +1,15 @@
 -- assign_next_crop.sql
 -- PL/pgSQL function: collision-free crop assignment using SELECT FOR UPDATE SKIP LOCKED.
 --
--- MODE: complete-acta-first + adaptive redundancy (2 -> 3, only on disagreement).
+-- MODE: complete-acta-first + adaptive redundancy (2 -> 3).
 -- The function keeps an annotator on the SAME acta (pdf_path) until every digit
 -- of that acta is labeled, then moves to the next acta. This lets us revalidate
 -- a mesa's arithmetic as soon as it is fully labeled.
 --
--- A crop is eligible in TWO cases:
---   1. annotation_count < 2  →  normal assignment (first or second annotator).
---   2. annotation_count = 2 AND status = 'needs_third'  →  tiebreaker for 3rd
---      annotator (only opened when the first two disagree).
---
--- Two agreeing annotators → confirmed (stops at 2, never re-assigned).
--- Two disagreeing → status 'needs_third', re-opens for a third annotator.
--- Three all distinct → status 'disputed' (admin review needed).
---
--- Lease timeout: 60 minutes (was 30). After expiry the crop can be re-assigned.
+-- A crop is eligible while it is NOT finished (status not in confirmed/conflict)
+-- AND has fewer than 3 labels. Two agreeing annotators -> confirmed (stops at 2).
+-- Two disagreeing -> status 'needs_third', which re-opens the crop for a third
+-- annotator who breaks the tie by majority vote (see db.evaluate_agreement).
 --
 -- Called via supabase.rpc("assign_next_crop", {"p_annotator_id": "<uuid>"})
 -- Run after supabase_schema.sql. Safe to re-run (CREATE OR REPLACE).
@@ -34,8 +28,8 @@ BEGIN
     SELECT c.pdf_path
     INTO   v_pdf_path
     FROM   crops c
-    WHERE  ((c.annotation_count < 2 AND c.status NOT IN ('confirmed', 'conflict', 'disputed'))
-            OR (c.annotation_count = 2 AND c.status = 'needs_third'))
+    WHERE  c.status NOT IN ('confirmed', 'conflict')
+      AND  c.annotation_count < 3
       AND  c.crop_id NOT IN (
                SELECT a.crop_id FROM assignments a
                WHERE  a.annotator_id = p_annotator_id AND a.expires_at > now()
@@ -58,8 +52,8 @@ BEGIN
         INTO   v_crop_id
         FROM   crops c
         WHERE  c.pdf_path = v_pdf_path
-          AND  ((c.annotation_count < 2 AND c.status NOT IN ('confirmed', 'conflict', 'disputed'))
-                OR (c.annotation_count = 2 AND c.status = 'needs_third'))
+          AND  c.status NOT IN ('confirmed', 'conflict')
+          AND  c.annotation_count < 3
           AND  c.crop_id NOT IN (
                    SELECT a.crop_id FROM assignments a
                    WHERE  a.annotator_id = p_annotator_id AND a.expires_at > now()
@@ -79,8 +73,8 @@ BEGIN
         SELECT c.crop_id
         INTO   v_crop_id
         FROM   crops c
-        WHERE  ((c.annotation_count < 2 AND c.status NOT IN ('confirmed', 'conflict', 'disputed'))
-                OR (c.annotation_count = 2 AND c.status = 'needs_third'))
+        WHERE  c.status NOT IN ('confirmed', 'conflict')
+          AND  c.annotation_count < 3
           AND  c.crop_id NOT IN (
                    SELECT a.crop_id FROM assignments a
                    WHERE  a.annotator_id = p_annotator_id AND a.expires_at > now()
@@ -98,9 +92,9 @@ BEGIN
         RETURN NULL;
     END IF;
 
-    -- Lease the crop to this annotator for 60 minutes.
+    -- Lease the crop to this annotator for 30 minutes.
     INSERT INTO assignments (crop_id, annotator_id, assigned_at, expires_at)
-    VALUES (v_crop_id, p_annotator_id, now(), now() + INTERVAL '60 minutes')
+    VALUES (v_crop_id, p_annotator_id, now(), now() + INTERVAL '30 minutes')
     ON CONFLICT DO NOTHING;
 
     RETURN v_crop_id;

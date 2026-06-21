@@ -186,7 +186,7 @@ def evaluate_agreement(crop_id: str) -> None:
                                     annotator; assignments are freed).
       - 3 real labels, a value has
         a 2/3 majority             → status = 'confirmed' (majority value).
-      - 3 real labels all distinct → status = 'disputed' (admin review).
+      - 3 real labels all distinct → status = 'conflict' (admin review).
 
     Zero-variant glyphs (*, -, ., +, o, O) are normalised to '0' before voting
     so they never count as a disagreement. '_skip' labels are ignored entirely.
@@ -230,9 +230,8 @@ def evaluate_agreement(crop_id: str) -> None:
                 {"confirmed_label": winner, "status": "confirmed"}
             ).eq("crop_id", crop_id).execute()
         else:
-            # Three annotators, all disagree → admin review needed.
             _client().table("crops").update(
-                {"status": "disputed"}
+                {"status": "conflict"}
             ).eq("crop_id", crop_id).execute()
     elif len(real) == 2:
         if real[0] == real[1]:

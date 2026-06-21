@@ -937,37 +937,31 @@
           // ── Grid ──
           var gridItems = document.getElementById("grid-items");
           if (gridItems && newest) {
-            var already = gridItems.querySelector('img[src="/image/' + newest.crop_id + '"]');
-            if (already) { /* already in DOM — skip re-insert (e.g. after /skip where recent is unchanged) */ } else {
-              var gel = document.createElement("div");
-              gel.className = "recent-item log-new";
-              gel.innerHTML = '<img src="/image/' + newest.crop_id + '" alt="' + newest.label + '">'
-                + '<div class="r-row"><span class="r-lbl">' + newest.label + '</span>'
-                + (newest.ocr === newest.label ? '<span class="r-ocr">✓</span>' : '') + '</div>'
-                + (newest.conf > 0 ? '<span class="r-conf">' + newest.conf + '%</span>' : '')
-                + '<span class="r-fld">' + newest.field + '</span>';
-              gridItems.insertBefore(gel, gridItems.firstChild);
-              while (gridItems.children.length > 30) gridItems.removeChild(gridItems.lastChild);
-              if (window.gpRefresh) setTimeout(function () { window.gpRefresh(); }, 20);
-            }
+            var gel = document.createElement("div");
+            gel.className = "recent-item log-new";
+            gel.innerHTML = '<img src="/image/' + newest.crop_id + '" alt="' + newest.label + '">'
+              + '<div class="r-row"><span class="r-lbl">' + newest.label + '</span>'
+              + (newest.ocr === newest.label ? '<span class="r-ocr">✓</span>' : '') + '</div>'
+              + (newest.conf > 0 ? '<span class="r-conf">' + newest.conf + '%</span>' : '')
+              + '<span class="r-fld">' + newest.field + '</span>';
+            gridItems.insertBefore(gel, gridItems.firstChild);
+            while (gridItems.children.length > 30) gridItems.removeChild(gridItems.lastChild);
+            if (window.gpRefresh) setTimeout(function () { window.gpRefresh(); }, 20);
           }
 
           // ── List ──
           var listItems = document.getElementById("list-items");
           if (listItems && newest) {
-            var already = listItems.querySelector('img[src="/image/' + newest.crop_id + '"]');
-            if (already) { /* already in DOM — skip re-insert */ } else {
-              var lel = document.createElement("div");
-              lel.className = "recent-row log-new";
-              lel.innerHTML = '<img src="/image/' + newest.crop_id + '" alt="' + newest.label + '">'
-                + '<span class="r-lbl">' + newest.label + '</span>'
-                + (newest.ocr === newest.label ? '<span class="r-ocr">✓</span>' : '')
-                + '<span class="r-fld">' + newest.field + '</span>'
-                + (newest.conf > 0 ? '<span class="r-conf">' + newest.conf + '%</span>' : '');
-              listItems.insertBefore(lel, listItems.firstChild);
-              while (listItems.children.length > 30) listItems.removeChild(listItems.lastChild);
-              if (window.lpRefresh) setTimeout(function () { window.lpRefresh(); }, 20);
-            }
+            var lel = document.createElement("div");
+            lel.className = "recent-row log-new";
+            lel.innerHTML = '<img src="/image/' + newest.crop_id + '" alt="' + newest.label + '">'
+              + '<span class="r-lbl">' + newest.label + '</span>'
+              + (newest.ocr === newest.label ? '<span class="r-ocr">✓</span>' : '')
+              + '<span class="r-fld">' + newest.field + '</span>'
+              + (newest.conf > 0 ? '<span class="r-conf">' + newest.conf + '%</span>' : '');
+            listItems.insertBefore(lel, listItems.firstChild);
+            while (listItems.children.length > 30) listItems.removeChild(listItems.lastChild);
+            if (window.lpRefresh) setTimeout(function () { window.lpRefresh(); }, 20);
           }
         }
 
