@@ -41,6 +41,17 @@
 
     body { min-height: 100vh; font-family: monospace; }
 
+    /* ── Progress metrics ── */
+    .progress-metrics {
+      background: var(--bs-secondary-bg);
+      border-radius: 10px;
+      padding: 10px 8px;
+      margin-bottom: 12px;
+    }
+    .pm-num { font-size: 1.4rem; font-weight: bold; color: var(--lab-accent); line-height: 1.2; }
+    .pm-lbl { font-size: .6rem; text-transform: uppercase; letter-spacing: 1px; color: var(--lab-muted); margin-top: 2px; }
+    .pm-sub { font-size: .6rem; color: var(--lab-muted); margin-top: 0; }
+
     /* ── Progress ── */
     .prog-fill-custom {
       background: linear-gradient(90deg, #2e7d32, #66bb6a);
@@ -290,8 +301,14 @@
 
 {% if done %}
 <div class="done-box">
-  <h2>¡Todo listo!</h2>
+  {% set dr = done_reason | default("all_done") %}
+  {% if dr == "queue_exhausted" %}
+  <h2>🐘 No hay más dígitos para validar</h2>
+  <p>Ya revisaste todos los dígitos disponibles. Otros usuarios están etiquetando también — volvé más tarde para ver si hay nuevos dígitos para validar.</p>
+  {% else %}
+  <h2>🎉 ¡Todo listo!</h2>
   <p>{{ labeled }} elementos etiquetados. La cola está agotada.</p>
+  {% endif %}
 </div>
 
 {% else %}
@@ -323,6 +340,29 @@
       <span id="prog-global-gruesa">{{ labeled }} global</span>
       <span style="font-size:1.1rem;color:#66bb6a;font-weight:bold;" id="prog-pct-gruesa2">{{ pct }}%</span>
       <span id="prog-my-gruesa">míos: {{ my_labeled }}</span>
+    </div>
+  </div>
+</div>
+
+<!-- Progress metrics (safe defaults - mostra 0 si falta la variable) -->
+{% set _s = started | default(0) %}
+{% set _c = confirmed | default(0) %}
+{% set _t = total | default(0) %}
+{% set _pct = ((_s + _c) / (2 * _t) * 100) | round(1) if _t > 0 else 0 %}
+<div class="container-fluid mb-1" style="max-width:1000px;">
+  <div class="progress-metrics d-flex justify-content-around text-center">
+    <div>
+      <div class="pm-num" id="pm-started">{{ _s }}</div>
+      <div class="pm-lbl">Iniciados</div>
+      <div class="pm-sub">de {{ _t }} totales</div>
+    </div>
+    <div>
+      <div class="pm-num" id="pm-confirmed">{{ _c }}</div>
+      <div class="pm-lbl">Confirmados</div>
+    </div>
+    <div>
+      <div class="pm-num" id="pm-pct">{{ _pct }}%</div>
+      <div class="pm-lbl">Progreso real</div>
     </div>
   </div>
 </div>
@@ -937,31 +977,37 @@
           // ── Grid ──
           var gridItems = document.getElementById("grid-items");
           if (gridItems && newest) {
-            var gel = document.createElement("div");
-            gel.className = "recent-item log-new";
-            gel.innerHTML = '<img src="/image/' + newest.crop_id + '" alt="' + newest.label + '">'
-              + '<div class="r-row"><span class="r-lbl">' + newest.label + '</span>'
-              + (newest.ocr === newest.label ? '<span class="r-ocr">✓</span>' : '') + '</div>'
-              + (newest.conf > 0 ? '<span class="r-conf">' + newest.conf + '%</span>' : '')
-              + '<span class="r-fld">' + newest.field + '</span>';
-            gridItems.insertBefore(gel, gridItems.firstChild);
-            while (gridItems.children.length > 30) gridItems.removeChild(gridItems.lastChild);
-            if (window.gpRefresh) setTimeout(function () { window.gpRefresh(); }, 20);
+            var dup = gridItems.querySelector('img[src="/image/' + newest.crop_id + '"]');
+            if (!dup) {
+              var gel = document.createElement("div");
+              gel.className = "recent-item log-new";
+              gel.innerHTML = '<img src="/image/' + newest.crop_id + '" alt="' + newest.label + '">'
+                + '<div class="r-row"><span class="r-lbl">' + newest.label + '</span>'
+                + (newest.ocr === newest.label ? '<span class="r-ocr">✓</span>' : '') + '</div>'
+                + (newest.conf > 0 ? '<span class="r-conf">' + newest.conf + '%</span>' : '')
+                + '<span class="r-fld">' + newest.field + '</span>';
+              gridItems.insertBefore(gel, gridItems.firstChild);
+              while (gridItems.children.length > 30) gridItems.removeChild(gridItems.lastChild);
+              if (window.gpRefresh) setTimeout(function () { window.gpRefresh(); }, 20);
+            }
           }
 
           // ── List ──
           var listItems = document.getElementById("list-items");
           if (listItems && newest) {
-            var lel = document.createElement("div");
-            lel.className = "recent-row log-new";
-            lel.innerHTML = '<img src="/image/' + newest.crop_id + '" alt="' + newest.label + '">'
-              + '<span class="r-lbl">' + newest.label + '</span>'
-              + (newest.ocr === newest.label ? '<span class="r-ocr">✓</span>' : '')
-              + '<span class="r-fld">' + newest.field + '</span>'
-              + (newest.conf > 0 ? '<span class="r-conf">' + newest.conf + '%</span>' : '');
-            listItems.insertBefore(lel, listItems.firstChild);
-            while (listItems.children.length > 30) listItems.removeChild(listItems.lastChild);
-            if (window.lpRefresh) setTimeout(function () { window.lpRefresh(); }, 20);
+            var dup = listItems.querySelector('img[src="/image/' + newest.crop_id + '"]');
+            if (!dup) {
+              var lel = document.createElement("div");
+              lel.className = "recent-row log-new";
+              lel.innerHTML = '<img src="/image/' + newest.crop_id + '" alt="' + newest.label + '">'
+                + '<span class="r-lbl">' + newest.label + '</span>'
+                + (newest.ocr === newest.label ? '<span class="r-ocr">✓</span>' : '')
+                + '<span class="r-fld">' + newest.field + '</span>'
+                + (newest.conf > 0 ? '<span class="r-conf">' + newest.conf + '%</span>' : '');
+              listItems.insertBefore(lel, listItems.firstChild);
+              while (listItems.children.length > 30) listItems.removeChild(listItems.lastChild);
+              if (window.lpRefresh) setTimeout(function () { window.lpRefresh(); }, 20);
+            }
           }
         }
 
@@ -979,6 +1025,10 @@
             el = document.getElementById("prog-my-delgada");  if (el) el.textContent = "míos: " + item.my_labeled;
             el = document.getElementById("prog-my-gruesa"); if (el) el.textContent = "míos: " + item.my_labeled;
           }
+          // Real progress metrics
+          el = document.getElementById("pm-started");   if (el) el.textContent = item.started || 0;
+          el = document.getElementById("pm-confirmed"); if (el) el.textContent = item.confirmed || 0;
+          el = document.getElementById("pm-pct");       if (el) el.textContent = (item.pct || 0) + "%";
         }
 
         setEnmienda(false);

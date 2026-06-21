@@ -37,6 +37,17 @@ from flask import Flask, Response, g, jsonify, redirect, render_template, reques
 logger = logging.getLogger("labeler")
 
 
+def _error_response(message: str, status: int = 400) -> Response:
+    """Return JSON error + log + Sentry capture for business-logic 4xx errors."""
+    logger.warning("error %s: %s", status, message)
+    try:
+        import sentry_sdk
+        sentry_sdk.capture_message(f"{status}: {message}", level="warning")
+    except Exception:
+        pass
+    return jsonify({"ok": False, "error": message}), status
+
+
 def _configure_logging() -> None:
     """Configure root logger once. JSON-ish line format to stdout (Railway captures it)."""
     root = logging.getLogger()
@@ -866,12 +877,29 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
             _db.release_expired_assignments()
             crop_id = _db.assign_next_crop(g.user_id)
 
+            # Real progress metrics (with fallbacks to avoid template crashes)
+            try:
+                progress = _db.get_real_progress()
+                started = progress["started"]
+                confirmed = progress["confirmed"]
+                total = progress["total"]
+            except Exception:
+                started = 0
+                confirmed = 0
+                total = 0
+            pct = round((started + confirmed) / (2 * total) * 100, 1) if total > 0 else 0
+
             if crop_id is None:
+                done_reason = "queue_exhausted" if confirmed < total else "all_done"
                 return render_template(
                     "label.html",
                     done=True,
+                    done_reason=done_reason,
+                    started=started,
+                    confirmed=confirmed,
+                    total=total,
+                    pct=pct,
                     labeled=0,
-                    total=0,
                     user_email=session.get("user_email", ""),
                 )
 
@@ -890,19 +918,17 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 label_ocr = "?"
             concordancias = _db.get_concordancias(pdf_path, label_ocr, crop_id)
 
-            # Global stats — fetch real values on page load, cache in session
+            # Global stats — cache in session
             try:
                 stats = _db.get_global_stats(g.user_id)
                 global_labeled = stats["global_labeled"]
                 my_labeled = stats["my_labeled"]
-                total = stats["total"]
                 session["global_labeled"] = global_labeled
                 session["my_labeled"] = my_labeled
                 session["total_count"] = total
             except Exception:
                 global_labeled = session.get("global_labeled", 0)
                 my_labeled = session.get("my_labeled", 0)
-                total = session.get("total_count", 0)
             remaining = max(0, total - global_labeled)
 
             return render_template(
@@ -918,6 +944,9 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 my_labeled=my_labeled,
                 remaining=remaining,
                 total=total,
+                started=started,
+                confirmed=confirmed,
+                pct=pct,
                 priority=crop.get("priority", 2),
                 pdf_filename=Path(pdf_path).name,
                 mesa=_mesa_info(pdf_path),
@@ -940,13 +969,13 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
             raw_value = body.get("value", "")
 
             if not crop_id:
-                return jsonify({"ok": False, "error": "crop_id is required"}), 400
+                return _error_response("crop_id is required", 400)
 
             # Validate token
             try:
                 label_human, amended = _parse_value_token(raw_value)
             except ValueError as exc:
-                return jsonify({"ok": False, "error": str(exc)}), 400
+                return _error_response(str(exc), 400)
 
             # Validate assignment ownership: check an active assignment row exists
             try:
@@ -959,9 +988,9 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                     .execute()
                 )
                 if not asgn_resp.data:
-                    return jsonify({"ok": False, "error": "No active assignment for this crop"}), 403
+                    return _error_response("No active assignment for this crop", 403)
             except Exception as exc:
-                return jsonify({"ok": False, "error": f"Assignment check failed: {exc}"}), 500
+                return _error_response(f"Assignment check failed: {exc}", 500)
 
             # Determine if this is an admin resolution
             is_admin = _is_admin_user(g.user_id)
@@ -978,7 +1007,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 if (crop.get("annotation_count") or 0) >= 2 or is_admin:
                     _db.evaluate_agreement(crop_id)
             except Exception as exc:
-                return jsonify({"ok": False, "error": f"Label write failed: {exc}"}), 500
+                return _error_response(f"Label write failed: {exc}", 500)
 
             # Update recent log and labeled count in session
             recent = session.get("recent_labels", [])
@@ -1008,8 +1037,8 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
             crop_id = body.get("crop_id", "")
             try:
                 _cli = _db._client()
-                # Delete active assignment
-                _cli.table("assignments").delete().eq("annotator_id", g.user_id).execute()
+                # Delete active assignment (only for this crop, not all)
+                _cli.table("assignments").delete().eq("annotator_id", g.user_id).eq("crop_id", crop_id).execute()
                 # Insert a skip label so assign_next_crop excludes this crop for this user
                 if crop_id:
                     try:
@@ -1025,7 +1054,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                     except Exception:
                         logger.warning("skip_view: _skip label insert failed for crop=%s user=%s", crop_id, g.user_id)
             except Exception as exc:
-                return jsonify({"ok": False, "error": f"Skip failed: {exc}"}), 500
+                return _error_response(f"Skip failed: {exc}", 500)
             return jsonify({"ok": True})
 
         # ----------------------------------------------------------------
@@ -1146,8 +1175,25 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 return jsonify({"locked": True, "launch_iso": _launch_state()["launch_iso"]})
             _db.release_expired_assignments()
             crop_id = _db.assign_next_crop(g.user_id)
+
+            # Real progress metrics
+            try:
+                progress = _db.get_real_progress()
+                started = progress["started"]
+                confirmed = progress["confirmed"]
+                total = progress["total"]
+            except Exception:
+                started = 0
+                confirmed = 0
+                total = 0
+            pct = round((started + confirmed) / (2 * total) * 100, 1) if total > 0 else 0
+
             if not crop_id:
-                return jsonify({"done": True})
+                done_reason = "queue_exhausted" if confirmed < total else "all_done"
+                return jsonify({"done": True, "done_reason": done_reason,
+                                "started": started, "confirmed": confirmed,
+                                "total": total, "pct": pct, "labeled": 0})
+
             crop = _db.get_crop_details(crop_id)
             pdf_path = crop.get("pdf_path", "")
             label_ocr = crop.get("label_ocr") or "?"
@@ -1159,14 +1205,12 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 stats = _db.get_global_stats(g.user_id)
                 global_labeled = stats["global_labeled"]
                 my_labeled = stats["my_labeled"]
-                total = stats["total"]
                 session["global_labeled"] = global_labeled
                 session["my_labeled"] = my_labeled
                 session["total_count"] = total
             except Exception:
                 global_labeled = session.get("global_labeled", 0)
                 my_labeled = session.get("my_labeled", 0)
-                total = session.get("total_count", 0)
             return jsonify({
                 "done": False,
                 "crop_id": crop_id,
@@ -1184,6 +1228,9 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 "labeled": global_labeled,
                 "my_labeled": my_labeled,
                 "total": total,
+                "started": started,
+                "confirmed": confirmed,
+                "pct": pct,
             })
 
         # ----------------------------------------------------------------
@@ -1206,7 +1253,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                     .execute()
                 )
                 if not last.data:
-                    return jsonify({"ok": False, "error": "No labels to undo"}), 400
+                    return _error_response("No labels to undo", 400)
                 row = last.data[0]
                 last_crop = row["crop_id"]
                 was_skip = row.get("label_human") == "_skip"
@@ -1229,7 +1276,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 # Clear any active assignment so the crop can be re-served
                 _cli.table("assignments").delete().eq("annotator_id", g.user_id).execute()
             except Exception as exc:
-                return jsonify({"ok": False, "error": f"Back failed: {exc}"}), 500
+                return _error_response(f"Back failed: {exc}", 500)
             return jsonify({"ok": True})
 
         # ----------------------------------------------------------------
@@ -1466,11 +1513,17 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
             """Return the next crop as JSON for SPA updates (no page reload)."""
             state = _STATE
             item = state.queue.current()
+            labeled = state.queue.labeled
+            total = state.queue.total
+            started = labeled
+            confirmed = labeled
+            pct = round((started + confirmed) / (2 * total) * 100, 1) if total > 0 else 0
             if item is None:
+                done_reason = "queue_exhausted" if confirmed < total else "all_done"
                 return jsonify({
-                    "done": True,
-                    "labeled": state.queue.labeled,
-                    "total": state.queue.total,
+                    "done": True, "done_reason": done_reason,
+                    "started": started, "confirmed": confirmed,
+                    "total": total, "pct": pct, "labeled": labeled,
                 })
             return jsonify({
                 "done": False,
@@ -1486,8 +1539,11 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 "concordancias": _get_concordancias(item.pdf_path, index_path, item.label_ocr),
                 "acta_flags": _get_acta_flags(item.pdf_path),
                 "recent": state.recent,
-                "labeled": state.queue.labeled,
-                "total": state.queue.total,
+                "labeled": labeled,
+                "total": total,
+                "started": started,
+                "confirmed": confirmed,
+                "pct": pct,
             })
 
         @app.route("/status")
