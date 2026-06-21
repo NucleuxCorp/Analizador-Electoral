@@ -50,10 +50,10 @@ Chain strategy: pending
 
 ## Phase 4: Compare & Report (compare_models.py)
 
-- [ ] 4.1 Create `compare_models.py` — load both `model_a.pth` and `model_b.pth` into same MobileNetV2+Linear architecture. Load test set from `data/labels/confirmed/` filtered by `test_crop_ids.json`. (~40 loc)
-- [ ] 4.2 Add evaluation loop — for each model: accuracy, per-class F1 (0-9), F1 macro, 10x10 confusion matrix on the confirmed test set. (~40 loc)
-- [ ] 4.3 Add report generation — `models/dual_finetune_report.json` (structured: per-model metrics + epochs_to_convergence from `dual_train_history.json`) and `models/dual_finetune_report.txt` (human-readable side-by-side). (~40 loc)
-- [ ] 4.4 Add recommendation logic — combined score (accuracy + F1 macro), recommend model with justification. Assert `digit_classifier.pth` unchanged (hash check or mtime). (~30 loc)
+- [x] 4.1 Create `compare_models.py` — load both `model_a.pth` and `model_b.pth` into same MobileNetV2+Linear architecture. Load test set from `data/labels/confirmed/` filtered by `test_crop_ids.json`. (~40 loc)
+- [x] 4.2 Add evaluation loop — for each model: accuracy, per-class F1 (0-9), F1 macro, 10x10 confusion matrix on the confirmed test set. (~40 loc)
+- [x] 4.3 Add report generation — `models/dual_finetune_report.json` (structured: per-model metrics + epochs_to_convergence from `dual_train_history.json`) and `models/dual_finetune_report.txt` (human-readable side-by-side). (~40 loc)
+- [x] 4.4 Add recommendation logic — combined score (accuracy + F1 macro), recommend model with justification. Assert `digit_classifier.pth` unchanged (hash check or mtime). (~30 loc)
 
 ## Phase 5: Tests (tests/test_retrain_pipeline.py)
 
