@@ -1053,6 +1053,16 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                             }).execute()
                     except Exception:
                         logger.warning("skip_view: _skip label insert failed for crop=%s user=%s", crop_id, g.user_id)
+                    # Check skip count and escalate
+                    try:
+                        skip_count_resp = _cli.table("labels").select("id", count="exact").eq("crop_id", crop_id).eq("label_human", "_skip").execute()
+                        skip_count = skip_count_resp.count or 0
+                        if skip_count >= 3:
+                            _cli.table("crops").update({"status": "disputed", "confirmed_label": "_skip_x3"}).eq("crop_id", crop_id).execute()
+                        elif skip_count >= 2:
+                            _cli.table("crops").update({"status": "needs_third"}).eq("crop_id", crop_id).execute()
+                    except Exception:
+                        logger.warning("skip_view: skip escalation failed for crop=%s", crop_id)
             except Exception as exc:
                 return _error_response(f"Skip failed: {exc}", 500)
             return jsonify({"ok": True})

@@ -6,10 +6,11 @@
 -- of that acta is labeled, then moves to the next acta. This lets us revalidate
 -- a mesa's arithmetic as soon as it is fully labeled.
 --
--- A crop is eligible in TWO cases:
+-- A crop is eligible in THREE cases:
 --   1. annotation_count < 2  →  normal assignment (first or second annotator).
---   2. annotation_count = 2 AND status = 'needs_third'  →  tiebreaker for 3rd
---      annotator (only opened when the first two disagree).
+--   2. annotation_count = 2 AND status = 'needs_third'  →  tiebreaker for labels.
+--   3. annotation_count = 0 AND status = 'needs_third'  →  tiebreaker for skips
+--      (crop skipped by 2 users, needs a 3rd to validate or skip).
 --
 -- Two agreeing annotators → confirmed (stops at 2, never re-assigned).
 -- Two disagreeing → status 'needs_third', re-opens for a third annotator.
@@ -33,7 +34,8 @@ BEGIN
     INTO   v_pdf_path
     FROM   crops c
     WHERE  ((c.annotation_count < 2 AND c.status NOT IN ('confirmed', 'conflict', 'disputed'))
-            OR (c.annotation_count = 2 AND c.status = 'needs_third'))
+            OR (c.annotation_count = 2 AND c.status = 'needs_third')
+            OR (c.annotation_count = 0 AND c.status = 'needs_third'))
       AND  c.crop_id NOT IN (
                SELECT a.crop_id FROM assignments a
                WHERE  a.annotator_id = p_annotator_id AND a.expires_at > now()
@@ -57,7 +59,8 @@ BEGIN
         FROM   crops c
         WHERE  c.pdf_path = v_pdf_path
           AND  ((c.annotation_count < 2 AND c.status NOT IN ('confirmed', 'conflict', 'disputed'))
-                OR (c.annotation_count = 2 AND c.status = 'needs_third'))
+                OR (c.annotation_count = 2 AND c.status = 'needs_third')
+                OR (c.annotation_count = 0 AND c.status = 'needs_third'))
           AND  c.crop_id NOT IN (
                    SELECT a.crop_id FROM assignments a
                    WHERE  a.annotator_id = p_annotator_id AND a.expires_at > now()
@@ -76,7 +79,8 @@ BEGIN
         INTO   v_crop_id
         FROM   crops c
         WHERE  ((c.annotation_count < 2 AND c.status NOT IN ('confirmed', 'conflict', 'disputed'))
-                OR (c.annotation_count = 2 AND c.status = 'needs_third'))
+                OR (c.annotation_count = 2 AND c.status = 'needs_third')
+                OR (c.annotation_count = 0 AND c.status = 'needs_third'))
           AND  c.crop_id NOT IN (
                    SELECT a.crop_id FROM assignments a
                    WHERE  a.annotator_id = p_annotator_id AND a.expires_at > now()
