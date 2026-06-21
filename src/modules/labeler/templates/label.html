@@ -354,7 +354,7 @@
 {% set _s = started | default(0) %}
 {% set _c = confirmed | default(0) %}
 {% set _t = total | default(0) %}
-{% set _pct = ((_s + _c) / (2 * _t) * 100) | round(1) if _t > 0 else 0 %}
+{% set _pct = ((_s + _c) / (2 * _t) * 100) | round(2) if _t > 0 else 0 %}
 <div class="container-fluid mb-1" style="max-width:1000px;">
   <div class="progress-metrics d-flex justify-content-around text-center">
     <div>

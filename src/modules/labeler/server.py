@@ -887,7 +887,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 started = 0
                 confirmed = 0
                 total = 0
-            pct = round((started + confirmed) / (2 * total) * 100, 1) if total > 0 else 0
+            pct = round((started + confirmed) / (2 * total) * 100, 2) if total > 0 else 0
 
             if crop_id is None:
                 done_reason = "queue_exhausted" if confirmed < total else "all_done"
@@ -1196,7 +1196,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 started = 0
                 confirmed = 0
                 total = 0
-            pct = round((started + confirmed) / (2 * total) * 100, 1) if total > 0 else 0
+            pct = round((started + confirmed) / (2 * total) * 100, 2) if total > 0 else 0
 
             if not crop_id:
                 done_reason = "queue_exhausted" if confirmed < total else "all_done"
@@ -1527,7 +1527,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
             total = state.queue.total
             started = labeled
             confirmed = labeled
-            pct = round((started + confirmed) / (2 * total) * 100, 1) if total > 0 else 0
+            pct = round((started + confirmed) / (2 * total) * 100, 2) if total > 0 else 0
             if item is None:
                 done_reason = "queue_exhausted" if confirmed < total else "all_done"
                 return jsonify({
