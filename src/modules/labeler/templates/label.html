@@ -41,6 +41,17 @@
 
     body { min-height: 100vh; font-family: monospace; }
 
+    /* ── Progress metrics ── */
+    .progress-metrics {
+      background: var(--bs-secondary-bg);
+      border-radius: 10px;
+      padding: 10px 8px;
+      margin-bottom: 12px;
+    }
+    .pm-num { font-size: 1.4rem; font-weight: bold; color: var(--lab-accent); line-height: 1.2; }
+    .pm-lbl { font-size: .6rem; text-transform: uppercase; letter-spacing: 1px; color: var(--lab-muted); margin-top: 2px; }
+    .pm-sub { font-size: .6rem; color: var(--lab-muted); margin-top: 0; }
+
     /* ── Progress ── */
     .prog-fill-custom {
       background: linear-gradient(90deg, #2e7d32, #66bb6a);
@@ -290,39 +301,33 @@
 
 {% if done %}
 <div class="done-box">
-  <h2>¡Todo listo!</h2>
+  {% if done_reason == "queue_exhausted" %}
+  <h2>🐘 No hay más dígitos para validar</h2>
+  <p>Ya revisaste todos los dígitos disponibles. Otros usuarios están etiquetando también — volvé más tarde para ver si hay nuevos dígitos para validar.</p>
+  {% else %}
+  <h2>🎉 ¡Todo listo!</h2>
   <p>{{ labeled }} elementos etiquetados. La cola está agotada.</p>
+  {% endif %}
 </div>
 
 {% else %}
 
-<!-- Progress bar -->
-{% set pct = ((labeled / total) * 100) | round(1) if total > 0 else 0 %}
-<div class="container-fluid mb-1" style="max-width:1000px;" id="prog-wrap">
-  <button class="prog-toggle" onclick="toggleProg()" id="prog-btn">&#9643; gruesa</button>
-
-  <div id="prog-delgada">
-    <div class="progress" style="height:10px;background:var(--bs-secondary-bg);">
-      <div class="progress-bar prog-fill-custom" id="prog-fill-delgada" style="width:{{ pct }}%;"></div>
+<!-- Progress metrics -->
+{% set pct = ((started + confirmed) / (2 * total) * 100) | round(1) if total > 0 else 0 %}
+<div class="container-fluid mb-1" style="max-width:1000px;">
+  <div class="progress-metrics d-flex justify-content-around text-center">
+    <div>
+      <div class="pm-num" id="pm-started">{{ started }}</div>
+      <div class="pm-lbl">Iniciados</div>
+      <div class="pm-sub">de {{ total }} totales</div>
     </div>
-    <div class="d-flex justify-content-between mt-1" style="font-size:.7rem;color:var(--lab-muted);">
-      <span id="prog-global-delgada">{{ labeled }} global</span>
-      <span id="prog-pct-delgada">{{ pct }}%</span>
-      <span id="prog-my-delgada">míos: {{ my_labeled }}</span>
+    <div>
+      <div class="pm-num" id="pm-confirmed">{{ confirmed }}</div>
+      <div class="pm-lbl">Confirmados</div>
     </div>
-  </div>
-
-  <div id="prog-gruesa" style="display:none;">
-    <div class="progress" style="height:28px;background:var(--bs-secondary-bg);border-radius:8px;">
-      <div class="progress-bar prog-fill-custom d-flex align-items-center justify-content-end pe-2"
-           id="prog-fill-gruesa" style="width:{{ pct }}%;min-width:32px;border-radius:8px;">
-        <span style="font-size:.78rem;font-weight:bold;color:#fff;white-space:nowrap;" id="prog-pct-gruesa">{{ pct }}%</span>
-      </div>
-    </div>
-    <div class="d-flex justify-content-between mt-1" style="font-size:.75rem;color:var(--lab-muted);font-weight:bold;">
-      <span id="prog-global-gruesa">{{ labeled }} global</span>
-      <span style="font-size:1.1rem;color:#66bb6a;font-weight:bold;" id="prog-pct-gruesa2">{{ pct }}%</span>
-      <span id="prog-my-gruesa">míos: {{ my_labeled }}</span>
+    <div>
+      <div class="pm-num" id="pm-pct">{{ pct }}%</div>
+      <div class="pm-lbl">Progreso real</div>
     </div>
   </div>
 </div>
@@ -972,19 +977,10 @@
         }
 
         if (item.total > 0) {
-          var pct = Math.round((item.labeled / item.total) * 1000) / 10;
-          var pctStr = pct + "%";
-          el = document.getElementById("prog-fill-delgada");   if (el) el.style.width = pctStr;
-          el = document.getElementById("prog-fill-gruesa");  if (el) el.style.width = pctStr;
-          el = document.getElementById("prog-pct-delgada");    if (el) el.textContent = pctStr;
-          el = document.getElementById("prog-pct-gruesa");   if (el) el.textContent = pctStr;
-          el = document.getElementById("prog-pct-gruesa2");  if (el) el.textContent = pctStr;
-          el = document.getElementById("prog-global-delgada"); if (el) el.textContent = item.labeled + " global";
-          el = document.getElementById("prog-global-gruesa");if (el) el.textContent = item.labeled + " global";
-          if (item.my_labeled !== undefined) {
-            el = document.getElementById("prog-my-delgada");  if (el) el.textContent = "míos: " + item.my_labeled;
-            el = document.getElementById("prog-my-gruesa"); if (el) el.textContent = "míos: " + item.my_labeled;
-          }
+          // Real progress metrics
+          el = document.getElementById("pm-started");   if (el) el.textContent = item.started || 0;
+          el = document.getElementById("pm-confirmed"); if (el) el.textContent = item.confirmed || 0;
+          el = document.getElementById("pm-pct");       if (el) el.textContent = (item.pct || 0) + "%";
         }
 
         setEnmienda(false);

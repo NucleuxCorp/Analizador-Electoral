@@ -395,3 +395,41 @@ def get_global_stats(user_id: str = "") -> dict:
         my_labeled = my_resp.count or 0
 
     return {"global_labeled": global_labeled, "my_labeled": my_labeled, "total": total}
+
+
+# ---------------------------------------------------------------------------
+# 3.12  get_real_progress
+# ---------------------------------------------------------------------------
+
+def get_real_progress() -> dict:
+    """
+    Returns real progress metrics excluding _skip labels.
+
+    Returns:
+        {"started": int, "confirmed": int, "total": int}
+    """
+    cli = _client()
+    total_resp = cli.table("crops").select("crop_id", count="exact").execute()
+    total = total_resp.count or 0
+
+    confirmed = 0
+    try:
+        conf_resp = cli.table("crops").select("crop_id", count="exact").eq("status", "confirmed").execute()
+        confirmed = conf_resp.count or 0
+    except Exception:
+        pass
+
+    started = 0
+    try:
+        rpc_resp = cli.rpc("count_started_crops", {}).execute()
+        started = rpc_resp.data or 0
+        if not started:
+            raise ValueError("rpc returned zero or null")
+    except Exception:
+        try:
+            fb = cli.table("labels").select("crop_id", count="exact").neq("label_human", "_skip").execute()
+            started = fb.count or 0
+        except Exception:
+            started = 0
+
+    return {"started": started, "confirmed": confirmed, "total": total}
