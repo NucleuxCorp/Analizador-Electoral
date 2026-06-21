@@ -51,6 +51,12 @@
     .pm-num { font-size: 1.4rem; font-weight: bold; color: var(--lab-accent); line-height: 1.2; }
     .pm-lbl { font-size: .6rem; text-transform: uppercase; letter-spacing: 1px; color: var(--lab-muted); margin-top: 2px; }
     .pm-sub { font-size: .6rem; color: var(--lab-muted); margin-top: 0; }
+    /* Circular progress */
+    .pm-ring { position: relative; display: inline-flex; align-items: center; justify-content: center; }
+    .pm-ring svg { transform: rotate(-90deg); width: 56px; height: 56px; }
+    .pm-ring .bg { fill: none; stroke: var(--bs-border-color); stroke-width: 4; }
+    .pm-ring .fg { fill: none; stroke: var(--lab-accent); stroke-width: 4; stroke-linecap: round; transition: stroke-dashoffset .6s ease; }
+    .pm-ring .pct-text { position: absolute; font-size: .85rem; font-weight: bold; color: var(--lab-accent); }
 
     /* ── Progress ── */
     .prog-fill-custom {
@@ -361,8 +367,15 @@
       <div class="pm-lbl">Confirmados</div>
     </div>
     <div>
-      <div class="pm-num" id="pm-pct">{{ _pct }}%</div>
-      <div class="pm-lbl">Progreso real</div>
+      <div class="pm-ring">
+        <svg viewBox="0 0 60 60">
+          <circle class="bg" cx="30" cy="30" r="22"/>
+          <circle class="fg" id="ring-fg" cx="30" cy="30" r="22"
+                  stroke-dasharray="138.23" stroke-dashoffset="{{ (138.23 * (1 - _pct / 100)) | round(2) }}"/>
+        </svg>
+        <span class="pct-text" id="pm-pct">{{ _pct }}%</span>
+      </div>
+      <div class="pm-lbl" style="margin-top:2px;">Progreso real</div>
     </div>
   </div>
 </div>
@@ -1029,6 +1042,12 @@
           el = document.getElementById("pm-started");   if (el) el.textContent = item.started || 0;
           el = document.getElementById("pm-confirmed"); if (el) el.textContent = item.confirmed || 0;
           el = document.getElementById("pm-pct");       if (el) el.textContent = (item.pct || 0) + "%";
+          // Circular ring
+          var ring = document.getElementById("ring-fg");
+          if (ring) {
+            var circ = 138.23;  /* 2 * pi * 22 */
+            ring.style.strokeDashoffset = circ * (1 - (item.pct || 0) / 100);
+          }
         }
 
         setEnmienda(false);
