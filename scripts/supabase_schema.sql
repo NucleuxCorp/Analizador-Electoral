@@ -86,15 +86,3 @@ SECURITY DEFINER
 AS $$
   SELECT COUNT(DISTINCT crop_id)::integer FROM public.labels;
 $$;
-
--- Returns the number of distinct crops with at least one real (non-_skip) label.
--- Used for the "Iniciados" counter in the progress metrics.
-CREATE OR REPLACE FUNCTION count_started_crops()
-RETURNS integer
-LANGUAGE sql
-STABLE
-SECURITY DEFINER
-AS $$
-  SELECT COUNT(DISTINCT crop_id)::integer
-  FROM public.labels WHERE label_human != '_skip';
-$$;
