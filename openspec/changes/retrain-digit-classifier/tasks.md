@@ -41,12 +41,12 @@ Chain strategy: pending
 
 ## Phase 3: Dual Training (train_dual_finetune.py)
 
-- [ ] 3.1 Create `train_dual_finetune.py` — argparse, device=cpu, import `get_transforms` from `train_digit_classifier.py`. Load `models/digit_classifier.pth` into MobileNetV2 + `Linear(1280,10)`. Build DataLoaders with `WeightedRandomSampler`. (~60 loc)
-- [ ] 3.2 Implement Model A — freeze `model.features` (`requires_grad=False`), Adam `lr=1e-4`, train loop with per-epoch metrics (accuracy, F1 macro, loss, time), early stopping `patience=5` on val F1 macro. (~80 loc)
-- [ ] 3.3 Implement Model B — unfreeze all, 3 discriminative LR groups (`features[0:7]`=1e-5, `features[7:14]`=1e-4, `features[14:]+classifier`=1e-3), `weight_decay=1e-4`, early stopping `patience=3` on val F1 macro. (~80 loc)
-- [ ] 3.4 Add save logic — save `models/digit_classifier_model_a.pth`, `model_b.pth` (best val F1 weights), `models/dual_train_history.json` (per-epoch metrics + epochs_to_convergence for both). (~40 loc)
-- [ ] 3.5 Add F1 macro computation — `sklearn.metrics.f1_score(avg='macro')` or manual; per-epoch val F1 for early stopping. (~20 loc)
-- [ ] 3.6 Add `__main__` orchestration — sequential: train A → train B → save all artifacts. (~30 loc)
+- [x] 3.1 Create `train_dual_finetune.py` — argparse, device=cpu, import `get_transforms` from `train_digit_classifier.py`. Load `models/digit_classifier.pth` into MobileNetV2 + `Linear(1280,10)`. Build DataLoaders with `WeightedRandomSampler`. (~60 loc)
+- [x] 3.2 Implement Model A — freeze `model.features` (`requires_grad=False`), Adam `lr=1e-4`, train loop with per-epoch metrics (accuracy, F1 macro, loss, time), early stopping `patience=5` on val F1 macro. (~80 loc)
+- [x] 3.3 Implement Model B — unfreeze all, 3 discriminative LR groups (`features[0:7]`=1e-5, `features[7:14]`=1e-4, `features[14:]+classifier`=1e-3), `weight_decay=1e-4`, early stopping `patience=3` on val F1 macro. (~80 loc)
+- [x] 3.4 Add save logic — save `models/digit_classifier_model_a.pth`, `model_b.pth` (best val F1 weights), `models/dual_train_history.json` (per-epoch metrics + epochs_to_convergence for both). (~40 loc)
+- [x] 3.5 Add F1 macro computation — `sklearn.metrics.f1_score(avg='macro')` or manual; per-epoch val F1 for early stopping. (~20 loc)
+- [x] 3.6 Add `__main__` orchestration — sequential: train A → train B → save all artifacts. (~30 loc)
 
 ## Phase 4: Compare & Report (compare_models.py)
 
