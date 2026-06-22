@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>En mantenimiento — Verificación Ciudadana E-14</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: monospace;
+      background: radial-gradient(1200px 600px at 50% -10%, #1f2a44, #14182a 60%, #0d1018);
+      color: #e6edf3;
+      min-height: 100vh;
+      display: flex; flex-direction: column; align-items: center;
+      padding: 32px 18px;
+    }
+    .wrap { width: 100%; max-width: 620px; text-align: center; margin-top: 5vh; }
+
+    .badge-top {
+      display: inline-block; font-size: 0.62rem; letter-spacing: 1.5px;
+      text-transform: uppercase; color: #7ec8e3; border: 1px solid #2a3a5a;
+      border-radius: 999px; padding: 4px 12px; margin-bottom: 18px;
+    }
+    h1 { font-size: 1.7rem; color: #fff; line-height: 1.2; margin-bottom: 10px; }
+    h1 .accent { color: #7ec8e3; }
+    .lead { font-size: 0.86rem; color: #9fb0c0; line-height: 1.6; margin-bottom: 28px; }
+
+    .section {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid #2a3a5a;
+      border-radius: 14px;
+      padding: 20px;
+      margin-bottom: 18px;
+      text-align: left;
+    }
+    .section h2 {
+      font-size: 0.9rem; color: #7ec8e3; margin-bottom: 10px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .section p { font-size: 0.8rem; color: #b0c0d0; line-height: 1.55; }
+
+    .cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-top: 24px; }
+    .btn {
+      font-family: monospace; font-size: 0.92rem; font-weight: bold;
+      padding: 11px 22px; border-radius: 9px; cursor: pointer;
+      text-decoration: none; display: inline-block; transition: all 0.12s;
+    }
+    .btn-primary {
+      color: #06121e; background: linear-gradient(180deg, #8fd3ec, #5fb6d8);
+      border: 1px solid #7ec3e3;
+    }
+    .btn-primary:hover { background: linear-gradient(180deg, #a4ddf2, #6fc2e0); }
+    .btn-ghost {
+      color: #7ec8e3; background: transparent; border: 1px solid #2a3a5a;
+    }
+    .btn-ghost:hover { border-color: #7ec8e3; }
+
+    .video-wrap { width: 100%; margin: 8px 0 18px; }
+    .video-wrap .embed {
+      position: relative; padding-bottom: 50.80042689434365%; height: 0;
+      border-radius: 10px; overflow: hidden;
+    }
+    .video-wrap iframe {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      border: 0; border-radius: 10px;
+    }
+
+    .signed {
+      font-size: 0.72rem; color: #667; margin-top: 22px;
+    }
+    .signed a { color: #7ec8e3; text-decoration: none; }
+    .signed a:hover { text-decoration: underline; }
+
+    .ver { position: fixed; bottom: 8px; left: 10px; font-size: 0.6rem; color: #445; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <span class="badge-top">Elecciones Presidenciales 2026 · Acta E-14</span>
+    <h1>Verificación <span class="accent">Ciudadana</span> de Actas</h1>
+    <p class="lead">El portal de etiquetado está en mantenimiento mientras preparamos la segunda vuelta. Podés registrarte ahora y volver a etiquetar cuando abramos.</p>
+
+    <div class="section">
+      <h2>Atención</h2>
+      <p>Estamos actualizando la plataforma para recibir las actas E-14 de la segunda vuelta presidencial. Durante este proceso el trabajo de etiquetado está pausado, pero tu cuenta y tu progreso anterior se conservan.</p>
+    </div>
+
+    <div class="section">
+      <h2>Interés</h2>
+      <p>Este sistema permite que ciudadanos verifiquen dígito a dígito los votos registrados en las actas de escrutinio. Cada etiqueta comparada contra el OCR ayuda a detectar inconsistencias y a construir una auditoría pública de los resultados.</p>
+    </div>
+
+    <div class="section">
+      <h2>Deseo</h2>
+      <p>En la segunda vuelta contaremos con el mismo rigor, más actas y mejoras en la asignación de tareas. Si ya participaste en la primera vuelta, tu experiencia acumulada nos hará más rápidos y precisos.</p>
+    </div>
+
+    <div class="section">
+      <h2>Acción</h2>
+      <p>Mirá el tutorial de abajo para entender cómo se etiqueta. Si aún no tenés cuenta, registrate ahora para estar listo cuando abramos.</p>
+      <div class="cta">
+        <a class="btn btn-primary" href="/auth/register">Crear cuenta</a>
+        <a class="btn btn-ghost" href="/auth/login">Iniciar sesión</a>
+      </div>
+    </div>
+
+    <div class="video-wrap">
+      <div class="embed">
+        <iframe src="https://www.loom.com/embed/40f6d1a46315479f969c1f6296b1624b?t=0" frameborder="0" webkitallowfullscreen mozallowfullscreen allowfullscreen></iframe>
+      </div>
+    </div>
+
+    <p class="signed">Un proyecto de <a href="https://porciudad.com" target="_blank" rel="noopener">PorCiudad</a>.</p>
+  </div>
+  <div class="ver">{{ app_version }}</div>
+</body>
+</html>

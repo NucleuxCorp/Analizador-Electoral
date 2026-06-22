@@ -500,6 +500,31 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
         rid = request.headers.get("X-Request-ID") or uuid.uuid4().hex[:12]
         g.request_id = rid
 
+    # Routes allowed while the portal is in maintenance mode.
+    # Static assets are required by the landing page; /status is the healthcheck;
+    # /auth/register remains open so new volunteers can sign up during cutover.
+    _MAINTENANCE_WHITELIST = frozenset({
+        "static",
+        "status_view",
+        "auth_register_get",
+        "auth_register_post",
+    })
+
+    @app.before_request
+    def _check_maintenance_mode() -> tuple[Response, int] | None:
+        """Gate non-whitelisted traffic when MAINTENANCE_MODE=true."""
+        if os.environ.get("MAINTENANCE_MODE", "").lower() != "true":
+            return None
+        if request.endpoint in _MAINTENANCE_WHITELIST:
+            return None
+        if (
+            request.is_json
+            or request.path.startswith("/api/")
+            or request.accept_mimetypes.best == "application/json"
+        ):
+            return jsonify({"ok": False, "error": "maintenance_mode"}), 503
+        return render_template("maintenance.html"), 503
+
     @app.after_request
     def _emit_request_id(resp: Response) -> Response:
         rid = getattr(g, "request_id", None)
