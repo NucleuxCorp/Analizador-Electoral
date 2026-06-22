@@ -36,6 +36,29 @@ class TestSchemaV2:
         assert "assign_next_crop_v2" in schema_v2_sql
         assert "vuelta = p_vuelta" in schema_v2_sql
 
+    def test_existing_rows_backfilled_primera(self, schema_v2_sql: str):
+        """The DDL must backfill existing rows as primera via DEFAULT 'primera'.
+
+        Spec VT-2: Existing rows backfilled as primera.
+        The migration relies on the column DEFAULT, so we assert that
+        each ALTER TABLE statement includes DEFAULT 'primera' AND NOT NULL
+        so existing rows get the safe value and cannot be left null.
+        """
+        import re
+
+        # Find each ADD COLUMN vuelta statement and check its constraint clause.
+        pattern = re.compile(
+            r"ALTER TABLE\s+(crops|labels|assignments)\s+"
+            r"ADD COLUMN\s+vuelta\s+"
+            r"TEXT\s+NOT\s+NULL\s+DEFAULT\s+'primera'",
+            re.IGNORECASE,
+        )
+        matches = pattern.findall(schema_v2_sql)
+        assert sorted(set(matches)) == ["assignments", "crops", "labels"], (
+            f"Expected all 3 tables to have `vuelta TEXT NOT NULL DEFAULT 'primera'`, "
+            f"found: {sorted(set(matches))}"
+        )
+
 
 class TestDbVueltaHelpers:
     def test_db_helpers_exist_and_accept_vuelta(self):
@@ -50,3 +73,29 @@ class TestDbVueltaHelpers:
         )
         for helper in helpers:
             assert callable(helper), f"{helper} is not callable"
+
+    def test_queries_filter_by_active_vuelta(self):
+        """list_crops_by_vuelta must apply .eq('vuelta', vuelta) to the query chain.
+
+        Spec VT-3: Portal queries filter by active vuelta.
+        Mocks the Supabase client and asserts the .eq() filter is invoked
+        with the correct column and value for each helper that accepts vuelta.
+        """
+        from unittest.mock import MagicMock, call, patch
+
+        import src.modules.labeler.db as db
+
+        mock_client = MagicMock()
+        # Build a chain: client.table("crops").select("*").eq("vuelta", X).execute()
+        chain = MagicMock()
+        chain.select.return_value = chain
+        chain.eq.return_value = chain
+        chain.execute.return_value = MagicMock(data=[])
+        mock_client.table.return_value = chain
+
+        with patch.object(db, "supabase", mock_client):
+            db.list_crops_by_vuelta(mock_client, "segunda")
+            assert chain.eq.call_args_list == [call("vuelta", "segunda")], (
+                f"list_crops_by_vuelta must call .eq('vuelta', 'segunda'); "
+                f"got: {chain.eq.call_args_list}"
+            )

@@ -4,7 +4,7 @@ tests/labeler/test_module_switch.py — PR-B MODULE env switch tests.
 Covers:
   - MODULE unset → app.config["MODULE"] == "primera"
   - MODULE=segunda → app.config["MODULE"] == "segunda"
-  - MODULE=invalid → falls back to "primera"
+  - MODULE=invalid → raises RuntimeError at create_app time (per spec MS-3)
 """
 from __future__ import annotations
 
@@ -49,9 +49,9 @@ class TestModuleSwitch:
             app = _create_app(tmp_path)
         assert app.config["MODULE"] == "segunda"
 
-    def test_invalid_module_falls_back_to_primera(self, tmp_path, base_env, monkeypatch):
-        """An invalid MODULE value must fall back to primera."""
+    def test_invalid_module_aborts_startup(self, tmp_path, base_env, monkeypatch):
+        """An invalid MODULE value must raise RuntimeError at create_app time."""
         monkeypatch.setenv("MODULE", "invalid")
         with patch.dict(os.environ, base_env):
-            app = _create_app(tmp_path)
-        assert app.config["MODULE"] == "primera"
+            with pytest.raises(RuntimeError, match="Invalid MODULE"):
+                _create_app(tmp_path)

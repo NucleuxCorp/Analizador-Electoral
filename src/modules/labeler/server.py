@@ -497,8 +497,12 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
     # ----------------------------------------------------------------
     _ALLOWED_MODULES = frozenset({"primera", "segunda"})
     _module_env = os.environ.get("MODULE", "primera").strip().lower()
-    MODULE = _module_env if _module_env in _ALLOWED_MODULES else "primera"
-    app.config["MODULE"] = MODULE
+    if _module_env not in _ALLOWED_MODULES:
+        raise RuntimeError(
+            f"Invalid MODULE env value: {_module_env!r}. "
+            f"Must be one of {sorted(_ALLOWED_MODULES)}."
+        )
+    app.config["MODULE"] = _module_env
 
     # ----------------------------------------------------------------
     # Request correlation + global exception handler
