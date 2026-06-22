@@ -46,16 +46,11 @@ Delta specs preserved in archive folder (`spec-d1-block-a.md`, `spec-d2-field-gr
 
 ```
 openspec/changes/archive/2026-06-22-fase-2-fix-hybrid-tachon/
-├── exploration.md
-├── proposal.md
-├── spec-d1-block-a.md
-├── spec-d2-field-groups-tachon.md
-├── design-d1-block-a.md
-├── design-d2-field-groups-tachon.md
-├── tasks-d1-block-a.md (all tasks [x])
-├── tasks-d2-field-groups-tachon.md (all tasks [x])
-├── verify-report.md
-└── archive-report.md
+  exploration.md, proposal.md
+  spec-d1-block-a.md, spec-d2-field-groups-tachon.md
+  design-d1-block-a.md, design-d2-field-groups-tachon.md
+  tasks-d1-block-a.md, tasks-d2-field-groups-tachon.md (all [x])
+  verify-report.md, archive-report.md
 ```
 
 ---
