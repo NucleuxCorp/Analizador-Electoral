@@ -73,22 +73,23 @@ def _normalize_label(value: str) -> str:
 # 3.4  assign_next_crop
 # ---------------------------------------------------------------------------
 
-def assign_next_crop(annotator_id: str) -> str | None:
+def assign_next_crop(annotator_id: str, vuelta: str = "primera") -> str | None:
     """
-    Call the assign_next_crop Postgres RPC and return the assigned crop_id.
+    Call the assign_next_crop_v2 Postgres RPC and return the assigned crop_id.
 
     Uses SELECT FOR UPDATE SKIP LOCKED (server-side) so concurrent callers
     never receive the same crop.  Returns None when no crop is available.
 
     Args:
         annotator_id: UUID string of the current annotator (from JWT sub claim).
+        vuelta:       Voting round tag ('primera' or 'segunda'). Defaults to 'primera'.
 
     Returns:
         crop_id string, or None if the queue is empty for this annotator.
     """
     response = _client().rpc(
-        "assign_next_crop",
-        {"p_annotator_id": annotator_id},
+        "assign_next_crop_v2",
+        {"p_annotator_id": annotator_id, "p_vuelta": vuelta},
     ).execute()
     # supabase-py v2: response.data is the scalar return value of the function
     return response.data or None
@@ -134,12 +135,13 @@ def write_label(
     label_human: str,
     amended: bool,
     is_admin: bool,
+    vuelta: str = "primera",
 ) -> None:
     """
     Insert a labels row and increment crops.annotation_count atomically.
 
     Steps (two sequential PostgREST calls — supabase-py sync):
-      1. INSERT INTO labels (crop_id, annotator_id, label_human, amended, is_admin_resolution)
+      1. INSERT INTO labels (crop_id, annotator_id, label_human, amended, is_admin_resolution, vuelta)
       2. UPDATE crops SET annotation_count = annotation_count + 1 WHERE crop_id = ?
 
     Args:
@@ -148,6 +150,7 @@ def write_label(
         label_human:  The label value token submitted by the annotator.
         amended:      True if the annotator amended the OCR suggestion.
         is_admin:     True if this label is an admin conflict resolution.
+        vuelta:       Voting round tag ('primera' or 'segunda'). Defaults to 'primera'.
     """
     _client().table("labels").insert(
         {
@@ -156,6 +159,7 @@ def write_label(
             "label_human": label_human,
             "amended": amended,
             "is_admin_resolution": is_admin,
+            "vuelta": vuelta,
         }
     ).execute()
 

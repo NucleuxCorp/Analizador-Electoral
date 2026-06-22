@@ -59,6 +59,22 @@ class TestSchemaV2:
             f"found: {sorted(set(matches))}"
         )
 
+    def test_schema_v2_has_check_constraint_on_vuelta(self, schema_v2_sql: str):
+        """Each vuelta column must reject values outside {'primera','segunda'}."""
+        import re
+
+        pattern = re.compile(
+            r"ALTER TABLE\s+(crops|labels|assignments)\s+"
+            r"ADD COLUMN\s+vuelta\s+[^;]*"
+            r"CHECK\s*\(\s*vuelta\s+IN\s*\(\s*'primera'\s*,\s*'segunda'\s*\)\s*\)",
+            re.IGNORECASE | re.DOTALL,
+        )
+        matches = pattern.findall(schema_v2_sql)
+        assert sorted(set(matches)) == ["assignments", "crops", "labels"], (
+            f"Expected all 3 tables to have CHECK (vuelta IN ('primera','segunda')), "
+            f"found: {sorted(set(matches))}"
+        )
+
 
 class TestDbVueltaHelpers:
     def test_db_helpers_exist_and_accept_vuelta(self):
@@ -99,3 +115,64 @@ class TestDbVueltaHelpers:
                 f"list_crops_by_vuelta must call .eq('vuelta', 'segunda'); "
                 f"got: {chain.eq.call_args_list}"
             )
+
+
+class TestWriteLabelVuelta:
+    def test_write_label_includes_vuelta_column(self):
+        """write_label must pass the vuelta column through to the INSERT payload.
+
+        Spec W4: all existing INSERTs add vuelta; explicit parameter keeps
+        the call site deterministic and backward-compatible.
+        """
+        from unittest.mock import MagicMock, patch
+
+        import src.modules.labeler.db as db
+
+        chain = MagicMock()
+        chain.insert.return_value = chain
+        chain.execute.return_value = MagicMock(data=[])
+        mock_client = MagicMock()
+        mock_client.table.return_value = chain
+
+        # get_crop_details is called after insert; stub it with a minimal crop.
+        with patch.object(db, "supabase", mock_client), \
+             patch.object(db, "get_crop_details", return_value={"annotation_count": 0}):
+            db.write_label(
+                crop_id="crop-123",
+                annotator_id="user-1",
+                label_human="5",
+                amended=False,
+                is_admin=False,
+                vuelta="segunda",
+            )
+
+        insert_payload = chain.insert.call_args[0][0]
+        assert insert_payload["vuelta"] == "segunda", (
+            f"INSERT payload missing vuelta='segunda': {insert_payload}"
+        )
+
+
+class TestAssignNextCropVuelta:
+    def test_assign_next_crop_uses_v2_rpc_with_vuelta(self):
+        """assign_next_crop must call the v2 RPC and pass p_vuelta.
+
+        Spec W5: replace assign_next_crop with assign_next_crop_v2 so the
+        queue is scoped to the active voting round.
+        """
+        from unittest.mock import MagicMock, patch
+
+        import src.modules.labeler.db as db
+
+        rpc_chain = MagicMock()
+        rpc_chain.execute.return_value = MagicMock(data="crop-456")
+        mock_client = MagicMock()
+        mock_client.rpc.return_value = rpc_chain
+
+        with patch.object(db, "supabase", mock_client):
+            result = db.assign_next_crop("user-1", vuelta="segunda")
+
+        assert result == "crop-456"
+        mock_client.rpc.assert_called_once_with(
+            "assign_next_crop_v2",
+            {"p_annotator_id": "user-1", "p_vuelta": "segunda"},
+        )

@@ -505,6 +505,24 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
     app.config["MODULE"] = _module_env
 
     # ----------------------------------------------------------------
+    # LABELS_DIR resolution (PR-B W7)
+    #
+    # Precedence (highest to lowest):
+    #   1. LABELS_DIR environment variable (explicit operator override)
+    #   2. MODULE=segunda → default data/labels_segunda
+    #   3. MODULE=primera (or unset) → use the labels_dir passed to create_app()
+    # ----------------------------------------------------------------
+    _labels_dir_env = os.environ.get("LABELS_DIR", "").strip()
+    if _labels_dir_env:
+        resolved_labels_dir = Path(_labels_dir_env).resolve()
+    elif app.config["MODULE"] == "segunda":
+        resolved_labels_dir = Path("data/labels_segunda").resolve()
+    else:
+        resolved_labels_dir = labels_dir.resolve()
+    app.config["LABELS_DIR"] = str(resolved_labels_dir)
+    resolved_labels_dir.mkdir(parents=True, exist_ok=True)
+
+    # ----------------------------------------------------------------
     # Request correlation + global exception handler
     # ----------------------------------------------------------------
     @app.before_request
@@ -619,8 +637,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
         import src.modules.labeler.db as _db
 
         _use_storage = os.environ.get("USE_SUPABASE_STORAGE", "false").lower() == "true"
-        _labels_dir_env = Path(os.environ.get("LABELS_DIR", str(labels_dir))).resolve()
-        _index_path = _labels_dir_env / "crops" / "index.jsonl"
+        _index_path = resolved_labels_dir / "crops" / "index.jsonl"
 
         # ----------------------------------------------------------------
         # Demo route — UI preview only, no DB, only when LOCAL_DEV_BYPASS set
@@ -912,7 +929,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
             if not _launch_state()["is_open"]:
                 return redirect("/", code=302)
             _db.release_expired_assignments()
-            crop_id = _db.assign_next_crop(g.user_id)
+            crop_id = _db.assign_next_crop(g.user_id, app.config["MODULE"])
 
             # Real progress metrics (with fallbacks to avoid template crashes)
             try:
@@ -1119,7 +1136,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 storage_url = _db.get_storage_url(crop_id)
                 return redirect(storage_url, code=302)
             else:
-                png_path = _labels_dir_env / "crops" / f"{crop_id}.png"
+                png_path = resolved_labels_dir / "crops" / f"{crop_id}.png"
                 if not png_path.exists():
                     return Response("Not found", status=404)
                 return send_file(str(png_path), mimetype="image/png")
@@ -1221,7 +1238,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
             if not _launch_state()["is_open"]:
                 return jsonify({"locked": True, "launch_iso": _launch_state()["launch_iso"]})
             _db.release_expired_assignments()
-            crop_id = _db.assign_next_crop(g.user_id)
+            crop_id = _db.assign_next_crop(g.user_id, app.config["MODULE"])
 
             # Real progress metrics
             try:
@@ -1383,8 +1400,8 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
         # ----------------------------------------------------------------
         # LOCAL DEV MODE: preserve existing _STATE singleton + all routes
         # ----------------------------------------------------------------
-        labels_dir  = labels_dir.resolve()
-        index_path  = index_path.resolve()
+        labels_dir = resolved_labels_dir
+        index_path = labels_dir / "crops" / "index.jsonl"
         _load_divipole(Path.cwd())
         manifest_path = labels_dir / "manifest.jsonl"
         manifest = ManifestWriter(manifest_path, labels_dir)

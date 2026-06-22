@@ -9,13 +9,16 @@
 -- 1. Add vuelta column to existing tables
 -- ---------------------------------------------------------------------------
 ALTER TABLE crops
-    ADD COLUMN vuelta TEXT NOT NULL DEFAULT 'primera';
+    ADD COLUMN vuelta TEXT NOT NULL DEFAULT 'primera'
+    CHECK (vuelta IN ('primera', 'segunda'));
 
 ALTER TABLE labels
-    ADD COLUMN vuelta TEXT NOT NULL DEFAULT 'primera';
+    ADD COLUMN vuelta TEXT NOT NULL DEFAULT 'primera'
+    CHECK (vuelta IN ('primera', 'segunda'));
 
 ALTER TABLE assignments
-    ADD COLUMN vuelta TEXT NOT NULL DEFAULT 'primera';
+    ADD COLUMN vuelta TEXT NOT NULL DEFAULT 'primera'
+    CHECK (vuelta IN ('primera', 'segunda'));
 
 -- ---------------------------------------------------------------------------
 -- 2. Indexes for vuelta-scoped lookups

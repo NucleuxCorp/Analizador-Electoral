@@ -55,3 +55,23 @@ class TestModuleSwitch:
         with patch.dict(os.environ, base_env):
             with pytest.raises(RuntimeError, match="Invalid MODULE"):
                 _create_app(tmp_path)
+
+    def test_module_segunda_uses_segunda_labels_dir(
+        self, tmp_path, base_env, monkeypatch
+    ):
+        """MODULE=segunda with no LABELS_DIR env must resolve to labels_segunda."""
+        monkeypatch.setenv("MODULE", "segunda")
+        monkeypatch.delenv("LABELS_DIR", raising=False)
+        with patch.dict(os.environ, base_env):
+            app = _create_app(tmp_path)
+        assert app.config["MODULE"] == "segunda"
+        assert app.config["LABELS_DIR"].endswith("labels_segunda")
+
+    def test_labels_dir_env_overrides_module(self, tmp_path, base_env, monkeypatch):
+        """An explicit LABELS_DIR env must take precedence over MODULE=segunda."""
+        custom = str(tmp_path / "custom_labels")
+        monkeypatch.setenv("MODULE", "segunda")
+        monkeypatch.setenv("LABELS_DIR", custom)
+        with patch.dict(os.environ, base_env):
+            app = _create_app(tmp_path)
+        assert app.config["LABELS_DIR"] == str(Path(custom).resolve())
