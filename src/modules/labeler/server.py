@@ -493,6 +493,14 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
     app = Flask(__name__, template_folder=str(templates_dir))
 
     # ----------------------------------------------------------------
+    # Voting-round module switch (PR-B): primera | segunda
+    # ----------------------------------------------------------------
+    _ALLOWED_MODULES = frozenset({"primera", "segunda"})
+    _module_env = os.environ.get("MODULE", "primera").strip().lower()
+    MODULE = _module_env if _module_env in _ALLOWED_MODULES else "primera"
+    app.config["MODULE"] = MODULE
+
+    # ----------------------------------------------------------------
     # Request correlation + global exception handler
     # ----------------------------------------------------------------
     @app.before_request

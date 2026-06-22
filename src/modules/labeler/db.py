@@ -326,6 +326,48 @@ def get_storage_url(crop_id: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# 3.9b  vuelta-aware list helpers (segunda-vuelta portal switch)
+# ---------------------------------------------------------------------------
+
+def list_crops_by_vuelta(client, vuelta: str) -> list[dict]:
+    """Return all crops for a given vuelta ('primera' or 'segunda')."""
+    response = client.table("crops").select("*").eq("vuelta", vuelta).execute()
+    return response.data or []
+
+
+def list_labels_by_vuelta(client, vuelta: str) -> list[dict]:
+    """Return all labels for a given vuelta."""
+    response = client.table("labels").select("*").eq("vuelta", vuelta).execute()
+    return response.data or []
+
+
+def list_assignments_by_vuelta(client, vuelta: str) -> list[dict]:
+    """Return all assignments for a given vuelta."""
+    response = client.table("assignments").select("*").eq("vuelta", vuelta).execute()
+    return response.data or []
+
+
+def create_label_with_vuelta(
+    client,
+    crop_id: str,
+    label: str,
+    user_id: str,
+    vuelta: str,
+) -> dict:
+    """Insert a label row scoped to a vuelta and return the created record."""
+    response = client.table("labels").insert(
+        {
+            "crop_id": crop_id,
+            "annotator_id": user_id,
+            "label_human": label,
+            "vuelta": vuelta,
+        }
+    ).execute()
+    data = response.data or []
+    return data[0] if data else {}
+
+
+# ---------------------------------------------------------------------------
 # 3.10  get_conflict_crops
 # ---------------------------------------------------------------------------
 
