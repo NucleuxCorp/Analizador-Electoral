@@ -1,0 +1,48 @@
+# openspec/config.yaml — Analizador de Elecciones SDD configuration
+schema: spec-driven
+
+context: |
+  Tech stack: Python 3.12, Flask 3.x, Supabase, Playwright 1.44, aiosqlite, PyJWT, gunicorn
+  Architecture: CLI entrypoint (main.py) + modular scraping (e14/, e14c/) + analysis (analyzer/) + web labeler (labeler/)
+  Testing: pytest unit tests (tests/labeler/), no E2E, no CI pipeline
+  Style: English identifiers/comments, JSONL storage, Playwright async browser automation
+  Persistence mode: hybrid (engram + openspec)
+
+strict_tdd: true
+
+testing:
+  runner:
+    command: pytest
+    framework: pytest
+  layers:
+    unit: true
+    integration: true
+    e2e: false
+  coverage: false
+  linter: false
+  type_checker: false
+  formatter: false
+
+rules:
+  proposal:
+    - Include rollback plan for risky changes
+    - Scope changes to one module at a time
+  specs:
+    - Use Given/When/Then for scenarios
+    - Use RFC 2119 keywords (MUST, SHALL, SHOULD, MAY)
+  design:
+    - Document architecture decisions with rationale
+    - Reference existing module structure
+  tasks:
+    - Group by phase, use hierarchical numbering
+    - Keep tasks completable in one session
+  apply:
+    - Follow existing code patterns (English identifiers)
+    tdd: true
+    test_command: "pytest -xvs tests/"
+  verify:
+    test_command: "pytest -xvs tests/"
+    build_command: ""
+    coverage_threshold: 0
+  archive:
+    - Warn before merging destructive deltas
