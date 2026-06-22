@@ -36,6 +36,13 @@ COMBINED_THRESHOLD = 0.45
 
 DEFAULT_JSONL = REPO_ROOT / "data" / "analysis_segunda_vuelta" / "tachon_method_scan_500.jsonl"
 DEFAULT_RUN_ID = "tachon-pattern-scan-500pdf"
+AGGREGATE_ARTIFACTS = (
+    "tachon_method_scan_500_summary.json",
+    "tachon_method_cooccurrence.json",
+    "tachon_method_histograms.json",
+    "tachon_method_scan_500_complete.json",
+    "tachon_method_scan_500_report.md",
+)
 HISTOGRAM_BINS = [round(i * 0.1, 1) for i in range(11)]
 SCORE_KEYS = ["tachon_score", "double_score", "density_score", "noise_score"]
 
