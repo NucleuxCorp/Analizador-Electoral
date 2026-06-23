@@ -130,6 +130,57 @@ class TestAuthRegister:
         resp = client.post("/auth/register", json={})
         assert resp.status_code == 400
 
+    def test_sign_up_uses_public_email_redirect_to(self, client, monkeypatch):
+        """Registration must pass the public APP_URL as email_redirect_to."""
+        monkeypatch.setenv("APP_URL", "https://analizadore14.porciudad.com")
+
+        mock_supabase = MagicMock()
+        mock_supabase.auth.sign_up.return_value = MagicMock()
+
+        with patch("src.modules.labeler.auth.init_supabase_client", return_value=mock_supabase):
+            resp = client.post(
+                "/auth/register",
+                json={
+                    "email": "new@example.com",
+                    "password": "password123",
+                    "first_name": "Ada",
+                    "last_name": "Lovelace",
+                },
+            )
+
+        assert resp.status_code == 201
+        call_args = mock_supabase.auth.sign_up.call_args[0][0]
+        assert (
+            call_args["options"]["email_redirect_to"]
+            == "https://analizadore14.porciudad.com/auth/confirm"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Public URL configuration
+# ---------------------------------------------------------------------------
+
+class TestPublicUrlConfig:
+    def test_url_for_uses_app_url_domain(self, tmp_path, monkeypatch):
+        """url_for(..., _external=True) must use the configured APP_URL domain."""
+        monkeypatch.setenv("APP_URL", "https://analizadore14.porciudad.com")
+        env_vars = {
+            "SUPABASE_URL": "https://fake.supabase.co",
+            "SUPABASE_ANON_KEY": "fake-anon-key",
+            "SECRET_KEY": "test-secret-key-routes",
+        }
+        with patch.dict(os.environ, env_vars):
+            from src.modules.labeler.server import create_app
+            index_path = tmp_path / "crops" / "index.jsonl"
+            index_path.parent.mkdir(parents=True, exist_ok=True)
+            app = create_app(index_path=index_path, labels_dir=tmp_path)
+            app.config["TESTING"] = True
+
+        with app.test_request_context():
+            url = app.url_for("status_view", _external=True)
+
+        assert url == "https://analizadore14.porciudad.com/status"
+
 
 # ---------------------------------------------------------------------------
 # POST /auth/login

@@ -66,6 +66,23 @@ def _configure_logging() -> None:
     _configure_logging._done = True  # type: ignore[attr-defined]
 
 
+def _public_base_url() -> str:
+    """Return the public URL used for auth email links and external redirects.
+
+    Precedence:
+      1. APP_URL environment variable (explicit operator override)
+      2. RAILWAY_STATIC_URL (Railway-provided public URL)
+      3. Production default domain
+    """
+    app_url = os.environ.get("APP_URL", "").strip()
+    if app_url:
+        return app_url.rstrip("/")
+    railway_url = os.environ.get("RAILWAY_STATIC_URL", "").strip()
+    if railway_url:
+        return railway_url.rstrip("/")
+    return "https://analizadore14.porciudad.com"
+
+
 class _RequestIdFilter(logging.Filter):
     """Inject Flask g.request_id into log records (or '-' if outside request ctx)."""
     def filter(self, record: logging.LogRecord) -> bool:
@@ -493,6 +510,18 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
     app = Flask(__name__, template_folder=str(templates_dir))
 
     # ----------------------------------------------------------------
+    # Public URL scheme / domain for external links (verification emails)
+    # ----------------------------------------------------------------
+    app.config["PREFERRED_URL_SCHEME"] = "https"
+    _server_name = os.environ.get("SERVER_NAME", "").strip()
+    if not _server_name:
+        from urllib.parse import urlparse
+
+        _server_name = urlparse(_public_base_url()).netloc
+    if _server_name:
+        app.config["SERVER_NAME"] = _server_name
+
+    # ----------------------------------------------------------------
     # Voting-round module switch (PR-B): primera | segunda
     # ----------------------------------------------------------------
     _ALLOWED_MODULES = frozenset({"primera", "segunda"})
@@ -716,15 +745,19 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
             client = init_supabase_client()
             try:
                 # Store profile fields as Supabase user_metadata (no schema change).
+                base_url = _public_base_url()
                 client.auth.sign_up({
                     "email": email,
                     "password": password,
-                    "options": {"data": {
-                        "first_name": first_name,
-                        "last_name": last_name,
-                        "phone": phone,
-                        "full_name": (first_name + " " + last_name).strip(),
-                    }},
+                    "options": {
+                        "data": {
+                            "first_name": first_name,
+                            "last_name": last_name,
+                            "phone": phone,
+                            "full_name": (first_name + " " + last_name).strip(),
+                        },
+                        "email_redirect_to": f"{base_url}/auth/confirm",
+                    },
                 })
                 return jsonify({"message": "check your email"}), 201
             except Exception as exc:
@@ -787,7 +820,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 import requests as _requests
                 _supabase_url = os.environ.get("SUPABASE_URL", "").strip()
                 _anon_key = os.environ.get("SUPABASE_ANON_KEY", "").strip()
-                base_url = os.environ.get("RAILWAY_STATIC_URL", "http://localhost:5000")
+                base_url = _public_base_url()
                 # Use REST API directly to ensure redirect_to is honored
                 _requests.post(
                     f"{_supabase_url}/auth/v1/recover",
