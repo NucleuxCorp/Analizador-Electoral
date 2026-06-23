@@ -1,8 +1,10 @@
 # Spec: debug_sv Segunda Vuelta Worker
 
 **Domain:** `debug-sv-segunda-vuelta`  
-**Status:** Active (synced from `fase-2-fix-hybrid-tachon`, 2026-06-22)  
-**Source change:** `openspec/changes/archive/2026-06-22-fase-2-fix-hybrid-tachon/`
+**Status:** Active (synced from `fase-2-fix-hybrid-tachon` + `tachon-pattern-scan-500pdf`, 2026-06-22)  
+**Source changes:**
+- `openspec/changes/archive/2026-06-22-fase-2-fix-hybrid-tachon/`
+- `openspec/changes/archive/2026-06-22-tachon-pattern-scan-500pdf/`
 
 ---
 
@@ -64,10 +66,35 @@ Full spec: archived `spec-d2-field-groups-tachon.md`
 
 ---
 
+## Tachon Pattern Scan — 500 PDFs × per-method isolation
+
+Controlled experiment calling `detect_tachon`, `detect_double_writing`, `detect_density`, and `detect_noise` directly (not `analyze_cell()`). **Zero edits** under `src/modules/analyzer/`.
+
+### Requirements
+
+| ID | Requirement |
+|----|-------------|
+| REQ-MANIFEST-001 | Build reproducible 500-PDF manifest from `data/pdfs_e14c_segunda/` with stratified proportional allocation, min 1 per dept, `seed=42`. |
+| REQ-SCAN-001 | `debug_sv/tachon_method_scan.py` SHALL emit per-subcell JSONL with all four isolated scores and `flags_by_method`. |
+| REQ-JSONL-001 | Ink subcells MUST include `scores.double_score` (mandatory field). |
+| REQ-NO-SRC-001 | MUST NOT modify any file under `src/modules/analyzer/`. |
+| REQ-AGG-001 | Post-run artifacts: summary, co-occurrence, histograms, completion JSON, markdown report. |
+
+### Gates (blocking)
+
+- GATE-SCAN-04: `pdfs_error / 500 < 0.01` (achieved: 0/500)
+- GATE-SCAN-05: 100% ink subcells have `double_score`
+- GATE-SCAN-09: D2 regression `test_tachon_field_groups.py` 19/19
+
+Full spec: archived `spec.md` in `2026-06-22-tachon-pattern-scan-500pdf/`
+
+---
+
 ## Validation
 
 ```powershell
 python -m pytest debug_sv/test_tachon_field_groups.py debug_sv/test_row_labeling.py debug_sv/test_h_line_filter.py -v
+python -m pytest debug_sv/test_tachon_scan_manifest.py debug_sv/test_tachon_method_scan.py -v
 python debug_sv/analyze_e14_batch.py --validate
 ```
 
