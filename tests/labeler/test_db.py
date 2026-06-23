@@ -295,6 +295,67 @@ class TestEvaluateAgreementConflict:
 
 
 # ---------------------------------------------------------------------------
+# 6.2e  assign_next_crop — v2 + fallback to v1
+# ---------------------------------------------------------------------------
+
+class TestAssignNextCrop:
+    def test_calls_assign_next_crop_v2(self, mock_supabase_client):
+        """When the v2 RPC exists, assign_next_crop must use it and pass vuelta."""
+        import src.modules.labeler.db as db
+
+        rpc_chain = MagicMock()
+        rpc_chain.execute.return_value = MagicMock(data="crop-123")
+        mock_supabase_client.rpc.return_value = rpc_chain
+
+        result = db.assign_next_crop("user-1", vuelta="segunda")
+
+        assert result == "crop-123"
+        mock_supabase_client.rpc.assert_called_once_with(
+            "assign_next_crop_v2",
+            {"p_annotator_id": "user-1", "p_vuelta": "segunda"},
+        )
+
+    def test_falls_back_to_v1_when_v2_not_found(self, mock_supabase_client):
+        """If Supabase reports the v2 RPC is missing, fall back to the v1 RPC."""
+        import src.modules.labeler.db as db
+
+        v2_chain = MagicMock()
+        v2_chain.execute.side_effect = Exception(
+            '404: function "assign_next_crop_v2" not found'
+        )
+
+        v1_chain = MagicMock()
+        v1_chain.execute.return_value = MagicMock(data="crop-legacy")
+
+        def _rpc(name, params):
+            if name == "assign_next_crop_v2":
+                return v2_chain
+            if name == "assign_next_crop":
+                return v1_chain
+            raise ValueError(f"unexpected RPC: {name}")
+
+        mock_supabase_client.rpc.side_effect = _rpc
+
+        result = db.assign_next_crop("user-1", vuelta="segunda")
+
+        assert result == "crop-legacy"
+        mock_supabase_client.rpc.assert_any_call(
+            "assign_next_crop", {"p_annotator_id": "user-1"}
+        )
+
+    def test_propagates_other_v2_errors(self, mock_supabase_client):
+        """Non-RPC-not-found errors from the v2 call must not be masked."""
+        import src.modules.labeler.db as db
+
+        rpc_chain = MagicMock()
+        rpc_chain.execute.side_effect = Exception("connection timeout")
+        mock_supabase_client.rpc.return_value = rpc_chain
+
+        with pytest.raises(Exception, match="connection timeout"):
+            db.assign_next_crop("user-1", vuelta="segunda")
+
+
+# ---------------------------------------------------------------------------
 # 6.2d  release_expired_assignments
 # ---------------------------------------------------------------------------
 

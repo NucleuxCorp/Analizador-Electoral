@@ -16,9 +16,12 @@ Dev bypass (ADR-4):
 """
 from __future__ import annotations
 
+import logging
 import os
 from datetime import datetime, timezone
 from typing import Any
+
+logger = logging.getLogger("labeler.db")
 
 # ---------------------------------------------------------------------------
 # Module-level Supabase client (sync create_client — ADR-2)
@@ -87,12 +90,30 @@ def assign_next_crop(annotator_id: str, vuelta: str = "primera") -> str | None:
     Returns:
         crop_id string, or None if the queue is empty for this annotator.
     """
-    response = _client().rpc(
-        "assign_next_crop_v2",
-        {"p_annotator_id": annotator_id, "p_vuelta": vuelta},
-    ).execute()
-    # supabase-py v2: response.data is the scalar return value of the function
-    return response.data or None
+    try:
+        response = _client().rpc(
+            "assign_next_crop_v2",
+            {"p_annotator_id": annotator_id, "p_vuelta": vuelta},
+        ).execute()
+        # supabase-py v2: response.data is the scalar return value of the function
+        return response.data or None
+    except Exception as exc:
+        err = str(exc).lower()
+        if "function" in err and (
+            "not found" in err or "does not exist" in err or "unknown" in err
+        ):
+            logger.warning(
+                "assign_next_crop_v2 not found in Supabase; falling back to "
+                "assign_next_crop. Deploy scripts/supabase_schema_v2.sql for "
+                "vuelta-aware assignment. Error: %s",
+                exc,
+            )
+            response = _client().rpc(
+                "assign_next_crop",
+                {"p_annotator_id": annotator_id},
+            ).execute()
+            return response.data or None
+        raise
 
 
 # ---------------------------------------------------------------------------
