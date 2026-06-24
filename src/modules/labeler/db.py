@@ -307,36 +307,31 @@ def release_expired_assignments() -> None:
 # 3.9  get_storage_url
 # ---------------------------------------------------------------------------
 
-def get_concordancias(pdf_path: str, label_ocr: str, exclude_crop_id: str = "", limit: int = 5) -> list[str]:
+def get_concordancias(pdf_path: str, label_ocr: str, exclude_crop_id: str = "", limit: int = 8) -> list[str]:
     """
-    Return crop_ids from the same acta (pdf_path) whose OCR value matches the
-    current digit, OR any sibling from the same E14 when OCR is empty.
-    Falls back to showing other digit crops from the same E14 when label_ocr
-    is not available (segunda vuelta suspects).
+    Return **subcell** crop_ids from the same E14 (pdf_path) for visual comparison.
+    Shows other subcells (digit_index >= 0) preferredly with the same OCR value
+    as the current crop, but always returns sibling subcells so the reviewer
+    can visually compare the flagged digit against other digits from the same acta.
     """
     if not pdf_path:
         return []
     client = _client()
-    if label_ocr and label_ocr not in ("", "?"):
-        resp = (
-            client.table("crops")
-            .select("crop_id")
-            .eq("pdf_path", pdf_path)
-            .eq("label_ocr", label_ocr)
-            .limit(limit + 1)
-            .execute()
-        )
-    else:
-        resp = (
-            client.table("crops")
-            .select("crop_id")
-            .eq("pdf_path", pdf_path)
-            .order("digit_index", desc=False)
-            .limit(limit + 1)
-            .execute()
-        )
-    out: list[str] = []
-    for r in (resp.data or []):
+    # Fetch subcells from the same E14, filtered by OCR if available
+    q = client.table("crops").select("crop_id,field_name,digit_index,label_ocr").eq("pdf_path", pdf_path).neq("digit_index", -1).limit(60).execute()
+    siblings = (q.data or [])
+    # Remove current crop
+    siblings = [s for s in siblings if s.get("crop_id") != exclude_crop_id]
+    # Prefer siblings with same OCR value, fill rest with others
+    same_ocr = [s["crop_id"] for s in siblings if s.get("label_ocr") == label_ocr and label_ocr not in ("", "?")]
+    others = [s["crop_id"] for s in siblings if s.get("label_ocr") != label_ocr]
+    # Priority: same OCR first, then fill with others until limit
+    result = same_ocr[:limit]
+    for cid in others:
+        if len(result) >= limit: break
+        if cid not in result:
+            result.append(cid)
+    return result
         cid = r.get("crop_id")
         if cid and cid != exclude_crop_id:
             out.append(cid)
