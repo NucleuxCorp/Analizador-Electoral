@@ -1089,6 +1089,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                     label_human=label_human,
                     amended=amended,
                     is_admin=is_admin,
+                    vuelta=app.config["MODULE"],
                 )
                 crop = _db.get_crop_details(crop_id)
                 if (crop.get("annotation_count") or 0) >= 2 or is_admin:
@@ -1137,6 +1138,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                                 "label_human": "_skip",
                                 "amended": False,
                                 "is_admin_resolution": False,
+                                "vuelta": app.config["MODULE"],
                             }).execute()
                     except Exception:
                         logger.warning("skip_view: _skip label insert failed for crop=%s user=%s", crop_id, g.user_id)
