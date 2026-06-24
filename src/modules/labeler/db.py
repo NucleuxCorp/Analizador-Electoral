@@ -62,7 +62,7 @@ def _client():
 
 # Annotators write zero as any of these glyphs. They are semantically identical
 # and must NOT count as a disagreement (consistent with revalidate_actas.py).
-ZERO_VARIANTS = {"*", "-", ".", "+", "o", "O"}
+ZERO_VARIANTS = {"*", "-", ".", "+", "o", "O", "/", "//", "///"}
 SKIP_LABEL = "_skip"
 
 

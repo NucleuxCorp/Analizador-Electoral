@@ -452,7 +452,7 @@ _STATE: Optional[SessionState] = None
 import re as _re
 
 # Accepted value tokens: "", "0"–"9", "E<digit>", "*", "-", "."
-_VALUE_TOKEN_PATTERN = _re.compile(r'^(|[0-9]{1,5}|E[0-9]{1,5}|\*|-|\.|\+)$')
+_VALUE_TOKEN_PATTERN = _re.compile(r'^(|[0-9]{1,5}|E[0-9]{1,5}|\*|-|\.|\+|/{1,3})$')
 
 
 def _parse_value_token(raw: str) -> tuple[str, bool]:
