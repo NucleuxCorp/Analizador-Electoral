@@ -823,6 +823,7 @@
     };
 
     inp.addEventListener("keydown", function (e) {
+      if (e.key === "Escape")    { hideLoader(); e.preventDefault(); doSaltar(); return; }
       if (_busy) { e.preventDefault(); return; }
       if (fraudOpen()) return;
       var fb = inp.dataset.fallback === "true";
@@ -838,6 +839,7 @@
     });
 
     document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") { hideLoader(); e.preventDefault(); doSaltar(); return; }
       if (_busy) { e.preventDefault(); return; }
       if (document.getElementById("pdf-modal").style.display === "flex") {
         if (e.key === "Escape") { e.preventDefault(); closePdf(); return; }
