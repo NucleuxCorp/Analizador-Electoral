@@ -332,10 +332,7 @@ def get_concordancias(pdf_path: str, label_ocr: str, exclude_crop_id: str = "", 
         if cid not in result:
             result.append(cid)
     return result
-        cid = r.get("crop_id")
-        if cid and cid != exclude_crop_id:
-            out.append(cid)
-    return out[:limit]
+
 def get_storage_url(crop_id: str) -> str:
     """
     Return the public Supabase Storage URL for a crop PNG in bucket 'crops'.
