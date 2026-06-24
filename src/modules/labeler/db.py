@@ -338,16 +338,30 @@ def get_storage_url(crop_id: str) -> str:
     """
     Return the public Supabase Storage URL for a crop PNG in bucket 'crops'.
 
-    The URL pattern is: {SUPABASE_URL}/storage/v1/object/public/crops/{crop_id}.png
+    Reads the actual storage_url column from the crops table (ADR-3),
+    instead of fabricating a path from crop_id — because segunda-vuelta
+    crops live at sv/batch1/{hash}/{filename}.png, not at {crop_id}.png.
 
     Args:
-        crop_id: The crop identifier (used as the storage object key).
+        crop_id: The crop identifier.
 
     Returns:
         Full HTTPS URL to the public image.
+
+    Raises:
+        ValueError: if the crop_id does not exist in the database.
     """
-    base_url = _supabase_url.rstrip("/")
-    return f"{base_url}/storage/v1/object/public/crops/{crop_id}.png"
+    resp = (
+        _client()
+        .table("crops")
+        .select("storage_url")
+        .eq("crop_id", crop_id)
+        .single()
+        .execute()
+    )
+    if not resp.data or not resp.data.get("storage_url"):
+        raise ValueError(f"No storage_url for crop_id: {crop_id!r}")
+    return resp.data["storage_url"]
 
 
 # ---------------------------------------------------------------------------
