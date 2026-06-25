@@ -1407,9 +1407,17 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
             details = _db.get_crop_details(crop_id)
             if not details:
                 return Response("Crop not found", status=404)
-            # Proxy the PDF so the browser displays it inline (the Registraduria
-            # serves PDFs as application/octet-stream, which forces a download).
             source_url = (details.get("source_url") or "").strip()
+            # For segunda vuelta crops without source_url, construct it from pdf_path
+            if not source_url:
+                from pathlib import Path
+                pdf_path = details.get("pdf_path", "")
+                name = Path(pdf_path).name
+                parts = name.replace('.pdf', '').split('_')
+                if len(parts) >= 13:
+                    BASE_E14C = "https://escrutinios2vueltapresidente2026.registraduria.gov.co"
+                    dept = parts[0]; mpio = parts[1]; zone = parts[2]; stand = parts[3]; mesa = parts[11]; hash_val = parts[12]; corp = "2"
+                    source_url = f"{BASE_E14C}/docs/E14/2026-06-21/{dept}/{mpio}/{zone}/{stand}/{corp}/{dept}_{mpio}_{zone}_{stand}_{corp}_{mesa}_{hash_val}.pdf"
             if source_url:
                 # Pilot strategy: redirect the user's browser directly to
                 # Registraduria. Their browser can reach registraduria.gov.co
