@@ -436,33 +436,33 @@ def get_global_stats(user_id: str = "") -> dict:
     """
     Returns global labeling progress plus the personal count for user_id.
 
-    Calls the count_distinct_labeled_crops() Postgres RPC to avoid fetching
-    all labels rows just for a DISTINCT count.
+    Changed to count unique E14 actas (pdf_path) instead of individual crops.
 
     Returns:
         {
-            "global_labeled": int,  # distinct crops with >= 1 human label
+            "global_labeled": int,  # distinct E14 with >= 1 confirmed crop
             "my_labeled":     int,  # labels submitted by user_id (0 if empty)
-            "total":          int,  # total crops in the system
+            "total":          int,  # total distinct E14 with subcells in system
         }
     """
     cli = _client()
 
-    total_resp = cli.table("crops").select("crop_id", count="exact").execute()
-    total = total_resp.count or 0
-
+    # Total: count distinct pdf_path
     try:
-        rpc_resp = cli.rpc("count_distinct_labeled_crops", {}).execute()
-        global_labeled = rpc_resp.data or 0
-        if not global_labeled:
-            raise ValueError("rpc returned zero or null")
+        r = cli.rpc("count_distinct_e14_total", {}).execute()
+        total = r.data or 0
     except Exception:
-        # Fallback: count crops that have at least one human annotation
-        try:
-            fb = cli.table("crops").select("crop_id", count="exact").gt("annotation_count", 0).execute()
-            global_labeled = fb.count or 0
-        except Exception:
-            global_labeled = 0
+        total_resp = cli.table("crops").select("pdf_path", count="exact").neq("digit_index", -1).execute()
+        total = total_resp.count or 0
+
+    # Labeled: count distinct pdf_path with status=confirmed
+    try:
+        r = cli.rpc("count_distinct_e14_confirmed", {}).execute()
+        global_labeled = r.data or 0
+    except Exception:
+        # Fallback
+        r2 = cli.table("crops").select("pdf_path", count="exact").eq("status", "confirmed").neq("digit_index", -1).execute()
+        global_labeled = r2.count or 0
 
     my_labeled = 0
     if user_id:
