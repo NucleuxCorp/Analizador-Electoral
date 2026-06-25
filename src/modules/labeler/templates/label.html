@@ -488,7 +488,7 @@
             {% if priority == 0 %}<span class="badge badge-review">requiere revisión</span>{% endif %}
             {% if priority == 1 %}<span class="badge badge-sospechoso">sospechoso</span>{% endif %}
           </span>
-          <input id="answer" type="text" inputmode="numeric" autocomplete="off" autocorrect="off" spellcheck="false"
+          <input id="answer" type="text" inputmode="decimal" autocomplete="off" autocorrect="off" spellcheck="false"
                  value="{{ label_ocr }}"
                  maxlength="{% if is_fallback %}5{% else %}3{% endif %}"
                  data-ocr="{{ label_ocr }}"
