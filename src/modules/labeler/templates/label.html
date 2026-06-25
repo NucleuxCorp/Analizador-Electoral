@@ -731,8 +731,8 @@
     var enmienda = false;
     var _busy    = false;
 
-      inp.select();
-      if (!_isTouchDevice()) inp.focus();
+    if (!('ontouchstart' in window || navigator.maxTouchPoints > 0)) inp.focus();
+    inp.select();
 
     function setEnmienda(on) {
       enmienda = on;
@@ -805,10 +805,7 @@
       var m = fraudModal();
       if (m) m.style.display = "none";
     // Touch device: no auto-focus on page load (prevents virtual keyboard popup)
-    function _isTouchDevice() {
-        return 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-    }
-    if (!_isTouchDevice()) { inp.focus(); inp.select(); }
+    if (!('ontouchstart' in window || navigator.maxTouchPoints > 0)) { inp.focus(); inp.select(); }
     };
     window.submitFraud = function () {
       var m = fraudModal();
@@ -1075,7 +1072,7 @@
               .then(function(item) {
                 if (item.locked) { location.href = "/"; return; }
                 if (item.done) { location.href = "{{ work_url }}"; }
-                else { updateDOM(item); }
+                else { updateDOM(item); if (!('ontouchstart' in window || navigator.maxTouchPoints > 0)) { inp.select(); inp.focus(); } }
               })
               .catch(function() { location.href = "{{ work_url }}"; });
           } else {
