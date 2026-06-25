@@ -731,12 +731,13 @@
     var enmienda = false;
     var _busy    = false;
 
-      inp.focus(); inp.select();
+      inp.select();
+      if (!_isTouchDevice()) inp.focus();
 
     function setEnmienda(on) {
       enmienda = on;
       modeEl.textContent = on ? "MODO ENMIENDA — digitá y Enter" : "";
-      if (on) { inp.value = ""; inp.focus(); }
+      if (on) { inp.value = ""; inp.focus(); }  // user initiated action
     }
 
     function _guard() { if (_busy) return true; return false; }
