@@ -558,12 +558,12 @@
     </div>
 
     <!-- PDF button -->
-    <button id="btn-pdf" class="btn btn-outline-secondary w-100 d-flex align-items-center justify-content-center gap-2"
-            onclick="openPdf('/pdf?v={{ crop_id }}')"
-            style="font-family:monospace;padding:10px 14px;">
+    <a id="btn-pdf" class="btn btn-outline-secondary w-100 d-flex align-items-center justify-content-center gap-2"
+       href="{{ pdf_source_url }}" target="_blank" rel="noopener noreferrer"
+       style="font-family:monospace;padding:10px 14px;text-decoration:none;">
       <strong style="color:var(--lab-accent);">PDF</strong>
       <span style="font-size:.72rem;">Ver acta completa</span>
-    </button>
+    </a>
 
     <!-- Mesa metadata -->
     <div class="card">
