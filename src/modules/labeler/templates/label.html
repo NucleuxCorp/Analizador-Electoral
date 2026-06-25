@@ -731,12 +731,12 @@
     var enmienda = false;
     var _busy    = false;
 
-      _autoFocus();
+      inp.focus(); inp.select();
 
     function setEnmienda(on) {
       enmienda = on;
       modeEl.textContent = on ? "MODO ENMIENDA — digitá y Enter" : "";
-      if (on) { inp.value = ""; _autoFocus(); }
+      if (on) { inp.value = ""; inp.focus(); }
     }
 
     function _guard() { if (_busy) return true; return false; }
@@ -749,7 +749,7 @@
     window.doDigit        = function (d) {
       if (inp.dataset.fallback === "true") {
         if (inp.value === "?" || inp.value === inp.dataset.ocr && inp.dataset.ocr === "?") inp.value = "";
-        inp.value = inp.value + d; if (!_isTouchDevice()) inp.focus(); return;
+        inp.value = inp.value + d; inp.focus(); return;
       }
       post("/label", { crop_id: inp.dataset.cropId, value: (enmienda ? "E" : "") + d });
     };
@@ -803,13 +803,11 @@
     window.closeFraud = function () {
       var m = fraudModal();
       if (m) m.style.display = "none";
-    // Touch device check: on mobile/tablet avoid auto-focus (virtual keyboard)
+    // Touch device: no auto-focus on page load (prevents virtual keyboard popup)
     function _isTouchDevice() {
         return 'ontouchstart' in window || navigator.maxTouchPoints > 0;
     }
-    function _autoFocus() { if (!_isTouchDevice()) { inp.focus(); inp.select(); } }
-
-    _autoFocus();
+    if (!_isTouchDevice()) { inp.focus(); inp.select(); }
     };
     window.submitFraud = function () {
       var m = fraudModal();
