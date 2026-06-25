@@ -993,9 +993,17 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
             crop = _db.get_crop_details(crop_id)
 
             # Full cell crop id — look up from local index (not stored in Supabase)
+            # Full cell crop id
             full_cell_crop_id = crop.get("full_cell_crop_id") or crop_id
-
-            # Recent log — stored in Flask session (per-user, last 30)
+            pdf_path = crop.get("pdf_path", "")
+            # Auto-find full cell if link missing (segunda vuelta)
+            if full_cell_crop_id == crop_id or not crop.get("full_cell_crop_id"):
+                try:
+                    fc_resp = _db._client().table("crops").select("crop_id").eq("pdf_path", pdf_path).eq("field_name", crop.get("field_name", "")).eq("digit_index", -1).limit(1).execute()
+                    if fc_resp.data:
+                        full_cell_crop_id = fc_resp.data[0]["crop_id"]
+                except Exception:
+                    pass
             recent = session.get("recent_labels", [])
 
             # Concordancias — same PDF, same label_ocr, from local index
@@ -1299,6 +1307,14 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
             if label_ocr.lower() in ("undefined", "null", "none"):
                 label_ocr = "?"
             full_cell_crop_id = crop.get("full_cell_crop_id") or crop_id
+            # Auto-find full cell if link missing (segunda vuelta)
+            if full_cell_crop_id == crop_id or not crop.get("full_cell_crop_id"):
+                try:
+                    fc_resp = _db._client().table("crops").select("crop_id").eq("pdf_path", pdf_path).eq("field_name", crop.get("field_name", "")).eq("digit_index", -1).limit(1).execute()
+                    if fc_resp.data:
+                        full_cell_crop_id = fc_resp.data[0]["crop_id"]
+                except Exception:
+                    pass
             concordancias = _db.get_concordancias(pdf_path, label_ocr, crop_id)
             try:
                 stats = _db.get_global_stats(g.user_id)
