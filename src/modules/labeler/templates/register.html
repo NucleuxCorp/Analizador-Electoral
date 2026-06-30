@@ -164,11 +164,19 @@
         <span class="hint">Mínimo 8 caracteres.</span>
       </div>
 
-      <!-- reCAPTCHA Enterprise (invisible score-based) -->
+      <!-- reCAPTCHA Enterprise -->
       <div style="font-size:0.62rem;color:#445;margin-bottom:12px;line-height:1.4;">
         Este sitio está protegido por reCAPTCHA Enterprise y se aplican la
         <a href="https://policies.google.com/privacy" target="_blank" rel="noopener" style="color:#7ec8e3;">Política de Privacidad</a> y los
         <a href="https://policies.google.com/terms" target="_blank" rel="noopener" style="color:#7ec8e3;">Términos del Servicio</a> de Google.
+      </div>
+
+      <div class="field" style="flex-direction:row;align-items:flex-start;gap:8px;">
+        <input type="checkbox" id="accept-privacy" style="margin-top:2px;width:auto;" required>
+        <label for="accept-privacy" style="font-size:0.72rem;color:#99a;text-transform:none;letter-spacing:0;">
+          Acepto la
+          <a href="/privacy" target="_blank" style="color:#7ec8e3;">Política de Privacidad</a>
+        </label>
       </div>
 
       <button type="submit" class="btn-submit" id="submit-btn">Crear cuenta</button>
@@ -205,6 +213,13 @@
 
       if (password.length < 8) {
         errEl.textContent = "La contraseña debe tener al menos 8 caracteres.";
+        errEl.classList.add("visible");
+        return;
+      }
+
+      var privacyAccepted = document.getElementById("accept-privacy");
+      if (!privacyAccepted || !privacyAccepted.checked) {
+        errEl.textContent = "Debés aceptar la Política de Privacidad para registrarte.";
         errEl.classList.add("visible");
         return;
       }

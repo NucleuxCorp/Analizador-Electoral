@@ -714,6 +714,10 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
         def auth_register_get() -> str:
             return render_template("register.html")
 
+        @app.route("/privacy", methods=["GET"])
+        def privacy_get() -> str:
+            return render_template("privacy.html")
+
         @app.route("/auth/register", methods=["POST"])
         def auth_register_post() -> Response:
             body = request.get_json(force=True, silent=True) or {}

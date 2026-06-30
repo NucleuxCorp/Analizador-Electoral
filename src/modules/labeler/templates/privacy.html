@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Política de Privacidad — Verificación E-14</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: monospace;
+      background: #1a1a2e;
+      color: #ccc;
+      min-height: 100vh;
+      padding: 32px 16px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .card {
+      max-width: 720px;
+      width: 100%;
+      background: linear-gradient(180deg, #16213e, #111827);
+      border: 1px solid #2a3a5a;
+      border-radius: 12px;
+      padding: 36px 40px;
+      box-shadow: 0 8px 24px #00000066;
+    }
+    h1 { font-size: 1.3rem; color: #7ec8e3; margin-bottom: 20px; text-align: center; }
+    h2 { font-size: 1rem; color: #7ec8e3; margin-top: 24px; margin-bottom: 8px; }
+    p, li { font-size: 0.82rem; line-height: 1.7; color: #99a; margin-bottom: 10px; }
+    ul { padding-left: 20px; }
+    li { margin-bottom: 4px; }
+    a { color: #7ec8e3; }
+    .footer { margin-top: 28px; text-align: center; font-size: 0.72rem; color: #445; }
+    .last-updated { font-size: 0.72rem; color: #445; text-align: center; margin-bottom: 20px; }
+    .back-link { display: inline-block; margin-top: 20px; color: #7ec8e3; font-size: 0.82rem; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Política de Privacidad</h1>
+    <div class="last-updated">Última actualización: 30 de junio de 2026</div>
+
+    <h2>1. Responsable del Tratamiento</h2>
+    <p>
+      Esta herramienta de verificación ciudadana de actas E-14 es un proyecto independiente
+      de análisis electoral. Los datos personales recopilados son tratados exclusivamente
+      para la operación del sistema de verificación.
+    </p>
+
+    <h2>2. Datos que Recopilamos</h2>
+    <p>Al registrarse en la plataforma, recopilamos:</p>
+    <ul>
+      <li><strong>Nombre:</strong> Para identificación dentro del sistema.</li>
+      <li><strong>Correo electrónico:</strong> Para confirmación de cuenta y comunicación.</li>
+      <li><strong>Teléfono:</strong> Opcional, para contacto si es necesario.</li>
+      <li><strong>Contraseña:</strong> Almacenada de forma segura con hash (bcrypt).</li>
+      <li><strong>reCAPTCHA token:</strong> Para verificación antispam (procesado por Google).</li>
+    </ul>
+
+    <h2>3. Finalidad del Tratamiento</h2>
+    <p>Los datos se utilizan únicamente para:</p>
+    <ul>
+      <li>Gestionar cuentas de usuario en el sistema de etiquetado.</li>
+      <li>Controlar acceso al portal de verificación.</li>
+      <li>Contactar en caso de inconsistencias en las verificaciones.</li>
+    </ul>
+
+    <h2>4. Base Legal</h2>
+    <p>
+      El tratamiento se basa en el consentimiento del usuario manifestado al registrarse
+      y aceptar esta política de privacidad.
+    </p>
+
+    <h2>5. Almacenamiento y Seguridad</h2>
+    <p>
+      Los datos se almacenan en Supabase (PostgreSQL) con cifrado en tránsito (TLS) y
+      en reposo. Las contraseñas se almacenan usando bcrypt. No compartimos datos con
+      terceros excepto el procesamiento de reCAPTCHA por Google.
+    </p>
+
+    <h2>6. Derechos del Usuario</h2>
+    <p>Podés ejercer tus derechos de acceso, rectificación, cancelación y oposición contactando al administrador del sistema.</p>
+
+    <h2>7. Conservación</h2>
+    <p>
+      Los datos se conservan mientras la cuenta esté activa. Al solicitar la baja, se
+      eliminan en un plazo máximo de 30 días.
+    </p>
+
+    <h2>8. Contacto</h2>
+    <p>
+      Para consultas sobre privacidad, contactanos a través de los canales del proyecto.
+    </p>
+
+    <div class="footer">
+      <a href="/auth/register" class="back-link">← Volver al registro</a>
+    </div>
+  </div>
+</body>
+</html>
