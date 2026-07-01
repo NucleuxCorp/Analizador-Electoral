@@ -29,10 +29,11 @@ from flask import g, jsonify, redirect, request, session
 # ---------------------------------------------------------------------------
 
 ROLE_ADMIN     = "admin"
+ROLE_MODERATOR = "moderator"
 ROLE_VALIDATOR = "validator"
 ROLE_REVIEWER  = "reviewer"
 ROLE_READER    = "reader"
-_VALID_ROLES   = frozenset({ROLE_ADMIN, ROLE_VALIDATOR, ROLE_REVIEWER, ROLE_READER})
+_VALID_ROLES   = frozenset({ROLE_ADMIN, ROLE_MODERATOR, ROLE_VALIDATOR, ROLE_REVIEWER, ROLE_READER})
 _ROLE_CACHE_TTL = 60.0
 _role_cache: dict[str, tuple[str, float]] = {}  # user_id → (role, expires_at)
 

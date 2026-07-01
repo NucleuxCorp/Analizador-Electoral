@@ -664,7 +664,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
 
         # Import auth + db modules (they guard their own client init)
         from src.modules.labeler.auth import require_auth, resolve_user_role, require_role
-        from src.modules.labeler.auth import ROLE_ADMIN, ROLE_VALIDATOR, ROLE_REVIEWER, ROLE_READER
+        from src.modules.labeler.auth import ROLE_ADMIN, ROLE_MODERATOR, ROLE_VALIDATOR, ROLE_REVIEWER, ROLE_READER
         from src.modules.labeler.auth import _role_cache, _ROLE_CACHE_TTL
         import src.modules.labeler.db as _db
 
@@ -959,7 +959,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 _role_cache[user_id] = (role, _time.monotonic() + _ROLE_CACHE_TTL)
 
                 # Redirect by role
-                if role == ROLE_ADMIN:
+                if role in (ROLE_ADMIN, ROLE_MODERATOR):
                     return redirect("/admin/conflicts", 302)
                 elif role == ROLE_READER:
                     return redirect("/", 302)
@@ -1293,12 +1293,12 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 return jsonify({"error": str(exc)}), 500
 
         # ----------------------------------------------------------------
-        # GET /admin/conflicts (production — admin only)
+        # GET /admin/conflicts (production — admin and moderator)
         # ----------------------------------------------------------------
 
         @app.route("/admin/conflicts")
         @require_auth
-        @require_role(ROLE_ADMIN)
+        @require_role(ROLE_ADMIN, ROLE_MODERATOR)
         def admin_conflicts_view() -> Response:
             conflicts = _db.get_conflict_crops()
             return jsonify({"conflicts": conflicts})
