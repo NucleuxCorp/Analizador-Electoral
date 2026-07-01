@@ -1458,7 +1458,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
 
         @app.route("/mark-fraud", methods=["POST"])
         @require_auth
-        @require_role(ROLE_VALIDATOR, ROLE_ADMIN)
+        @require_role(ROLE_VALIDATOR, ROLE_MODERATOR, ROLE_ADMIN)
         def mark_fraud_prod() -> Response:
             from flask import g
             body = request.get_json(force=True, silent=True) or {}
@@ -1466,7 +1466,10 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
             reason = (body.get("reason", "") or "").strip()
             if not reason:
                 return jsonify({"ok": False, "error": "Reason required"}), 400
-            details = _db.get_crop_details(crop_id) if crop_id else None
+            try:
+                details = _db.get_crop_details(crop_id) if crop_id else None
+            except Exception:
+                details = None
             pdf_path = (details or {}).get("pdf_path", "")
             try:
                 _record_fraud_mark(pdf_path, reason, g.user_id)
