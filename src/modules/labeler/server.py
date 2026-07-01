@@ -632,6 +632,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
             "sentry_dsn": _sentry_dsn,
             "flask_env": _flask_env,
             "RECAPTCHA_SITE_KEY": os.environ.get("RECAPTCHA_SITE_KEY", "").strip(),
+            "user_role": getattr(g, "user_role", ""),
         }
 
     # Load lookup tables for both modes (mesa info + fraud flags)
@@ -662,8 +663,13 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
             app.config["SESSION_COOKIE_SECURE"] = True
 
         # Import auth + db modules (they guard their own client init)
-        from src.modules.labeler.auth import require_auth
+        from src.modules.labeler.auth import require_auth, resolve_user_role, require_role
+        from src.modules.labeler.auth import ROLE_ADMIN, ROLE_VALIDATOR, ROLE_REVIEWER, ROLE_READER
+        from src.modules.labeler.auth import _role_cache, _ROLE_CACHE_TTL
         import src.modules.labeler.db as _db
+
+        # Register role resolver — runs after _check_maintenance_mode, sets g.user_role
+        app.before_request(resolve_user_role)
 
         _use_storage = os.environ.get("USE_SUPABASE_STORAGE", "false").lower() == "true"
         _index_path = resolved_labels_dir / "crops" / "index.jsonl"
@@ -821,22 +827,16 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 return jsonify({"error": "Verificación de seguridad fallada. Recargá la página e intentá de nuevo."}), 403
 
             try:
-                import requests as _requests
-                _supabase_url = os.environ.get("SUPABASE_URL", "").strip()
-                _anon_key = os.environ.get("SUPABASE_ANON_KEY", "").strip()
+                from src.modules.labeler.auth import init_supabase_client
                 base_url = _public_base_url()
-                # Use REST API directly to ensure redirect_to is honored
-                _requests.post(
-                    f"{_supabase_url}/auth/v1/recover",
-                    headers={
-                        "apikey": _anon_key,
-                        "Content-Type": "application/json",
-                    },
-                    json={
-                        "email": email,
-                        "redirect_to": f"{base_url}/auth/recovery",
-                    },
-                    timeout=15,
+                # SDK method sends token_hash as query param (?token_hash=xxx&type=recovery)
+                # so the GET /auth/recovery handler can call verify_otp() correctly.
+                # The old REST /auth/v1/recover sent the token in the URL fragment (#access_token=...)
+                # which never reaches the server.
+                _recovery_client = init_supabase_client()
+                _recovery_client.auth.reset_password_for_email(
+                    email,
+                    options={"redirect_to": f"{base_url}/auth/recovery"},
                 )
             except Exception as exc:
                 logger.error("forgot-password email=%s ip=%s: %s", email, request.remote_addr, exc)
@@ -855,8 +855,13 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
             from src.modules.labeler.auth import init_supabase_client
             client = init_supabase_client()
             try:
-                client.auth.verify_otp({"token_hash": token_hash, "type": "recovery"})
+                auth_resp = client.auth.verify_otp({"token_hash": token_hash, "type": "recovery"})
+                # Store the user_id so the POST handler can update the password via admin API.
+                recovery_user_id = None
+                if auth_resp and auth_resp.user:
+                    recovery_user_id = auth_resp.user.id
                 session["recovery_verified"] = True
+                session["recovery_user_id"] = recovery_user_id
                 return render_template("reset_password.html", token_hash=token_hash)
             except Exception as exc:
                 err_str = str(exc).lower()
@@ -880,11 +885,18 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
             new_password = body.get("password", "")
             if len(new_password) < 8:
                 return jsonify({"error": "La contraseña debe tener al menos 8 caracteres."}), 400
-            from src.modules.labeler.auth import init_supabase_client
-            client = init_supabase_client()
+            import src.modules.labeler.db as _db
             try:
-                client.auth.update_user({"password": new_password})
+                recovery_user_id = session.get("recovery_user_id")
+                if not recovery_user_id:
+                    return jsonify({"error": "Sesión de recuperación expirada. Solicitá un nuevo link."}), 403
+                # Use service-role admin API to update the password — no need for user session.
+                admin_client = _db._client()
+                admin_client.auth.admin.update_user_by_id(
+                    recovery_user_id, {"password": new_password}
+                )
                 session.pop("recovery_verified", None)
+                session.pop("recovery_user_id", None)
                 return jsonify({"message": "password updated", "redirect": "/auth/login?reset=1"}), 200
             except Exception as exc:
                 logger.error("recovery update password ip=%s: %s", request.remote_addr, exc)
@@ -916,6 +928,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 return jsonify({"error": "Verificación de seguridad fallada. Recargá la página e intentá de nuevo."}), 403
 
             from src.modules.labeler.auth import init_supabase_client
+            import time as _time
             client = init_supabase_client()
             try:
                 response = client.auth.sign_in_with_password({"email": email, "password": password})
@@ -925,7 +938,33 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 session["access_token"] = sess.access_token
                 session["refresh_token"] = sess.refresh_token
                 session["user_email"] = response.user.email if response.user else email
-                return redirect("/", code=302)
+
+                # Determine role — assign ROLE_VALIDATOR to first-time users
+                user_id = response.user.id
+                app_meta = (response.user.app_metadata or {}) if response.user else {}
+                if "role" not in app_meta:
+                    try:
+                        client.auth.admin.update_user_by_id(
+                            user_id, {"app_metadata": {"role": ROLE_VALIDATOR}}
+                        )
+                    except Exception:
+                        pass
+                    role = ROLE_VALIDATOR
+                else:
+                    role = app_meta["role"]
+                    if role not in {ROLE_ADMIN, ROLE_VALIDATOR, ROLE_REVIEWER, ROLE_READER}:
+                        role = ROLE_VALIDATOR
+
+                # Prime the in-process cache so the first request after login is instant
+                _role_cache[user_id] = (role, _time.monotonic() + _ROLE_CACHE_TTL)
+
+                # Redirect by role
+                if role == ROLE_ADMIN:
+                    return redirect("/admin/conflicts", 302)
+                elif role == ROLE_READER:
+                    return redirect("/", 302)
+                else:
+                    return redirect("/work", 302)
             except Exception as exc:
                 err_str = str(exc).lower()
                 if "email not confirmed" in err_str or "not confirmed" in err_str:
@@ -961,6 +1000,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
 
         @app.route("/work")
         @require_auth
+        @require_role(ROLE_VALIDATOR, ROLE_ADMIN)
         def work_view() -> str:
             from flask import g
             if not _launch_state()["is_open"]:
@@ -1062,6 +1102,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
 
         @app.route("/label", methods=["POST"])
         @require_auth
+        @require_role(ROLE_VALIDATOR, ROLE_ADMIN)
         def label_view() -> Response:
             from flask import g
             body = request.get_json(force=True, silent=True) or {}
@@ -1132,6 +1173,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
 
         @app.route("/skip", methods=["POST"])
         @require_auth
+        @require_role(ROLE_VALIDATOR, ROLE_ADMIN)
         def skip_view() -> Response:
             from flask import g
             body = request.get_json(force=True, silent=True) or {}
@@ -1175,6 +1217,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
 
         @app.route("/image/<crop_id>")
         @require_auth
+        @require_role(ROLE_VALIDATOR, ROLE_REVIEWER, ROLE_ADMIN)
         def image_view(crop_id: str) -> Response:
             # Sanitize: allow only safe characters
             if not crop_id.replace("-", "").replace("_", "").isalnum():
@@ -1255,10 +1298,8 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
 
         @app.route("/admin/conflicts")
         @require_auth
+        @require_role(ROLE_ADMIN)
         def admin_conflicts_view() -> Response:
-            from flask import g
-            if not _is_admin_user(g.user_id):
-                return jsonify({"error": "Admin access required"}), 403
             conflicts = _db.get_conflict_crops()
             return jsonify({"conflicts": conflicts})
 
@@ -1269,10 +1310,8 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
 
         @app.route("/debug/sentry-test")
         @require_auth
+        @require_role(ROLE_ADMIN)
         def sentry_test_view() -> Response:
-            from flask import g
-            if not _is_admin_user(g.user_id):
-                return jsonify({"error": "Admin access required"}), 403
             raise RuntimeError("Sentry backend test — intentional exception")
 
         # ----------------------------------------------------------------
@@ -1281,6 +1320,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
 
         @app.route("/next")
         @require_auth
+        @require_role(ROLE_VALIDATOR, ROLE_ADMIN)
         def next_view() -> Response:
             from flask import g
             if not _launch_state()["is_open"]:
@@ -1359,6 +1399,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
 
         @app.route("/back", methods=["POST"])
         @require_auth
+        @require_role(ROLE_VALIDATOR, ROLE_ADMIN)
         def back_view_prod() -> Response:
             from flask import g
             try:
@@ -1405,6 +1446,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
 
         @app.route("/pdf")
         @require_auth
+        @require_role(ROLE_VALIDATOR, ROLE_REVIEWER, ROLE_ADMIN)
         def pdf_view_prod() -> Response:
             crop_id = request.args.get("v", "")
             if not crop_id:
@@ -1435,6 +1477,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
 
         @app.route("/mark-fraud", methods=["POST"])
         @require_auth
+        @require_role(ROLE_VALIDATOR, ROLE_ADMIN)
         def mark_fraud_prod() -> Response:
             from flask import g
             body = request.get_json(force=True, silent=True) or {}
@@ -1699,17 +1742,9 @@ def _is_admin_user(user_id: str) -> bool:
     """
     Check if the authenticated user has the admin role.
 
-    Reads the user's app_metadata from Supabase Auth to check for role='admin'.
-    Returns False on any error (fail-closed).
+    Thin wrapper over _get_user_role — delegates all caching and API calls
+    to the canonical role resolver in auth.py.
+    Returns False on any error (fail-closed via _get_user_role).
     """
-    try:
-        from src.modules.labeler import db as _db
-        client = _db._client()  # service_role — required for the admin API
-        # Use the admin API to get user metadata
-        user_resp = client.auth.admin.get_user_by_id(user_id)
-        if user_resp and user_resp.user:
-            app_meta = user_resp.user.app_metadata or {}
-            return app_meta.get("role") == "admin"
-    except Exception:
-        pass
-    return False
+    from src.modules.labeler.auth import _get_user_role, ROLE_ADMIN
+    return _get_user_role(user_id) == ROLE_ADMIN

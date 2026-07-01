@@ -71,6 +71,16 @@
     .signed a:hover { text-decoration: underline; }
 
     .ver { position: fixed; bottom: 8px; left: 10px; font-size: 0.6rem; color: #445; }
+
+    .role-badge {
+      display: inline-block; font-size: 0.58rem; letter-spacing: 1px;
+      text-transform: uppercase; padding: 2px 8px; border-radius: 999px;
+      margin-left: 6px; font-weight: bold;
+    }
+    .role-admin     { background: #1a3a1a; color: #66bb6a; border: 1px solid #2a5a2a; }
+    .role-validator { background: #1a2a3a; color: #7ec8e3; border: 1px solid #2a4a6a; }
+    .role-reviewer  { background: #2a2a1a; color: #ffd740; border: 1px solid #4a4a1a; }
+    .role-reader    { background: #2a1a2a; color: #ce93d8; border: 1px solid #4a2a4a; }
   </style>
 </head>
 <body>
@@ -93,7 +103,12 @@
 
       <div class="cta">
         {% if logged_in %}
-          <a class="btn btn-primary" href="{{ work_url }}">Empezar a etiquetar</a>
+          {% if user_role != "reader" %}
+            <a class="btn btn-primary" href="{{ work_url }}">Empezar a etiquetar</a>
+          {% endif %}
+          {% if user_role == "admin" %}
+            <a class="btn btn-ghost" href="/admin/conflicts">Admin</a>
+          {% endif %}
         {% else %}
           <a class="btn btn-primary" href="/auth/register">Crear cuenta</a>
           <a class="btn btn-ghost" href="/auth/login">Iniciar sesión</a>
@@ -123,7 +138,9 @@
 
     {% if logged_in %}
       <div class="signed">
-        Sesión: <span style="color:#7ec8e3;">{{ user_email }}</span> ·
+        Sesión: <span style="color:#7ec8e3;">{{ user_email }}</span>
+        {% if user_role %}<span class="role-badge role-{{ user_role }}">{{ user_role }}</span>{% endif %}
+        ·
         <a href="#" onclick="document.getElementById('logout-form').submit(); return false;">Cerrar sesión</a>
         <form id="logout-form" action="/auth/logout" method="post" style="display:none;"></form>
       </div>

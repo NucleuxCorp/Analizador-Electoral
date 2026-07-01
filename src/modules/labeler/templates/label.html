@@ -254,6 +254,17 @@
     .info-row .val { font-weight: bold; }
     .info-row .val.lugar { color: var(--lab-accent); }
 
+    /* ── Role badge ── */
+    .role-badge {
+      display: inline-block; font-size: .58rem; letter-spacing: 1px;
+      text-transform: uppercase; padding: 1px 7px; border-radius: 999px;
+      margin-left: 5px; font-weight: bold; vertical-align: middle;
+    }
+    .role-admin     { background: #1a3a1a; color: #66bb6a; border: 1px solid #2a5a2a; }
+    .role-validator { background: #1a2a3a; color: #7ec8e3; border: 1px solid #2a4a6a; }
+    .role-reviewer  { background: #2a2a1a; color: #ffd740; border: 1px solid #4a4a1a; }
+    .role-reader    { background: #2a1a2a; color: #ce93d8; border: 1px solid #4a2a4a; }
+
     /* ── Animations ── */
     #img-digit, #img-full { transition: opacity .15s ease; }
     .img-fade { opacity: 0 !important; }
@@ -291,8 +302,12 @@
   <div class="d-flex align-items-center justify-content-between">
     <span style="font-size:.68rem;color:var(--lab-muted);">
       Conectado como <span style="color:var(--lab-accent);">{{ user_email }}</span>
+      {% if user_role %}<span class="role-badge role-{{ user_role }}">{{ user_role }}</span>{% endif %}
     </span>
     <div class="d-flex gap-2 align-items-center">
+      {% if user_role == "admin" %}
+        <a href="/admin/conflicts" class="btn btn-sm btn-outline-warning py-0 px-2" style="font-size:.65rem;">Admin</a>
+      {% endif %}
       <button onclick="openWa()" class="btn btn-sm btn-outline-success py-0 px-2" style="font-size:.65rem;">💬 Feedback</button>
       <button id="theme-toggle" onclick="toggleTheme()" class="btn btn-sm btn-outline-secondary py-0 px-2" style="font-size:.8rem;line-height:1.6;" title="Cambiar modo oscuro/claro">
         <span id="theme-icon">☀</span>
