@@ -290,6 +290,31 @@ def _record_fraud_mark(pdf_path: str, reason: str, annotator: str) -> None:
         f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
+_BASE_E14C_SV = "https://escrutinios2vueltapresidente2026.registraduria.gov.co"
+
+
+def _reconstruct_source_url(pdf_path: str) -> str:
+    """
+    Reconstruct the Registraduría public URL from a local pdf_path when
+    source_url was not stored in the database.
+
+    The collector saves files as:
+        nombre_archivo.replace('/docs/E14/', '').replace('/', '_')
+    so the reverse mapping is unambiguous: split on '_' up to the 'E14' marker
+    to recover the directory components, then rejoin with '/'.
+    """
+    name = Path(pdf_path).name.replace(".pdf", "")
+    parts = name.split("_")
+    try:
+        e14_idx = next(i for i, p in enumerate(parts) if p == "E14")
+    except StopIteration:
+        return ""
+    dir_parts = parts[:e14_idx]
+    file_parts = parts[e14_idx:]
+    nombre_archivo = "/docs/E14/" + "/".join(dir_parts) + "/" + "_".join(file_parts) + ".pdf"
+    return _BASE_E14C_SV + nombre_archivo
+
+
 def _mesa_info(pdf_path: str) -> dict:
     """Extract mesa metadata from the PDF directory path + divipole lookup."""
     parts = Path(pdf_path).parts  # e.g. ['data','pdfs','AMAZONAS','LETICIA','zona_01','puesto_03','E14_...pdf']
@@ -1073,7 +1098,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 concordancias=concordancias,
                 acta_flags=_get_acta_flags(pdf_path),
                 user_email=session.get("user_email", ""),
-                pdf_source_url=crop.get("source_url", ""),
+                pdf_source_url=crop.get("source_url", "") or _reconstruct_source_url(pdf_path),
             )
 
         # ----------------------------------------------------------------
@@ -1364,7 +1389,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 "mesa": _mesa_info(pdf_path),
                 "concordancias": concordancias,
                 "acta_flags": _get_acta_flags(pdf_path),
-                "source_url": crop.get("source_url", ""),
+                "source_url": crop.get("source_url", "") or _reconstruct_source_url(pdf_path),
                 "recent": session.get("recent_labels", []),
                 "labeled": global_labeled,
                 "my_labeled": my_labeled,
@@ -1436,14 +1461,9 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
             if not details:
                 return Response("Crop not found", status=404)
             source_url = (details.get("source_url") or "").strip()
+            if not source_url:
+                source_url = _reconstruct_source_url(details.get("pdf_path", ""))
             if source_url:
-                # Pilot strategy: redirect the user's browser directly to
-                # Registraduria. Their browser can reach registraduria.gov.co
-                # fine; Railway's egress cannot. PDFs come down as a download
-                # because Registraduria sends Content-Type: octet-stream and
-                # X-Content-Type-Options: nosniff (both anti-embed). Inline
-                # rendering would require us to own the bytes (see backlog:
-                # Cloudflare R2 / Google Drive Phase B).
                 logger.info("pdf redirect crop=%s -> registraduria", crop_id)
                 return redirect(source_url, code=302)
             # Fallback: serve from local disk (dev / not-yet-backfilled actas).
