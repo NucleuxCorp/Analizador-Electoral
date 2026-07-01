@@ -1320,32 +1320,9 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
         @require_auth
         @require_role(ROLE_ADMIN, ROLE_MODERATOR)
         def admin_conflicts_view() -> Response:
-            conflicts = _db.get_conflict_crops()
-
-            fraud_marks: list[dict] = []
-            if _FRAUD_MARKS_PATH.exists():
-                with open(_FRAUD_MARKS_PATH, encoding="utf-8") as f:
-                    for line in f:
-                        line = line.strip()
-                        if line:
-                            try:
-                                fraud_marks.append(json.loads(line))
-                            except json.JSONDecodeError:
-                                pass
-            fraud_marks.sort(key=lambda r: r.get("marked_at", ""), reverse=True)
-
-            feedback_marks: list[dict] = []
-            if _FEEDBACK_MARKS_PATH.exists():
-                with open(_FEEDBACK_MARKS_PATH, encoding="utf-8") as f:
-                    for line in f:
-                        line = line.strip()
-                        if line:
-                            try:
-                                feedback_marks.append(json.loads(line))
-                            except json.JSONDecodeError:
-                                pass
-            feedback_marks.sort(key=lambda r: r.get("reported_at", ""), reverse=True)
-
+            conflicts     = _db.get_conflict_crops()
+            fraud_marks   = _db.get_fraud_marks()
+            feedback_marks = _db.get_feedback_marks()
             return render_template(
                 "admin.html",
                 conflicts=conflicts,
@@ -1537,7 +1514,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 details = None
             pdf_path = (details or {}).get("pdf_path", "")
             try:
-                _record_fraud_mark(pdf_path, reason, g.user_id)
+                _db.record_fraud_mark(crop_id, pdf_path, reason, g.user_id)
             except Exception as exc:
                 return jsonify({"ok": False, "error": f"Could not record: {exc}"}), 500
             return jsonify({"ok": True, "pdf_path": pdf_path})
@@ -1561,7 +1538,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 details = None
             pdf_path = (details or {}).get("pdf_path", "")
             try:
-                _record_feedback(crop_id, pdf_path, message, g.user_id)
+                _db.record_feedback(crop_id, pdf_path, message, g.user_id)
             except Exception as exc:
                 return jsonify({"ok": False, "error": f"Could not record: {exc}"}), 500
             return jsonify({"ok": True})
@@ -1574,17 +1551,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
         @require_auth
         @require_role(ROLE_ADMIN, ROLE_MODERATOR)
         def admin_feedback_view() -> Response:
-            rows = []
-            if _FEEDBACK_MARKS_PATH.exists():
-                with open(_FEEDBACK_MARKS_PATH, encoding="utf-8") as f:
-                    for line in f:
-                        line = line.strip()
-                        if line:
-                            try:
-                                rows.append(json.loads(line))
-                            except json.JSONDecodeError:
-                                pass
-            rows.sort(key=lambda r: r.get("reported_at", ""), reverse=True)
+            rows = _db.get_feedback_marks()
             return jsonify({"feedback": rows, "total": len(rows)})
 
     else:

@@ -424,6 +424,52 @@ def get_conflict_crops() -> list[dict]:
     return response.data or []
 
 
+def record_fraud_mark(crop_id: str, pdf_path: str, reason: str, annotator: str) -> None:
+    """Insert a fraud report into the fraud_marks table."""
+    _client().table("fraud_marks").insert({
+        "crop_id": crop_id or None,
+        "pdf_path": pdf_path or None,
+        "reason": reason,
+        "annotator": annotator,
+    }).execute()
+
+
+def record_feedback(crop_id: str, pdf_path: str, message: str, annotator: str) -> None:
+    """Insert a feedback report into the feedback_marks table."""
+    _client().table("feedback_marks").insert({
+        "crop_id": crop_id or None,
+        "pdf_path": pdf_path or None,
+        "message": message,
+        "annotator": annotator,
+    }).execute()
+
+
+def get_fraud_marks(limit: int = 500) -> list[dict]:
+    """Fetch fraud reports ordered by most recent first."""
+    response = (
+        _client()
+        .table("fraud_marks")
+        .select("*")
+        .order("marked_at", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    return response.data or []
+
+
+def get_feedback_marks(limit: int = 500) -> list[dict]:
+    """Fetch feedback reports ordered by most recent first."""
+    response = (
+        _client()
+        .table("feedback_marks")
+        .select("*")
+        .order("reported_at", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    return response.data or []
+
+
 # ---------------------------------------------------------------------------
 # 3.11  get_global_stats
 # ---------------------------------------------------------------------------
