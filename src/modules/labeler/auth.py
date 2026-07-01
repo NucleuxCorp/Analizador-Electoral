@@ -15,6 +15,7 @@ must remain functional without Supabase env vars).
 from __future__ import annotations
 
 import os
+import time
 import urllib.request
 import json
 import functools
@@ -22,6 +23,18 @@ from typing import Any, Callable
 
 import jwt  # PyJWT
 from flask import g, jsonify, redirect, request, session
+
+# ---------------------------------------------------------------------------
+# Role constants and in-process role cache
+# ---------------------------------------------------------------------------
+
+ROLE_ADMIN     = "admin"
+ROLE_VALIDATOR = "validator"
+ROLE_REVIEWER  = "reviewer"
+ROLE_READER    = "reader"
+_VALID_ROLES   = frozenset({ROLE_ADMIN, ROLE_VALIDATOR, ROLE_REVIEWER, ROLE_READER})
+_ROLE_CACHE_TTL = 60.0
+_role_cache: dict[str, tuple[str, float]] = {}  # user_id → (role, expires_at)
 
 # ---------------------------------------------------------------------------
 # Lazy Supabase client — only imported/instantiated when SUPABASE_URL is set
@@ -126,6 +139,94 @@ def refresh_jwt(refresh_token: str) -> tuple[str, str]:
     if session_data is None:
         raise RuntimeError("Supabase refresh_session returned no session data")
     return session_data.access_token, session_data.refresh_token
+
+
+# ---------------------------------------------------------------------------
+# Role resolution helpers
+# ---------------------------------------------------------------------------
+
+def _get_user_role(user_id: str) -> str:
+    """
+    Return the role string for user_id.
+
+    Checks the in-process cache first (60 s TTL). On miss, calls the Supabase
+    Admin API to read app_metadata.role. Always returns a value in _VALID_ROLES.
+    Falls back to ROLE_VALIDATOR — NEVER ROLE_ADMIN — on any error.
+    """
+    now = time.monotonic()
+    cached = _role_cache.get(user_id)
+    if cached is not None and cached[1] > now:
+        return cached[0]
+
+    try:
+        from src.modules.labeler import db as _db
+        client = _db._client()  # service_role client — required for admin API
+        user_resp = client.auth.admin.get_user_by_id(user_id)
+        if user_resp and user_resp.user:
+            app_meta = user_resp.user.app_metadata or {}
+            role = app_meta.get("role", ROLE_VALIDATOR)
+            if role not in _VALID_ROLES:
+                role = ROLE_VALIDATOR
+        else:
+            role = ROLE_VALIDATOR
+    except Exception:
+        role = ROLE_VALIDATOR
+
+    _role_cache[user_id] = (role, now + _ROLE_CACHE_TTL)
+    return role
+
+
+def resolve_user_role() -> None:
+    """
+    Flask before_request hook: resolve and attach g.user_role.
+
+    Dev bypass paths (LOCAL_DEV_BYPASS=1 or SUPABASE_URL unset) grant
+    ROLE_ADMIN — but ONLY when FLASK_ENV is not "production".
+    Public routes where g.user_id is not set are silently skipped.
+    """
+    flask_env = os.environ.get("FLASK_ENV", "")
+    is_production = flask_env == "production"
+
+    if not is_production:
+        if os.environ.get("LOCAL_DEV_BYPASS", "").strip() == "1":
+            g.user_role = ROLE_ADMIN
+            return
+        if not os.environ.get("SUPABASE_URL", "").strip():
+            g.user_role = ROLE_ADMIN
+            return
+
+    user_id = getattr(g, "user_id", None)
+    if not user_id:
+        return  # public route — no-op
+
+    g.user_role = _get_user_role(user_id)
+
+
+def require_role(*roles: str) -> Callable:
+    """
+    Decorator factory that enforces role-based access control.
+
+    Usage::
+
+        @app.route("/admin/conflicts")
+        @require_auth
+        @require_role(ROLE_ADMIN)
+        def admin_view(): ...
+
+    Returns a 302 redirect to "/" for HTML requests or a 403 JSON response
+    for API/JSON requests when the user's role is not in `roles`.
+    """
+    def decorator(view_func: Callable) -> Callable:
+        @functools.wraps(view_func)
+        def wrapped(*args: Any, **kwargs: Any) -> Any:
+            user_role = getattr(g, "user_role", "")
+            if user_role not in roles:
+                if _is_html_request():
+                    return redirect("/", 302)
+                return jsonify({"error": "forbidden"}), 403
+            return view_func(*args, **kwargs)
+        return wrapped
+    return decorator
 
 
 # ---------------------------------------------------------------------------
