@@ -1,0 +1,14 @@
+# PDFs de colaboradores — no se versionan
+PDFs-V2/*.pdf
+PDFs-V2/**/*.pdf
+
+# Informes generados
+informe*.md
+
+# Log de organización
+organizacion_log.json
+
+# Compilación PyInstaller
+*.spec
+.build/
+__pycache__/
