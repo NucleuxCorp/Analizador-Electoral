@@ -849,54 +849,34 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
 
         @app.route("/auth/recovery", methods=["GET"])
         def auth_recovery_get() -> str:
-            token_hash = request.args.get("token_hash", "").strip()
-            if not token_hash:
-                return render_template("reset_password.html", error="Link inválido o faltante.")
-            from src.modules.labeler.auth import init_supabase_client
-            client = init_supabase_client()
-            try:
-                auth_resp = client.auth.verify_otp({"token_hash": token_hash, "type": "recovery"})
-                # Store the user_id so the POST handler can update the password via admin API.
-                recovery_user_id = None
-                if auth_resp and auth_resp.user:
-                    recovery_user_id = auth_resp.user.id
-                session["recovery_verified"] = True
-                session["recovery_user_id"] = recovery_user_id
-                return render_template("reset_password.html", token_hash=token_hash)
-            except Exception as exc:
-                err_str = str(exc).lower()
-                logger.warning("recovery verify token ip=%s: %s", request.remote_addr, exc)
-                try:
-                    import sentry_sdk
-                    sentry_sdk.capture_exception(exc)
-                except Exception:
-                    pass
-                if "expired" in err_str or "invalid" in err_str:
-                    return render_template("reset_password.html", error="El link expiró o es inválido. Solicitá uno nuevo.")
-                return render_template("reset_password.html", error="Error al verificar el link. Intentá de nuevo.")
+            # Supabase implicit flow: tokens arrive in the URL fragment (#access_token=...),
+            # which browsers never send to the server. The JS in reset_password.html reads
+            # the fragment and handles both success and error cases client-side.
+            # token_hash flow (PKCE/OTP) is also supported as a secondary path via the same JS.
+            return render_template("reset_password.html")
 
         @app.route("/auth/recovery", methods=["POST"])
         def auth_recovery_post() -> Response:
-            if not session.get("recovery_verified"):
-                return jsonify({"error": "No verificaste tu identidad. Usá el link del correo."}), 403
             body = request.get_json(force=True, silent=True) or {}
-            if not body:
-                body = {"password": request.form.get("password", "")}
             new_password = body.get("password", "")
+            access_token = body.get("access_token", "").strip()
             if len(new_password) < 8:
                 return jsonify({"error": "La contraseña debe tener al menos 8 caracteres."}), 400
+            if not access_token:
+                return jsonify({"error": "Sesión de recuperación inválida. Solicitá un nuevo link."}), 403
+            from src.modules.labeler.auth import init_supabase_client
             import src.modules.labeler.db as _db
             try:
-                recovery_user_id = session.get("recovery_user_id")
-                if not recovery_user_id:
-                    return jsonify({"error": "Sesión de recuperación expirada. Solicitá un nuevo link."}), 403
-                # Use service-role admin API to update the password — no need for user session.
+                # Validate the access_token and get the user_id.
+                client = init_supabase_client()
+                user_resp = client.auth.get_user(access_token)
+                if not user_resp or not user_resp.user:
+                    return jsonify({"error": "Link expirado o inválido. Solicitá uno nuevo."}), 403
+                # Update password via admin API (no user session needed).
                 admin_client = _db._client()
                 admin_client.auth.admin.update_user_by_id(
-                    recovery_user_id, {"password": new_password}
+                    user_resp.user.id, {"password": new_password}
                 )
-                session.pop("recovery_verified", None)
-                session.pop("recovery_user_id", None)
                 return jsonify({"message": "password updated", "redirect": "/auth/login?reset=1"}), 200
             except Exception as exc:
                 logger.error("recovery update password ip=%s: %s", request.remote_addr, exc)
