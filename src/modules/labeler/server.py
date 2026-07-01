@@ -1364,6 +1364,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 "mesa": _mesa_info(pdf_path),
                 "concordancias": concordancias,
                 "acta_flags": _get_acta_flags(pdf_path),
+                "source_url": crop.get("source_url", ""),
                 "recent": session.get("recent_labels", []),
                 "labeled": global_labeled,
                 "my_labeled": my_labeled,

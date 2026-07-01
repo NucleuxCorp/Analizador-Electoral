@@ -951,7 +951,11 @@
         if (lt) lt.textContent = item.is_fallback ? "Celda completa (sin segmentos)" : "Recorte de dígito";
 
         var pdfBtn = document.getElementById("btn-pdf");
-        if (pdfBtn) pdfBtn.setAttribute("onclick", "openPdf('/pdf?v=" + item.crop_id + "')");
+        if (pdfBtn) {
+          var pdfUrl = item.source_url || "/pdf?v=" + item.crop_id;
+          pdfBtn.href = pdfUrl;
+          pdfBtn.removeAttribute("onclick");
+        }
 
         // Update right column info
         var el;
