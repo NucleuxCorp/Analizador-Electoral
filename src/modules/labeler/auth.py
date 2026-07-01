@@ -221,6 +221,13 @@ def require_role(*roles: str) -> Callable:
         @functools.wraps(view_func)
         def wrapped(*args: Any, **kwargs: Any) -> Any:
             user_role = getattr(g, "user_role", "")
+            # before_request runs before @require_auth, so g.user_role may not be set yet.
+            # Resolve it here lazily if g.user_id is already available (set by @require_auth).
+            if not user_role:
+                uid = getattr(g, "user_id", None)
+                if uid:
+                    user_role = _get_user_role(uid)
+                    g.user_role = user_role
             if user_role not in roles:
                 if _is_html_request():
                     return redirect("/", 302)
