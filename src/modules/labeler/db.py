@@ -445,29 +445,35 @@ def record_feedback(crop_id: str, pdf_path: str, message: str, annotator: str) -
 
 
 def get_fraud_marks(limit: int = 500) -> list[dict]:
-    """Fetch fraud reports ordered by most recent first."""
-    response = (
-        _client()
-        .table("fraud_marks")
-        .select("*")
-        .order("marked_at", desc=True)
-        .limit(limit)
-        .execute()
-    )
-    return response.data or []
+    """Fetch fraud reports ordered by most recent first. Returns [] if table missing."""
+    try:
+        response = (
+            _client()
+            .table("fraud_marks")
+            .select("*")
+            .order("marked_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        return response.data or []
+    except Exception:
+        return []
 
 
 def get_feedback_marks(limit: int = 500) -> list[dict]:
-    """Fetch feedback reports ordered by most recent first."""
-    response = (
-        _client()
-        .table("feedback_marks")
-        .select("*")
-        .order("reported_at", desc=True)
-        .limit(limit)
-        .execute()
-    )
-    return response.data or []
+    """Fetch feedback reports ordered by most recent first. Returns [] if table missing."""
+    try:
+        response = (
+            _client()
+            .table("feedback_marks")
+            .select("*")
+            .order("reported_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        return response.data or []
+    except Exception:
+        return []
 
 
 # ---------------------------------------------------------------------------
