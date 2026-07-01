@@ -95,13 +95,13 @@
 
 <div class="wrap">
   <div class="tabs">
-    <div class="tab active" onclick="showTab('conflicts')">
+    <div class="tab active" onclick="showTab('conflicts', this)">
       Conflictos <span class="cnt red">{{ conflicts|length }}</span>
     </div>
-    <div class="tab" onclick="showTab('fraud')">
+    <div class="tab" onclick="showTab('fraud', this)">
       Fraude <span class="cnt yellow">{{ fraud_marks|length }}</span>
     </div>
-    <div class="tab" onclick="showTab('feedback')">
+    <div class="tab" onclick="showTab('feedback', this)">
       Feedback <span class="cnt">{{ feedback_marks|length }}</span>
     </div>
   </div>
@@ -224,11 +224,11 @@
 </div>
 
 <script>
-function showTab(name) {
+function showTab(name, el) {
   document.querySelectorAll('.tab').forEach(function(t) { t.classList.remove('active'); });
   document.querySelectorAll('.panel').forEach(function(p) { p.classList.remove('active'); });
   document.getElementById('panel-' + name).classList.add('active');
-  event.currentTarget.classList.add('active');
+  el.classList.add('active');
 }
 </script>
 </body>

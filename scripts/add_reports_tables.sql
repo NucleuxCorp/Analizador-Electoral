@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS fraud_marks (
     marked_at   TIMESTAMPTZ  DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS fraud_marks_pdf_path_idx ON fraud_marks (pdf_path);
+CREATE INDEX IF NOT EXISTS fraud_marks_pdf_path_idx  ON fraud_marks (pdf_path);
 CREATE INDEX IF NOT EXISTS fraud_marks_marked_at_idx ON fraud_marks (marked_at DESC);
 
 -- ---------------------------------------------------------------------------
@@ -32,14 +32,16 @@ CREATE TABLE IF NOT EXISTS feedback_marks (
 CREATE INDEX IF NOT EXISTS feedback_marks_reported_at_idx ON feedback_marks (reported_at DESC);
 
 -- ---------------------------------------------------------------------------
--- RLS: service-role bypasses; anon cannot read or write
+-- RLS
 -- ---------------------------------------------------------------------------
 ALTER TABLE fraud_marks    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE feedback_marks ENABLE ROW LEVEL SECURITY;
 
--- authenticated users can insert their own reports
+-- authenticated users can insert
 CREATE POLICY "auth insert fraud"    ON fraud_marks    FOR INSERT TO authenticated WITH CHECK (true);
 CREATE POLICY "auth insert feedback" ON feedback_marks FOR INSERT TO authenticated WITH CHECK (true);
 
--- only service-role (backend) can read all rows
--- (no SELECT policy for authenticated = anon/authenticated cannot read)
+-- authenticated users (backend service role) can read all rows
+-- service_role bypasses RLS automatically; this policy covers anon-key fallback
+CREATE POLICY "auth select fraud"    ON fraud_marks    FOR SELECT TO authenticated USING (true);
+CREATE POLICY "auth select feedback" ON feedback_marks FOR SELECT TO authenticated USING (true);
