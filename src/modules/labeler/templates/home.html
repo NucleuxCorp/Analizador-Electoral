@@ -155,33 +155,48 @@
       </button>
     </div>
 
-    <!-- WhatsApp feedback mini-modal (home) -->
+    <!-- Feedback mini-modal (home) -->
     <div id="wa-home" style="
       position:fixed; inset:0; z-index:9999; background:rgba(8,10,16,0.8);
       display:none; align-items:center; justify-content:center;">
       <div style="width:min(420px,92vw); background:#141a26; border:1px solid #1a4a1a;
                   border-radius:12px; padding:22px 24px; box-shadow:0 12px 40px #000a;">
-        <div style="font-size:1rem; font-weight:bold; color:#66bb6a;">💬 Enviar feedback</div>
+        <div style="font-size:1rem; font-weight:bold; color:#66bb6a;">💬 Reportar observación</div>
         <div style="font-size:0.74rem; color:#889; margin-top:8px; line-height:1.5;">
-          Tu duda, sugerencia o problema. Se abre WhatsApp con el mensaje listo.
+          Duda, sugerencia o problema general con la plataforma.
         </div>
         <textarea id="wa-home-msg" rows="4" placeholder="Escribí aquí..."
           style="width:100%; margin-top:12px; background:#0d1119; border:1px solid #2a3a4a;
                  border-radius:8px; color:#dce3ea; font-size:0.85rem; padding:10px;
                  resize:vertical; box-sizing:border-box; font-family:inherit;"></textarea>
+        <div id="wa-home-err" style="color:#ef5350; font-size:.72rem; min-height:14px; margin-top:4px;"></div>
         <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:10px;">
           <button onclick="document.getElementById('wa-home').style.display='none'"
             style="background:none; border:1px solid #2a3a4a; border-radius:8px; color:#889;
                    padding:8px 16px; cursor:pointer; font-size:0.82rem;">Cancelar</button>
-          <button onclick="(function(){
-              var m=(document.getElementById('wa-home-msg').value||'').trim();
-              if(!m) return;
-              window.open('https://wa.me/573233131374?text='+encodeURIComponent(m),'_blank');
-              document.getElementById('wa-home').style.display='none';
+          <button id="wa-home-btn" onclick="(function(){
+              var msg=(document.getElementById('wa-home-msg').value||'').trim();
+              var errEl=document.getElementById('wa-home-err');
+              var btn=document.getElementById('wa-home-btn');
+              if(!msg){errEl.textContent='Escribí tu observación primero.';return;}
+              btn.disabled=true; btn.textContent='Guardando…';
+              fetch('/feedback',{method:'POST',headers:{'Content-Type':'application/json'},
+                body:JSON.stringify({crop_id:'',message:msg})})
+                .then(function(r){return r.json();})
+                .then(function(d){
+                  btn.disabled=false; btn.textContent='Enviar';
+                  if(d.ok===false){errEl.textContent='Error: '+(d.error||'?');return;}
+                  document.getElementById('wa-home-msg').value='';
+                  document.getElementById('wa-home').style.display='none';
+                })
+                .catch(function(){
+                  btn.disabled=false; btn.textContent='Enviar';
+                  errEl.textContent='Error de red — intentá de nuevo.';
+                });
             })()" style="background:linear-gradient(180deg,#0a3a0a,#061506);
                           border:1px solid #1a5a1a; border-radius:8px; color:#66bb6a;
                           padding:8px 16px; cursor:pointer; font-size:0.82rem; font-weight:bold;">
-            Enviar por WhatsApp
+            Enviar
           </button>
         </div>
       </div>

@@ -274,7 +274,8 @@ def _launch_state() -> dict:
     return {"is_open": now >= target, "launch_iso": target.isoformat()}
 
 
-_FRAUD_MARKS_PATH = Path("data/fraud_marks.jsonl")
+_FRAUD_MARKS_PATH    = Path("data/fraud_marks.jsonl")
+_FEEDBACK_MARKS_PATH = Path("data/feedback_marks.jsonl")
 
 
 def _record_fraud_mark(pdf_path: str, reason: str, annotator: str) -> None:
@@ -287,6 +288,20 @@ def _record_fraud_mark(pdf_path: str, reason: str, annotator: str) -> None:
         "marked_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
     with open(_FRAUD_MARKS_PATH, "a", encoding="utf-8") as f:
+        f.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+
+def _record_feedback(crop_id: str, pdf_path: str, message: str, annotator: str) -> None:
+    """Append a user feedback report to data/feedback_marks.jsonl."""
+    _FEEDBACK_MARKS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    row = {
+        "crop_id": crop_id,
+        "pdf_path": pdf_path,
+        "message": message,
+        "annotator": annotator,
+        "reported_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }
+    with open(_FEEDBACK_MARKS_PATH, "a", encoding="utf-8") as f:
         f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
@@ -1496,6 +1511,51 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
             except Exception as exc:
                 return jsonify({"ok": False, "error": f"Could not record: {exc}"}), 500
             return jsonify({"ok": True, "pdf_path": pdf_path})
+
+        # ----------------------------------------------------------------
+        # POST /feedback — report a minor observation about a crop
+        # ----------------------------------------------------------------
+
+        @app.route("/feedback", methods=["POST"])
+        @require_auth
+        def feedback_prod() -> Response:
+            from flask import g
+            body = request.get_json(force=True, silent=True) or {}
+            crop_id = body.get("crop_id", "")
+            message = (body.get("message", "") or "").strip()
+            if not message:
+                return jsonify({"ok": False, "error": "Message required"}), 400
+            try:
+                details = _db.get_crop_details(crop_id) if crop_id else None
+            except Exception:
+                details = None
+            pdf_path = (details or {}).get("pdf_path", "")
+            try:
+                _record_feedback(crop_id, pdf_path, message, g.user_id)
+            except Exception as exc:
+                return jsonify({"ok": False, "error": f"Could not record: {exc}"}), 500
+            return jsonify({"ok": True})
+
+        # ----------------------------------------------------------------
+        # GET /admin/feedback — list feedback reports (admin + moderator)
+        # ----------------------------------------------------------------
+
+        @app.route("/admin/feedback")
+        @require_auth
+        @require_role(ROLE_ADMIN, ROLE_MODERATOR)
+        def admin_feedback_view() -> Response:
+            rows = []
+            if _FEEDBACK_MARKS_PATH.exists():
+                with open(_FEEDBACK_MARKS_PATH, encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line:
+                            try:
+                                rows.append(json.loads(line))
+                            except json.JSONDecodeError:
+                                pass
+            rows.sort(key=lambda r: r.get("reported_at", ""), reverse=True)
+            return jsonify({"feedback": rows, "total": len(rows)})
 
     else:
         # ----------------------------------------------------------------

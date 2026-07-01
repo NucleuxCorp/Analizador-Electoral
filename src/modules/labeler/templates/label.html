@@ -790,20 +790,33 @@
     window.closeWa = function () {
       var m = document.getElementById("wa-modal");
       if (m) m.style.display = "none";
+      if (!('ontouchstart' in window || navigator.maxTouchPoints > 0)) { inp.focus(); inp.select(); }
     };
     window.submitWa = function () {
+      var modal = document.getElementById("wa-modal");
+      if (!modal) return;
       var msg = (document.getElementById("wa-msg").value || "").trim();
-      if (!msg) { document.getElementById("wa-err").textContent = "Escribí tu mensaje primero."; return; }
+      var errEl = document.getElementById("wa-err");
+      var btn = document.getElementById("wa-submit");
+      if (!msg) { errEl.textContent = "Escribí tu observación primero."; return; }
       var c = window._currentCrop || {};
-      var m = c.mesa || {};
-      var fieldRef = c.field_name || "—";
-      if (c.digit_index !== -1 && c.digit_index !== undefined && c.digit_index !== null) fieldRef += " [" + c.digit_index + "]";
-      var mesaLine = [m.departamento||"?", m.municipio||"?", "Z"+(m.zona||"?"), "P"+(m.puesto||"?"), "M"+(m.mesa||"?")].join(" / ");
-      var lines = ["📋 Referencia (no editar):", "Acta: "+(c.pdf_filename||"—"), "Mesa: "+mesaLine];
-      if (m.lugar) lines.push("Lugar: "+m.lugar);
-      lines.push("Campo: "+fieldRef, "Valor sugerido (CNN): "+(c.label_ocr||"—"), "Crop: "+(c.crop_id||"?"), "", "💬 Mensaje:", msg);
-      window.open("https://wa.me/573233131374?text="+encodeURIComponent(lines.join("\n")), "_blank");
-      closeWa();
+      btn.disabled = true; btn.textContent = "Guardando…";
+      fetch("/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ crop_id: c.crop_id || inp.dataset.cropId, message: msg }),
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          btn.disabled = false; btn.textContent = "Enviar";
+          if (d.ok === false) { errEl.textContent = "Error: " + (d.error || "?"); return; }
+          document.getElementById("wa-msg").value = "";
+          closeWa();
+        })
+        .catch(function () {
+          btn.disabled = false; btn.textContent = "Enviar";
+          errEl.textContent = "Error de red — intentá de nuevo.";
+        });
     };
 
     function fraudModal() { return document.getElementById("fraud-modal"); }
@@ -1122,18 +1135,19 @@
   </div>
 </div>
 
-<!-- WhatsApp feedback modal -->
+<!-- Feedback modal -->
 <div id="wa-modal" style="position:fixed;inset:0;z-index:10001;background:rgba(8,10,16,.8);display:none;align-items:center;justify-content:center;">
   <div style="width:min(420px,92vw);background:var(--bs-card-bg);border:1px solid #1a4a1a;border-radius:12px;padding:22px 24px;box-shadow:0 12px 40px rgba(0,0,0,.6);">
-    <div style="font-size:1rem;font-weight:bold;color:#66bb6a;display:flex;align-items:center;gap:8px;">💬 Enviar feedback</div>
-    <div style="font-size:.74rem;color:var(--lab-muted);margin-top:8px;line-height:1.5;">Escribí tu duda, sugerencia o problema. Se va a abrir WhatsApp con el mensaje listo para enviar.</div>
-    <textarea id="wa-msg" rows="4" placeholder="Ej: no entiendo bien cómo marcar este dígito..."
+    <div style="font-size:1rem;font-weight:bold;color:#66bb6a;display:flex;align-items:center;gap:8px;">💬 Reportar observación</div>
+    <div style="font-size:.74rem;color:var(--lab-muted);margin-top:8px;line-height:1.5;">Algo que no cuadra pero no es fraude confirmado — duda, anomalía leve, dígito confuso.</div>
+    <textarea id="wa-msg" rows="4" placeholder="Ej: el dígito es ambiguo entre 1 y 7, hay una mancha sobre el número…"
       style="width:100%;margin-top:12px;background:var(--bs-secondary-bg);border:1px solid var(--bs-border-color);border-radius:8px;color:var(--bs-body-color);font-size:.85rem;padding:10px;resize:vertical;box-sizing:border-box;font-family:inherit;"></textarea>
     <div id="wa-err" style="color:#ef5350;font-size:.72rem;min-height:14px;margin-top:4px;"></div>
     <div class="d-flex gap-2 justify-content-end mt-2">
       <button onclick="closeWa()" class="btn btn-sm btn-outline-secondary">Cancelar</button>
-      <button onclick="submitWa()" class="btn btn-sm btn-success fw-bold">Enviar por WhatsApp</button>
+      <button id="wa-submit" onclick="submitWa()" class="btn btn-sm btn-success fw-bold">Enviar</button>
     </div>
+    <div style="font-size:.64rem;color:var(--lab-muted);margin-top:10px;text-align:right;">Esc para cancelar</div>
   </div>
 </div>
 
