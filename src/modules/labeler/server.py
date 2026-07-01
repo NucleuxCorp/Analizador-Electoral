@@ -827,22 +827,16 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 return jsonify({"error": "Verificación de seguridad fallada. Recargá la página e intentá de nuevo."}), 403
 
             try:
-                import requests as _requests
-                _supabase_url = os.environ.get("SUPABASE_URL", "").strip()
-                _anon_key = os.environ.get("SUPABASE_ANON_KEY", "").strip()
+                from src.modules.labeler.auth import init_supabase_client
                 base_url = _public_base_url()
-                # Use REST API directly to ensure redirect_to is honored
-                _requests.post(
-                    f"{_supabase_url}/auth/v1/recover",
-                    headers={
-                        "apikey": _anon_key,
-                        "Content-Type": "application/json",
-                    },
-                    json={
-                        "email": email,
-                        "redirect_to": f"{base_url}/auth/recovery",
-                    },
-                    timeout=15,
+                # SDK method sends token_hash as query param (?token_hash=xxx&type=recovery)
+                # so the GET /auth/recovery handler can call verify_otp() correctly.
+                # The old REST /auth/v1/recover sent the token in the URL fragment (#access_token=...)
+                # which never reaches the server.
+                _recovery_client = init_supabase_client()
+                _recovery_client.auth.reset_password_for_email(
+                    email,
+                    options={"redirect_to": f"{base_url}/auth/recovery"},
                 )
             except Exception as exc:
                 logger.error("forgot-password email=%s ip=%s: %s", email, request.remote_addr, exc)
@@ -861,8 +855,13 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
             from src.modules.labeler.auth import init_supabase_client
             client = init_supabase_client()
             try:
-                client.auth.verify_otp({"token_hash": token_hash, "type": "recovery"})
+                auth_resp = client.auth.verify_otp({"token_hash": token_hash, "type": "recovery"})
+                # Store the user_id so the POST handler can update the password via admin API.
+                recovery_user_id = None
+                if auth_resp and auth_resp.user:
+                    recovery_user_id = auth_resp.user.id
                 session["recovery_verified"] = True
+                session["recovery_user_id"] = recovery_user_id
                 return render_template("reset_password.html", token_hash=token_hash)
             except Exception as exc:
                 err_str = str(exc).lower()
@@ -886,11 +885,18 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
             new_password = body.get("password", "")
             if len(new_password) < 8:
                 return jsonify({"error": "La contraseña debe tener al menos 8 caracteres."}), 400
-            from src.modules.labeler.auth import init_supabase_client
-            client = init_supabase_client()
+            import src.modules.labeler.db as _db
             try:
-                client.auth.update_user({"password": new_password})
+                recovery_user_id = session.get("recovery_user_id")
+                if not recovery_user_id:
+                    return jsonify({"error": "Sesión de recuperación expirada. Solicitá un nuevo link."}), 403
+                # Use service-role admin API to update the password — no need for user session.
+                admin_client = _db._client()
+                admin_client.auth.admin.update_user_by_id(
+                    recovery_user_id, {"password": new_password}
+                )
                 session.pop("recovery_verified", None)
+                session.pop("recovery_user_id", None)
                 return jsonify({"message": "password updated", "redirect": "/auth/login?reset=1"}), 200
             except Exception as exc:
                 logger.error("recovery update password ip=%s: %s", request.remote_addr, exc)
