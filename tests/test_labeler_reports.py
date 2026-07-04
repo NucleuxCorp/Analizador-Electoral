@@ -306,12 +306,24 @@ class TestValidateReportPayload:
         payload, err = _validate_report_payload({
             "crop_id": "abc",
             "report_type": "otro",
+            "digit": "7",
             "notes": "Columna ilegible",
         })
         assert err is None
+        assert payload["digit"] == "7"
         # digit_original and digit_corrected should be None for otro
         assert payload["digit_original"] is None
         assert payload["digit_corrected"] is None
+
+    def test_missing_digit_for_otro_returns_error(self):
+        from src.modules.labeler.server import _validate_report_payload
+        _, err = _validate_report_payload({
+            "crop_id": "abc",
+            "report_type": "otro",
+            "notes": "Columna ilegible",
+        })
+        assert err is not None
+        assert "digit" in err.lower()
 
 
 # ---------------------------------------------------------------------------

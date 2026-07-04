@@ -835,6 +835,13 @@
       document.getElementById("report-otro-digit").value = "";
       document.getElementById("report-otro-notes").value = "";
       document.getElementById("report-error").textContent = "";
+      // Populate OCR preview
+      var ocrVal = inp.value || inp.dataset.ocr || "—";
+      var cropId = inp.dataset.cropId || "";
+      var prevOcr = document.getElementById("report-preview-ocr");
+      var prevImg = document.getElementById("report-preview-img");
+      if (prevOcr) prevOcr.textContent = ocrVal;
+      if (prevImg) { prevImg.src = cropId ? "/image/" + cropId : ""; }
       setReportType("enmienda");
       m.style.display = "flex";
       setTimeout(function () { document.getElementById("report-digit-original").focus(); }, 50);
@@ -891,10 +898,12 @@
       } else {
         var digit = (document.getElementById("report-otro-digit").value || "").trim();
         var notes2 = (document.getElementById("report-otro-notes").value || "").trim();
+        if (!digit) { errEl.textContent = "El dígito observado es obligatorio."; return; }
+        if (re && !re.test(digit)) { errEl.textContent = "Dígito inválido: " + digit; return; }
         if (!notes2) { errEl.textContent = "La observación es obligatoria."; return; }
-        if (digit && re && !re.test(digit)) { errEl.textContent = "Dígito de referencia inválido: " + digit; return; }
+        payload.digit = digit;
         payload.notes = notes2;
-        if (digit) { payload.digit = digit; autoVal = digit; }
+        autoVal = digit;
       }
 
       btn.disabled = true; btn.textContent = "Guardando…";
@@ -1280,6 +1289,14 @@
 <div id="report-modal" style="position:fixed;inset:0;z-index:10001;background:rgba(8,10,16,.8);display:none;align-items:center;justify-content:center;">
   <div style="width:min(460px,94vw);background:var(--bs-card-bg);border:1px solid #0e3a5a;border-radius:12px;padding:22px 24px;box-shadow:0 12px 40px rgba(0,0,0,.6);">
     <div style="font-size:1rem;font-weight:bold;color:#7ec8e3;display:flex;align-items:center;gap:8px;">📋 Reportar anomalía</div>
+    <!-- OCR preview: populated by openReport() -->
+    <div id="report-ocr-preview" style="display:flex;align-items:center;gap:12px;margin-top:10px;padding:8px 12px;background:var(--bs-secondary-bg);border:1px solid var(--bs-border-color);border-radius:8px;">
+      <img id="report-preview-img" src="" alt="" style="width:56px;height:46px;object-fit:contain;background:#0a1020;border-radius:4px;border:1px solid #1e2a3a;flex-shrink:0;">
+      <div>
+        <div style="font-size:.64rem;color:var(--lab-muted);text-transform:uppercase;letter-spacing:.05em;">Dígito en evaluación</div>
+        <div style="font-size:1.4rem;font-weight:bold;color:#ffd700;font-family:monospace;" id="report-preview-ocr">—</div>
+      </div>
+    </div>
     <div style="font-size:.74rem;color:var(--lab-muted);margin-top:8px;line-height:1.5;">Registrá una corrección OCR (enmienda) o una observación libre sobre este recorte.</div>
 
     <!-- Type selector -->
@@ -1318,10 +1335,10 @@
     <!-- Otro fields -->
     <div id="report-fields-otro" hidden style="margin-top:14px;">
       <div>
-        <label style="font-size:.7rem;color:var(--lab-muted);display:block;margin-bottom:4px;">Dígito de referencia (opcional)</label>
+        <label style="font-size:.7rem;color:var(--lab-muted);display:block;margin-bottom:4px;">Dígito observado <span style="color:#ef5350;">*</span></label>
         <input id="report-otro-digit" type="text" maxlength="3" autocomplete="off"
-               placeholder="ej: 7 o déjalo vacío"
-               style="width:100%;background:var(--bs-secondary-bg);border:1px solid var(--bs-border-color);border-radius:6px;color:var(--bs-body-color);font-size:1.1rem;padding:7px 10px;font-family:monospace;">
+               placeholder="ej: 7"
+               style="width:100%;background:var(--bs-secondary-bg);border:1px solid var(--bs-border-color);border-radius:6px;color:var(--bs-body-color);font-size:1.1rem;padding:7px 10px;font-family:monospace;text-align:center;">
       </div>
       <div style="margin-top:10px;">
         <label style="font-size:.7rem;color:var(--lab-muted);display:block;margin-bottom:4px;">Observación <span style="color:#ef5350;">*</span></label>

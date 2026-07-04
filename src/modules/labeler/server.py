@@ -572,14 +572,15 @@ def _validate_report_payload(body: dict) -> tuple[dict, str | None]:
 
     elif report_type == "otro":
         notes = (body.get("notes") or "").strip()
+        digit = (body.get("digit") or "").strip()
+        if not digit:
+            return {}, "digit is required for otro reports"
+        if not _validate_glyph(digit):
+            return {}, f"digit contains invalid glyph: {digit!r}"
         if not notes:
             return {}, "notes is required for otro reports"
+        payload["digit"] = digit
         payload["notes"] = notes
-        digit = (body.get("digit") or "").strip()
-        if digit:
-            if not _validate_glyph(digit):
-                return {}, f"digit contains invalid glyph: {digit!r}"
-            payload["digit"] = digit
         # digit_original and digit_corrected are irrelevant for otro — force None
         payload["digit_original"] = None
         payload["digit_corrected"] = None
