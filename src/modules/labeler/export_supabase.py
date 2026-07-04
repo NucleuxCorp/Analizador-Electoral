@@ -131,6 +131,7 @@ def seed_crops_table(
     crops_dir: Path,
     batch_size: int = 500,
     skip_auto_skip: bool = True,
+    vuelta: str = "primera",
 ) -> dict:
     """
     Read exporter.py's index.jsonl and insert rows into the Supabase `crops` table.
@@ -196,6 +197,8 @@ def seed_crops_table(
             "label_ocr": record.get("label_ocr"),
             "confidence": record.get("confidence"),
             "priority": record.get("priority", 2),
+            "vuelta": vuelta,
+            "full_cell_crop_id": record.get("full_cell_crop_id"),
             # storage_url populated after upload_crops_to_storage()
             "annotation_count": 0,
             "status": "pending",
@@ -324,3 +327,149 @@ def upload_crops_to_storage(
         time.sleep(delay)
 
     return stats
+
+
+# ---------------------------------------------------------------------------
+# Field-name normalisation (mesa-semaphore Slice 2)
+# ---------------------------------------------------------------------------
+
+def _normalize_field_name(name: str) -> str:
+    """
+    Normalize raw field_name values from the crop pipeline to human-readable
+    canonical names stored in the crops table.
+
+    Rules:
+      C{N}_{ANYTHING}  →  candidato_{N}   (e.g. C1_ALVAREZ → candidato_1)
+      URNA             →  total_urna
+      SUMA_TOTAL       →  suma_total
+      VOTANTES         →  total_votantes
+      BLANCO           →  blanco
+      NULOS            →  nulos
+      NO_MARCADOS      →  no_marcados
+      INCINER          →  incineradas
+      <anything else>  →  returned unchanged
+    """
+    if not name:
+        return name
+    m = re.match(r"^C(\d+)_", name)
+    if m:
+        return f"candidato_{m.group(1)}"
+    _MAP: dict[str, str] = {
+        "URNA": "total_urna",
+        "SUMA_TOTAL": "suma_total",
+        "VOTANTES": "total_votantes",
+        "BLANCO": "blanco",
+        "NULOS": "nulos",
+        "NO_MARCADOS": "no_marcados",
+        "INCINER": "incineradas",
+    }
+    return _MAP.get(name, name)
+
+
+# ---------------------------------------------------------------------------
+# 5.3  upload_crop_with_metadata  (cell-crop-full-pipeline extension)
+# ---------------------------------------------------------------------------
+
+def upload_crop_with_metadata(
+    client,
+    bucket: str,
+    crop_id: str,
+    local_path: Path,
+    metadata: dict,
+    storage_prefix: str = "crops/sv",
+) -> str | None:
+    """Upload a PNG and upsert its row in the crops table with pipeline metadata.
+
+    This function is the Supabase integration point for the cell-crop-full-pipeline.
+    It uploads the PNG bytes to Supabase Storage and upserts a row in the `crops`
+    table using the new nullable columns added by the T10 schema migration.
+
+    Args:
+        client:         Supabase client instance.
+        bucket:         Storage bucket name (e.g. "crops").
+        crop_id:        32-char hex crop identifier.
+        local_path:     Absolute path to the PNG file on disk.
+        metadata:       Dict with keys: mesa_key, e14_type, crop_type,
+                        concordance_state, jsd_e14c_e14t, jsd_e14c_e14d,
+                        jsd_e14t_e14d, dept, mpio, zona.
+        storage_prefix: Path prefix inside the bucket (default "crops/sv").
+
+    Returns:
+        Public storage URL string on success, None on failure.
+
+    Existing functions seed_crops_table and upload_crops_to_storage are unchanged.
+    """
+    dept = metadata.get("dept") or ""
+    mpio = metadata.get("mpio") or ""
+    zona = metadata.get("zona") or ""
+    puesto = metadata.get("puesto") or ""
+    mesa = metadata.get("mesa") or ""
+
+    # Derive mesa_key_mr (underscore format matching mesa_results.mesa_key).
+    # Set to None when any coord field is missing — spec S2-R2 scenario 2.
+    if dept and mpio and zona and puesto and mesa:
+        mesa_key_mr: str | None = f"{dept}_{mpio}_{zona}_{puesto}_{mesa}"
+    else:
+        mesa_key_mr = None
+
+    # Use "00"/"000" fallbacks only for the Storage path (not for the DB key).
+    dept_path = dept or "00"
+    mpio_path = mpio or "000"
+    zona_path = zona or "00"
+    object_key = f"{storage_prefix}/{dept_path}/{mpio_path}/{zona_path}/{crop_id}.png"
+
+    try:
+        local_path = Path(local_path)
+        if not local_path.exists():
+            print(f"  upload_crop_with_metadata: PNG not found: {local_path}", flush=True)
+            return None
+
+        with open(local_path, "rb") as fh:
+            png_bytes = fh.read()
+
+        # Upload to Storage (upsert to overwrite if already exists)
+        try:
+            client.storage.from_(bucket).upload(
+                path=object_key,
+                file=png_bytes,
+                file_options={"content-type": "image/png", "upsert": "true"},
+            )
+        except Exception as exc:
+            err_msg = str(exc).lower()
+            if not ("already exists" in err_msg or "duplicate" in err_msg or "409" in err_msg):
+                print(f"  upload_crop_with_metadata: storage upload failed for {crop_id}: {exc}")
+                return None
+
+        # Build public URL
+        base_url = _supabase_url.rstrip("/")
+        public_url = f"{base_url}/storage/v1/object/public/{bucket}/{object_key}"
+
+        # Upsert row in crops table with metadata columns
+        row = {
+            "crop_id": crop_id,
+            "storage_url": public_url,
+            # Pipeline metadata columns (added by T10 migration)
+            "mesa_key": metadata.get("mesa_key"),
+            "e14_type": metadata.get("e14_type"),
+            "crop_type": metadata.get("crop_type"),
+            "concordance_state": metadata.get("concordance_state"),
+            "jsd_e14c_e14t": metadata.get("jsd_e14c_e14t"),
+            "jsd_e14c_e14d": metadata.get("jsd_e14c_e14d"),
+            "jsd_e14t_e14d": metadata.get("jsd_e14t_e14d"),
+            # Slice 2: human-review semaphore key (mesa_results.mesa_key format)
+            "mesa_key_mr": mesa_key_mr,
+            # Legacy required fields — provide sensible defaults
+            "pdf_path": "",
+            "field_name": _normalize_field_name(metadata.get("field_name") or ""),
+            "digit_index": -1,
+            "priority": 2,
+            "annotation_count": 0,
+            "status": "pending",
+        }
+        client.table("crops").upsert(row, on_conflict="crop_id").execute()
+
+        return public_url
+
+    except Exception as exc:
+        print(f"  upload_crop_with_metadata: failed for {crop_id}: {exc}")
+        return None
