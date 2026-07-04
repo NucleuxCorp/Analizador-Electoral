@@ -230,14 +230,16 @@ class TestBuildRow:
         assert result["puesto"] == "01"
         assert result["mesa"] == "001"
         assert result["sources_ok_count"] == 3
-        assert "e14c_status" in result
         assert "e14c_arith_ok" in result
         assert "e14c_arith_delta" in result
         assert "cross_discrepancy" in result
         assert "tachon_suspicious" in result
-        assert "tachon_max_score" in result
         assert "has_missing_fields" in result
         assert "overall_status" in result
+        # columns not in DDL schema — must NOT be present in flat row
+        assert "e14c_status" not in result
+        assert "tachon_max_score" not in result
+        assert "cross_discrepant_fields" not in result
 
     def test_build_row_preserves_raw_data(self):
         """build_row sets raw_data to the entire original dict."""
@@ -272,7 +274,7 @@ class TestBuildRow:
 
         result = build_row(raw)
         assert result is not None
-        assert result["e14t_status"] is None
+        assert result["e14t_arith_ok"] is None
         assert result["e14d_arith_ok"] is None
 
 
