@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 import uuid
 from datetime import datetime, timezone, timedelta
 from typing import Any
@@ -713,6 +714,135 @@ def retract_recent_marks(user_id: str, crop_id: str) -> None:
 # ---------------------------------------------------------------------------
 # 3.12  get_real_progress
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# 3.13  mesa_results — paginated accessor + stats with TTL cache
+# ---------------------------------------------------------------------------
+
+# Module-level TTL cache for get_mesa_stats.
+# Structure: { cache_key: {"data": dict, "ts": float} }
+# Cache key is the dept param (or None for global).
+_mesa_stats_cache: dict = {}
+_MESA_STATS_TTL = 300  # seconds
+
+# All valid overall_status values (5-level taxonomy, design D3).
+# Defined at module level to avoid tuple reconstruction on every stats call.
+_MESA_STATUSES: tuple[str, ...] = (
+    "clean", "known_anomaly", "warning", "discrepancy", "critical"
+)
+
+
+def get_mesa_results(
+    dept: str | None = None,
+    status: str | None = None,
+    page: int = 1,
+    per_page: int = 50,
+) -> list[dict]:
+    """
+    Fetch a paginated slice of mesa_results rows.
+
+    Applies optional dept and/or overall_status filters. Pagination is
+    zero-based via PostgREST .range(offset, offset+per_page-1). Returns []
+    on any exception (fail-closed).
+
+    Args:
+        dept:     Two-digit department code to filter on, or None for all.
+        status:   overall_status value to filter on, or None for all.
+        page:     1-based page number (page=1 → offset 0).
+        per_page: Number of rows per page. Hard-coded at 50 in the admin route
+                  (design D7), but kept flexible here for testing.
+
+    Returns:
+        List of mesa_results row dicts.
+    """
+    try:
+        offset = (page - 1) * per_page
+        query = _client().table("mesa_results").select("*")
+        if dept is not None:
+            query = query.eq("dept", dept)
+        if status is not None:
+            query = query.eq("overall_status", status)
+        response = query.range(offset, offset + per_page - 1).execute()
+        return response.data or []
+    except Exception as exc:
+        logger.warning("get_mesa_results failed: %s", exc)
+        return []
+
+
+def _get_mesa_stats_uncached(dept: str | None = None) -> dict:
+    """
+    Fetch overall_status distribution from mesa_results, grouped by dept.
+
+    Returns a dict of the shape:
+        {
+            "01": {"clean": N, "known_anomaly": N, "warning": N,
+                   "discrepancy": N, "critical": N, "total": N},
+            ...
+            "_global": {"clean": N, ..., "total": N},
+        }
+
+    Internal helper — callers should use get_mesa_stats() for the cached
+    version. Exposed at module level so tests can bypass the cache.
+
+    Returns {} on any exception (fail-closed).
+    """
+    try:
+        query = _client().table("mesa_results").select("dept, overall_status")
+        if dept is not None:
+            query = query.eq("dept", dept)
+        response = query.execute()
+        rows: list[dict] = response.data or []
+
+        # Aggregate per-dept counts
+        per_dept: dict[str, dict[str, int]] = {}
+        for row in rows:
+            d = row.get("dept", "unknown")
+            s = row.get("overall_status", "unknown")
+            if d not in per_dept:
+                per_dept[d] = {st: 0 for st in _MESA_STATUSES}
+                per_dept[d]["total"] = 0
+            if s in per_dept[d]:
+                per_dept[d][s] += 1
+            per_dept[d]["total"] += 1
+
+        # Build _global rollup
+        global_counts: dict[str, int] = {st: 0 for st in _MESA_STATUSES}
+        global_counts["total"] = 0
+        for dept_counts in per_dept.values():
+            for st in _MESA_STATUSES:
+                global_counts[st] += dept_counts.get(st, 0)
+            global_counts["total"] += dept_counts["total"]
+
+        return {**per_dept, "_global": global_counts}
+    except Exception as exc:
+        logger.warning("_get_mesa_stats_uncached failed: %s", exc)
+        return {}
+
+
+def get_mesa_stats(dept: str | None = None) -> dict:
+    """
+    Return overall_status distribution from mesa_results, with a 5-min TTL cache.
+
+    Cache key is the dept parameter (None means global). On a cache miss the
+    function delegates to _get_mesa_stats_uncached() and stores the result.
+    Returns {} on any exception (fail-closed).
+
+    Args:
+        dept: Two-digit department code to scope the stats, or None for all.
+
+    Returns:
+        Stats dict (see _get_mesa_stats_uncached for shape).
+    """
+    cache_key = dept  # None is a valid dict key
+    now = time.monotonic()
+    entry = _mesa_stats_cache.get(cache_key)
+    if entry is not None and (now - entry["ts"]) < _MESA_STATS_TTL:
+        return entry["data"]
+
+    data = _get_mesa_stats_uncached(dept=dept)
+    _mesa_stats_cache[cache_key] = {"data": data, "ts": now}
+    return data
+
 
 def get_real_progress() -> dict:
     """
