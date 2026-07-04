@@ -313,20 +313,21 @@ def _reconstruct_source_url(pdf_path: str) -> str:
     Reconstruct the Registraduría public URL from a local pdf_path when
     source_url was not stored in the database.
 
-    The collector saves files as:
-        nombre_archivo.replace('/docs/E14/', '').replace('/', '_')
-    so the reverse mapping is unambiguous: split on '_' up to the 'E14' marker
-    to recover the directory components, then rejoin with '/'.
+    Filename format: E14_PRE_{dept}_{mpio}_{zona_3digit}_{??}_{puesto}_{mesa}_{timestamp}
+    URL format:      /docs/E14/{dept}/{mpio}/{zona_2digit}/{puesto}/{filename}.pdf
     """
-    name = Path(pdf_path).name.replace(".pdf", "")
-    parts = name.split("_")
-    try:
-        e14_idx = next(i for i, p in enumerate(parts) if p == "E14")
-    except StopIteration:
+    stem = Path(pdf_path).stem  # e.g. E14_PRE_05_001_004_01_03_011_5403
+    if not stem.startswith("E14_PRE_"):
         return ""
-    dir_parts = parts[:e14_idx]
-    file_parts = parts[e14_idx:]
-    nombre_archivo = "/docs/E14/" + "/".join(dir_parts) + "/" + "_".join(file_parts) + ".pdf"
+    tail = stem[len("E14_PRE_"):]  # "05_001_004_01_03_011_5403"
+    parts = tail.split("_")
+    if len(parts) < 5:
+        return ""
+    dept   = parts[0]                     # "05"
+    mpio   = parts[1]                     # "001"
+    zona   = str(int(parts[2])).zfill(2)  # "004" → "04"
+    puesto = parts[4]                     # "03"
+    nombre_archivo = f"/docs/E14/{dept}/{mpio}/{zona}/{puesto}/{stem}.pdf"
     return _BASE_E14C_SV + nombre_archivo
 
 
