@@ -730,11 +730,15 @@ _MESA_STATS_TTL = 300  # seconds
 # allMviewGetProgressByCorporations.nodes[0].expected = 122020.
 TOTAL_UNIVERSE: int = 122_020
 
+# E14C PDFs on disk (E:/e14_segunda/E14C) after dedup cleanup — audited 2026-07-04.
+# Limiting factor for mesas_all_three (E14T/E14D both have 122,019).
+MESAS_ALL_THREE: int = 118_543
+
 # Zeros dict returned by get_public_stats() on any exception (fail-closed).
 _PUBLIC_STATS_ZEROS: dict = {
-    "mesas_all_three": 0,
+    "mesas_all_three": MESAS_ALL_THREE,
     "mesas_analyzed": 0,
-    "mesas_remaining": 0,
+    "mesas_remaining": TOTAL_UNIVERSE,
     "total_anomalias": 0,
     "total_universe": TOTAL_UNIVERSE,
 }
@@ -905,18 +909,8 @@ def get_public_stats() -> dict:
             + global_counts.get("critical", 0)
         )
 
-        # --- mesas_all_three: COUNT-only query (PostgREST count=exact) ---
-        response = (
-            _client()
-            .table("mesa_results")
-            .select("mesa_key", count="exact")
-            .not_.is_("e14c_arith_ok", "null")
-            .not_.is_("e14t_arith_ok", "null")
-            .not_.is_("e14d_arith_ok", "null")
-            .limit(1)
-            .execute()
-        )
-        mesas_all_three: int = response.count or 0
+        # mesas_all_three: known constant from disk audit (2026-07-04).
+        mesas_all_three: int = MESAS_ALL_THREE
 
         result = {
             "mesas_all_three": mesas_all_three,

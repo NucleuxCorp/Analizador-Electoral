@@ -61,9 +61,9 @@ def _global_stats(
 
 
 ZEROS_DICT = {
-    "mesas_all_three": 0,
+    "mesas_all_three": 118_543,
     "mesas_analyzed": 0,
-    "mesas_remaining": 0,
+    "mesas_remaining": 122_020,
     "total_anomalias": 0,
     "total_universe": 122_020,
 }
@@ -123,19 +123,16 @@ class TestGetPublicStatsHappyPath:
             "total_anomalias", "total_universe",
         }
 
-    def test_happy_path_mesas_all_three_from_count(self):
-        """mesas_all_three is read from the COUNT query response.count."""
-        from src.modules.labeler.db import get_public_stats
+    def test_happy_path_mesas_all_three_is_constant(self):
+        """mesas_all_three equals the MESAS_ALL_THREE disk-audit constant."""
+        from src.modules.labeler.db import get_public_stats, MESAS_ALL_THREE
 
-        chain = _make_count_chain(5000)
-        mock_client = _make_client(chain)
         stats = _global_stats()
 
-        with patch("src.modules.labeler.db._client", return_value=mock_client), \
-             patch("src.modules.labeler.db.get_mesa_stats", return_value=stats):
+        with patch("src.modules.labeler.db.get_mesa_stats", return_value=stats):
             result = get_public_stats()
 
-        assert result["mesas_all_three"] == 5000
+        assert result["mesas_all_three"] == MESAS_ALL_THREE
 
     def test_happy_path_mesas_analyzed_from_global_total(self):
         """mesas_analyzed equals _global.total from get_mesa_stats()."""
@@ -216,9 +213,8 @@ class TestGetPublicStatsCacheHit:
             get_public_stats()
             get_public_stats()
 
-        # get_mesa_stats and _client should each be called only once
+        # get_mesa_stats should be called only once (cache hit on second call)
         assert mock_stats.call_count == 1
-        assert mock_client.table.call_count == 1
 
 
 # ---------------------------------------------------------------------------
@@ -244,7 +240,6 @@ class TestGetPublicStatsCacheMissAfterTTL:
             get_public_stats()
 
         assert mock_stats.call_count == 2
-        assert mock_client.table.call_count == 2
 
 
 # ---------------------------------------------------------------------------
