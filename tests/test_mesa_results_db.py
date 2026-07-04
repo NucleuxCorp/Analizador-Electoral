@@ -45,12 +45,12 @@ class TestGetMesaResultsFilteredPage:
         and calls .range(offset, offset+per_page-1)."""
         from src.modules.labeler.db import get_mesa_results
 
-        row = {"mesa_key": "01_001_01_01_1", "dept": "01", "overall_status": "critical"}
+        row = {"mesa_key": "01_001_01_01_1", "dept": "01", "overall_status": "needs_review_large_delta"}
         chain = _make_chain([row])
         mock_client = _make_client(chain)
 
         with patch("src.modules.labeler.db._client", return_value=mock_client):
-            result = get_mesa_results(dept="01", status="critical", page=1, per_page=50)
+            result = get_mesa_results(dept="01", status="needs_review_large_delta", page=1, per_page=50)
 
         assert result == [row]
         mock_client.table.assert_called_once_with("mesa_results")
@@ -138,7 +138,7 @@ class TestGetMesaResultsSupabaseUnavailable:
         from src.modules.labeler.db import get_mesa_results
 
         with patch("src.modules.labeler.db._client", side_effect=RuntimeError("no client")):
-            result = get_mesa_results(dept="01", status="critical", page=1, per_page=50)
+            result = get_mesa_results(dept="01", status="needs_review_large_delta", page=1, per_page=50)
 
         assert result == []
 
@@ -196,7 +196,7 @@ class TestGetMesaStatsAllDepts:
 
         rows = [
             {"dept": "01", "overall_status": "clean"},
-            {"dept": "01", "overall_status": "critical"},
+            {"dept": "01", "overall_status": "needs_review_large_delta"},
             {"dept": "05", "overall_status": "warning"},
         ]
         mock_client = self._make_stats_client(rows)
@@ -215,7 +215,7 @@ class TestGetMesaStatsAllDepts:
         rows = [
             {"dept": "01", "overall_status": "clean"},
             {"dept": "01", "overall_status": "clean"},
-            {"dept": "01", "overall_status": "critical"},
+            {"dept": "01", "overall_status": "needs_review_large_delta"},
         ]
         mock_client = self._make_stats_client(rows)
 
@@ -223,7 +223,7 @@ class TestGetMesaStatsAllDepts:
             result = _get_mesa_stats_uncached(dept=None)
 
         assert result["01"]["clean"] == 2
-        assert result["01"]["critical"] == 1
+        assert result["01"]["needs_review_large_delta"] == 1
         assert result["01"]["total"] == 3
 
     def test_get_mesa_stats_global_totals(self):
@@ -233,7 +233,7 @@ class TestGetMesaStatsAllDepts:
         rows = [
             {"dept": "01", "overall_status": "clean"},
             {"dept": "05", "overall_status": "warning"},
-            {"dept": "05", "overall_status": "critical"},
+            {"dept": "05", "overall_status": "needs_review_large_delta"},
         ]
         mock_client = self._make_stats_client(rows)
 
@@ -243,7 +243,7 @@ class TestGetMesaStatsAllDepts:
         assert result["_global"]["total"] == 3
         assert result["_global"]["clean"] == 1
         assert result["_global"]["warning"] == 1
-        assert result["_global"]["critical"] == 1
+        assert result["_global"]["needs_review_large_delta"] == 1
 
 
 class TestGetMesaStatsFiltered:
@@ -304,7 +304,7 @@ class TestGetMesaStatsCacheHit:
         db_module._mesa_stats_cache.clear()
 
         rows_01 = [{"dept": "01", "overall_status": "clean"}]
-        rows_05 = [{"dept": "05", "overall_status": "critical"}]
+        rows_05 = [{"dept": "05", "overall_status": "needs_review_large_delta"}]
 
         call_count = {"n": 0}
 

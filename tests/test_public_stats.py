@@ -45,7 +45,7 @@ def _global_stats(
     known_anomaly: int = 50,
     warning: int = 30,
     discrepancy: int = 15,
-    critical: int = 5,
+    needs_review: int = 5,
 ) -> dict:
     """Return a stats dict with a _global key, matching get_mesa_stats() shape."""
     return {
@@ -55,7 +55,7 @@ def _global_stats(
             "known_anomaly": known_anomaly,
             "warning": warning,
             "discrepancy": discrepancy,
-            "critical": critical,
+            "needs_review_large_delta": needs_review,
         }
     }
 
@@ -163,12 +163,12 @@ class TestGetPublicStatsHappyPath:
         assert result["mesas_remaining"] == TOTAL_UNIVERSE - 3500
 
     def test_happy_path_total_anomalias_sum(self):
-        """total_anomalias = known_anomaly + warning + discrepancy + critical."""
+        """total_anomalias = known_anomaly + warning + discrepancy + needs_review_large_delta."""
         from src.modules.labeler.db import get_public_stats
 
         chain = _make_count_chain(0)
         mock_client = _make_client(chain)
-        stats = _global_stats(known_anomaly=50, warning=30, discrepancy=15, critical=5)
+        stats = _global_stats(known_anomaly=50, warning=30, discrepancy=15, needs_review=5)
 
         with patch("src.modules.labeler.db._client", return_value=mock_client), \
              patch("src.modules.labeler.db.get_mesa_stats", return_value=stats):

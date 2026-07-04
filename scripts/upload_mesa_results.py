@@ -107,18 +107,18 @@ def compute_overall_status(row: dict, *, fraud_max_diff: int = FRAUD_MAX_DIFF) -
     """Classify a cross-validation row into one of 5 priority levels.
 
     Priority order (first match wins):
-      1. critical      — (cross_discrepancy AND tachon_suspicious) OR any |arith_delta| > fraud_max_diff
-      2. discrepancy   — cross_discrepancy OR any arith_delta != 0
-      3. warning       — tachon_suspicious (no arithmetic issue)
-      4. known_anomaly — sources_ok_count < 2 OR any source URNA=0 while votes>0
-      5. clean         — none of the above
+      1. needs_review_large_delta — (cross_discrepancy AND tachon_suspicious) OR any |arith_delta| > fraud_max_diff
+      2. discrepancy              — cross_discrepancy OR any arith_delta != 0
+      3. warning                  — tachon_suspicious (no arithmetic issue)
+      4. known_anomaly            — sources_ok_count < 2 OR any source URNA=0 while votes>0
+      5. clean                    — none of the above
 
     Args:
         row:            A parsed JSONL row dict from cross_mesa_validation_{DD}.jsonl.
-        fraud_max_diff: Threshold above which an arithmetic delta is classified as critical.
+        fraud_max_diff: Threshold above which an arithmetic delta is classified as needs_review_large_delta.
 
     Returns:
-        One of: 'critical', 'discrepancy', 'warning', 'known_anomaly', 'clean'.
+        One of: 'needs_review_large_delta', 'discrepancy', 'warning', 'known_anomaly', 'clean'.
     """
     cong_summary = (row.get("congruencia") or {}).get("summary") or {}
     aritmetica = row.get("aritmetica") or {}
@@ -151,7 +151,7 @@ def compute_overall_status(row: dict, *, fraud_max_diff: int = FRAUD_MAX_DIFF) -
 
     # 1. critical
     if (cross_discrepancy and tachon_suspicious) or any_delta_critical:
-        return "critical"
+        return "needs_review_large_delta"
 
     # 2. discrepancy
     if cross_discrepancy or any_delta_nonzero:

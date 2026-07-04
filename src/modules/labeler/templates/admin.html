@@ -128,11 +128,11 @@
     .page-label { color: #556; }
     .loading-msg { color: #556; font-size: .8rem; padding: 16px 0; }
     /* Row coloring by overall_status */
-    tr.status-critical td { background: #2a0a0a; }
+    tr.status-needs_review_large_delta td { background: #2a0a0a; }
     tr.status-discrepancy td { background: #2a1800; }
     tr.status-warning td { background: #1e1a00; }
     tr.status-known_anomaly td { background: #1a1a1e; }
-    tr.status-critical:hover td { background: #3a0e0e; }
+    tr.status-needs_review_large_delta:hover td { background: #3a0e0e; }
     tr.status-discrepancy:hover td { background: #3a2200; }
     tr.status-warning:hover td { background: #2a2400; }
     tr.status-known_anomaly:hover td { background: #222228; }
@@ -370,7 +370,7 @@
       </div>
       <div class="stat-item">
         <span class="stat-label">Critical</span>
-        <span class="stat-val red" id="mesas-stat-critical">—</span>
+        <span class="stat-val red" id="mesas-stat-needs-review">—</span>
       </div>
       <div class="stat-item">
         <span class="stat-label">Discrepancy</span>
@@ -395,7 +395,7 @@
       <input type="text" id="mesas-filter-dept" placeholder="Dept (05)" maxlength="2" title="2-digit department code">
       <select id="mesas-filter-status">
         <option value="">All statuses</option>
-        <option value="critical">Critical</option>
+        <option value="needs_review_large_delta">Necesita revisión</option>
         <option value="discrepancy">Discrepancy</option>
         <option value="warning">Warning</option>
         <option value="known_anomaly">Known anomaly</option>
@@ -570,7 +570,7 @@ function _loadMesasStats() {
     .then(function(data) {
       var g = data['_global'] || {};
       document.getElementById('mesas-stat-total').textContent        = g.total          != null ? g.total          : '—';
-      document.getElementById('mesas-stat-critical').textContent     = g.critical        != null ? g.critical        : '—';
+      document.getElementById('mesas-stat-needs-review').textContent  = g.needs_review_large_delta != null ? g.needs_review_large_delta : '—';
       document.getElementById('mesas-stat-discrepancy').textContent  = g.discrepancy     != null ? g.discrepancy     : '—';
       document.getElementById('mesas-stat-warning').textContent      = g.warning         != null ? g.warning         : '—';
       document.getElementById('mesas-stat-known_anomaly').textContent = g.known_anomaly  != null ? g.known_anomaly   : '—';
@@ -661,7 +661,7 @@ function _renderMesasTable(rows) {
 
 function _statusBadgeStyle(status) {
   var styles = {
-    'critical':      'background:#3a0a0a;color:#ef5350;',
+    'needs_review_large_delta': 'background:#3a0a0a;color:#ef5350;',
     'discrepancy':   'background:#3a1800;color:#ff9100;',
     'warning':       'background:#2a2000;color:#fdd835;',
     'known_anomaly': 'background:#1e1e22;color:#778;',

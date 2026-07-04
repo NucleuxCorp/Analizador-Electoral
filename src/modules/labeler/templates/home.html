@@ -243,7 +243,7 @@
       </div>
 
       <div class="stat-card">
-        <div class="stat-value">{{ "—" if mesas_analyzed == 0 else mesas_analyzed | format_number }}</div>
+        <div class="stat-value" id="counter-analyzed" data-target="{{ mesas_analyzed }}">{{ "—" if mesas_analyzed == 0 else mesas_analyzed | format_number }}</div>
         <div class="stat-label">Mesas analizadas transversalmente</div>
         <div class="stat-sublabel">{{ mesas_remaining | format_number }} pendientes</div>
       </div>
@@ -257,6 +257,50 @@
   </section>
 
   <div class="ver">v{{ app_version }}</div>
+
+  <script>
+  (function () {
+    var el = document.getElementById("counter-analyzed");
+    if (!el) return;
+    var finalVal = parseInt(el.getAttribute("data-target"), 10);
+    if (!finalVal || finalVal <= 0) return;
+
+    var BASELINE = 40787;
+    var LS_KEY = "mesas_analyzed_v1";
+    var stored = parseInt(localStorage.getItem(LS_KEY) || "0", 10);
+    var startVal = Math.max(stored, BASELINE);
+
+    function fmt(n) {
+      return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+    }
+
+    if (startVal >= finalVal) {
+      el.textContent = fmt(finalVal);
+      localStorage.setItem(LS_KEY, finalVal);
+      return;
+    }
+
+    var duration = 1500;
+    var startTime = null;
+
+    function easeOut(t) { return 1 - Math.pow(1 - t, 3); }
+
+    function step(ts) {
+      if (!startTime) startTime = ts;
+      var progress = Math.min((ts - startTime) / duration, 1);
+      var current = Math.round(startVal + (finalVal - startVal) * easeOut(progress));
+      el.textContent = fmt(current);
+      if (progress < 1) {
+        requestAnimationFrame(step);
+      } else {
+        el.textContent = fmt(finalVal);
+        localStorage.setItem(LS_KEY, finalVal);
+      }
+    }
+
+    requestAnimationFrame(step);
+  })();
+  </script>
 
   {% if not is_open and launch_iso %}
   <script>

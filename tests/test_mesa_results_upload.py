@@ -179,35 +179,35 @@ class TestClassifyDiscrepancy:
 
 
 class TestClassifyCritical:
-    def test_classify_critical_delta_over_30(self):
-        """Any arith_delta > 30 returns 'critical'."""
+    def test_classify_needs_review_large_delta_delta_over_30(self):
+        """Any arith_delta > 30 returns 'needs_review_large_delta'."""
         from scripts.upload_mesa_results import compute_overall_status
 
         row = _make_row(e14c_arith_delta=31)
-        assert compute_overall_status(row) == "critical"
+        assert compute_overall_status(row) == "needs_review_large_delta"
 
-    def test_classify_critical_tachon_and_discrepancy(self):
-        """cross_discrepancy AND tachon_suspicious together returns 'critical'."""
+    def test_classify_needs_review_large_delta_tachon_and_discrepancy(self):
+        """cross_discrepancy AND tachon_suspicious together returns 'needs_review_large_delta'."""
         from scripts.upload_mesa_results import compute_overall_status
 
         row = _make_row(cross_discrepancy=True, e14c_tachon_suspicious=True)
-        assert compute_overall_status(row) == "critical"
+        assert compute_overall_status(row) == "needs_review_large_delta"
 
-    def test_classify_critical_delta_exactly_30_is_not_critical(self):
-        """arith_delta == 30 is NOT critical (must be strictly > 30)."""
+    def test_classify_needs_review_large_delta_delta_exactly_30_is_not_needs_review(self):
+        """arith_delta == 30 is NOT needs_review_large_delta (must be strictly > 30)."""
         from scripts.upload_mesa_results import compute_overall_status
 
         row = _make_row(e14c_arith_delta=30)
-        # delta==30 does NOT exceed FRAUD_MAX_DIFF (30), so not critical
+        # delta==30 does NOT exceed FRAUD_MAX_DIFF (30), so not needs_review_large_delta
         # but cross_discrepancy is False, so it becomes discrepancy (delta > 0)
         assert compute_overall_status(row) == "discrepancy"
 
-    def test_classify_critical_uses_abs_delta(self):
-        """Negative delta with abs > 30 is treated as critical."""
+    def test_classify_needs_review_large_delta_uses_abs_delta(self):
+        """Negative delta with abs > 30 is treated as needs_review_large_delta."""
         from scripts.upload_mesa_results import compute_overall_status
 
         row = _make_row(e14c_arith_delta=-31)
-        assert compute_overall_status(row) == "critical"
+        assert compute_overall_status(row) == "needs_review_large_delta"
 
 
 # ---------------------------------------------------------------------------

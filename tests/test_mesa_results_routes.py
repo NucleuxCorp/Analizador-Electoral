@@ -63,9 +63,9 @@ class TestMesasDataRoute:
         """Happy path: response has rows, page, total keys."""
         rows = [
             {"mesa_key": "01_001_01_01_1", "dept": "01", "overall_status": "clean"},
-            {"mesa_key": "01_001_01_01_2", "dept": "01", "overall_status": "critical"},
+            {"mesa_key": "01_001_01_01_2", "dept": "01", "overall_status": "needs_review_large_delta"},
         ]
-        stats = {"01": {"clean": 10, "critical": 5, "total": 15}, "_global": {"total": 15}}
+        stats = {"01": {"clean": 10, "needs_review_large_delta": 5, "total": 15}, "_global": {"total": 15}}
 
         with patch("src.modules.labeler.auth.decode_jwt", return_value={"sub": "admin-test-user"}), \
              patch("src.modules.labeler.auth._get_user_role", return_value="admin"), \
@@ -82,14 +82,14 @@ class TestMesasDataRoute:
 
     def test_passes_dept_and_status_to_get_mesa_results(self, prod_app, auth_client):
         """Query params dept and status are forwarded to get_mesa_results."""
-        rows = [{"mesa_key": "05_001_01_01_1", "dept": "05", "overall_status": "critical"}]
-        stats = {"05": {"critical": 1, "total": 1}, "_global": {"total": 1}}
+        rows = [{"mesa_key": "05_001_01_01_1", "dept": "05", "overall_status": "needs_review_large_delta"}]
+        stats = {"05": {"needs_review_large_delta": 1, "total": 1}, "_global": {"total": 1}}
 
         with patch("src.modules.labeler.auth.decode_jwt", return_value={"sub": "admin-test-user"}), \
              patch("src.modules.labeler.auth._get_user_role", return_value="admin"), \
              patch("src.modules.labeler.db.get_mesa_results", return_value=rows) as mock_results, \
              patch("src.modules.labeler.db.get_mesa_stats", return_value=stats):
-            resp = auth_client.get("/admin/mesas/data?dept=05&status=critical")
+            resp = auth_client.get("/admin/mesas/data?dept=05&status=needs_review_large_delta")
 
         assert resp.status_code == 200
         mock_results.assert_called_once()
@@ -97,7 +97,7 @@ class TestMesasDataRoute:
         # Verify dept and status were passed correctly (positional or keyword)
         args, kwargs = call_kwargs
         assert "05" in args or kwargs.get("dept") == "05"
-        assert "critical" in args or kwargs.get("status") == "critical"
+        assert "needs_review_large_delta" in args or kwargs.get("status") == "needs_review_large_delta"
 
     def test_page_param_forwarded_to_get_mesa_results(self, prod_app, auth_client):
         """Query param page is forwarded to get_mesa_results as integer."""
@@ -163,8 +163,8 @@ class TestMesasStatsRoute:
     def test_returns_dict_from_get_mesa_stats(self, prod_app, auth_client):
         """Happy path: response is the dict returned by get_mesa_stats()."""
         stats = {
-            "01": {"clean": 100, "critical": 5, "known_anomaly": 2, "warning": 3, "discrepancy": 1, "total": 111},
-            "_global": {"clean": 100, "critical": 5, "known_anomaly": 2, "warning": 3, "discrepancy": 1, "total": 111},
+            "01": {"clean": 100, "needs_review_large_delta": 5, "known_anomaly": 2, "warning": 3, "discrepancy": 1, "total": 111},
+            "_global": {"clean": 100, "needs_review_large_delta": 5, "known_anomaly": 2, "warning": 3, "discrepancy": 1, "total": 111},
         }
         with patch("src.modules.labeler.auth.decode_jwt", return_value={"sub": "admin-test-user"}), \
              patch("src.modules.labeler.auth._get_user_role", return_value="admin"), \

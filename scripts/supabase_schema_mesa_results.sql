@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS mesa_results (
 
     -- Aggregate verdict (5-level taxonomy, D3)
     overall_status          TEXT        NOT NULL
-        CHECK (overall_status IN ('clean', 'known_anomaly', 'warning', 'discrepancy', 'critical')),
+        CHECK (overall_status IN ('clean', 'known_anomaly', 'warning', 'discrepancy', 'needs_review_large_delta')),
 
     -- Independent boolean flags — kept flat so composite indexes work cleanly (D1)
     cross_discrepancy       BOOLEAN     NOT NULL DEFAULT FALSE,

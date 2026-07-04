@@ -746,7 +746,7 @@ _PUBLIC_STATS_ZEROS: dict = {
 # All valid overall_status values (5-level taxonomy, design D3).
 # Defined at module level to avoid tuple reconstruction on every stats call.
 _MESA_STATUSES: tuple[str, ...] = (
-    "clean", "known_anomaly", "warning", "discrepancy", "critical"
+    "clean", "known_anomaly", "warning", "discrepancy", "needs_review_large_delta"
 )
 
 
@@ -794,7 +794,7 @@ def _get_mesa_stats_uncached(dept: str | None = None) -> dict:
     Returns a dict of the shape:
         {
             "01": {"clean": N, "known_anomaly": N, "warning": N,
-                   "discrepancy": N, "critical": N, "total": N},
+                   "discrepancy": N, "needs_review_large_delta": N, "total": N},
             ...
             "_global": {"clean": N, ..., "total": N},
         }
@@ -906,7 +906,7 @@ def get_public_stats() -> dict:
             global_counts.get("known_anomaly", 0)
             + global_counts.get("warning", 0)
             + global_counts.get("discrepancy", 0)
-            + global_counts.get("critical", 0)
+            + global_counts.get("needs_review_large_delta", 0)
         )
 
         # mesas_all_three: known constant from disk audit (2026-07-04).
