@@ -725,6 +725,20 @@ def retract_recent_marks(user_id: str, crop_id: str) -> None:
 _mesa_stats_cache: dict = {}
 _MESA_STATS_TTL = 300  # seconds
 
+# Total universe of mesas for the Colombia 2026 presidential election.
+# Verified against data/allMviewGetProgressByCorporations.json:
+# allMviewGetProgressByCorporations.nodes[0].expected = 122020.
+TOTAL_UNIVERSE: int = 122_020
+
+# Zeros dict returned by get_public_stats() on any exception (fail-closed).
+_PUBLIC_STATS_ZEROS: dict = {
+    "mesas_all_three": 0,
+    "mesas_analyzed": 0,
+    "mesas_remaining": 0,
+    "total_anomalias": 0,
+    "total_universe": TOTAL_UNIVERSE,
+}
+
 # All valid overall_status values (5-level taxonomy, design D3).
 # Defined at module level to avoid tuple reconstruction on every stats call.
 _MESA_STATUSES: tuple[str, ...] = (
@@ -854,6 +868,69 @@ def get_mesa_stats(dept: str | None = None) -> dict:
     data = _get_mesa_stats_uncached(dept=dept)
     _mesa_stats_cache[cache_key] = {"data": data, "ts": now}
     return data
+
+
+def get_public_stats() -> dict:
+    """
+    Return aggregate transparency counters for the public home page.
+
+    Reuses the ``_mesa_stats_cache`` with key ``"public_stats"`` and the same
+    ``_MESA_STATS_TTL`` (5-minute) TTL as ``get_mesa_stats()``.
+
+    The function issues exactly one COUNT-only Supabase query per cache period
+    (for ``mesas_all_three``), and reads ``mesas_analyzed`` / ``total_anomalias``
+    from the already-cached ``get_mesa_stats()`` result (zero extra I/O on a
+    warm cache).
+
+    Returns:
+        Dict with keys: ``mesas_all_three``, ``mesas_analyzed``,
+        ``mesas_remaining``, ``total_anomalias``, ``total_universe``.
+        Returns ``_PUBLIC_STATS_ZEROS`` on any exception — never re-raises.
+    """
+    cache_key = "public_stats"
+    now = time.monotonic()
+    entry = _mesa_stats_cache.get(cache_key)
+    if entry is not None and (now - entry["ts"]) < _MESA_STATS_TTL:
+        return entry["data"]
+
+    try:
+        # --- mesas_analyzed and total_anomalias from get_mesa_stats() ---
+        mesa_stats = get_mesa_stats()
+        global_counts = mesa_stats.get("_global", {})
+        mesas_analyzed: int = global_counts.get("total", 0)
+        total_anomalias: int = (
+            global_counts.get("known_anomaly", 0)
+            + global_counts.get("warning", 0)
+            + global_counts.get("discrepancy", 0)
+            + global_counts.get("critical", 0)
+        )
+
+        # --- mesas_all_three: COUNT-only query (PostgREST count=exact) ---
+        response = (
+            _client()
+            .table("mesa_results")
+            .select("mesa_key", count="exact")
+            .not_.is_("e14c_arith_ok", "null")
+            .not_.is_("e14t_arith_ok", "null")
+            .not_.is_("e14d_arith_ok", "null")
+            .limit(1)
+            .execute()
+        )
+        mesas_all_three: int = response.count or 0
+
+        result = {
+            "mesas_all_three": mesas_all_three,
+            "mesas_analyzed": mesas_analyzed,
+            "mesas_remaining": max(0, TOTAL_UNIVERSE - mesas_analyzed),
+            "total_anomalias": total_anomalias,
+            "total_universe": TOTAL_UNIVERSE,
+        }
+        _mesa_stats_cache[cache_key] = {"data": result, "ts": now}
+        return result
+
+    except Exception as exc:
+        logger.warning("get_public_stats failed: %s", exc)
+        return dict(_PUBLIC_STATS_ZEROS)
 
 
 def get_real_progress() -> dict:

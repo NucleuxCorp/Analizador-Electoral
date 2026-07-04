@@ -648,6 +648,13 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
     app = Flask(__name__, template_folder=str(templates_dir))
 
     # ----------------------------------------------------------------
+    # Custom Jinja filters
+    # ----------------------------------------------------------------
+    app.jinja_env.filters["format_number"] = (
+        lambda n: f"{int(n):,}".replace(",", ".") if isinstance(n, int) else "—"
+    )
+
+    # ----------------------------------------------------------------
     # Public URL scheme / domain for external links (verification emails)
     # ----------------------------------------------------------------
     app.config["PREFERRED_URL_SCHEME"] = "https"
@@ -1106,12 +1113,27 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
         def home_view() -> str:
             email = session.get("user_email", "")
             state = _launch_state()
+            try:
+                public_stats = _db.get_public_stats()
+            except Exception:
+                public_stats = {
+                    "mesas_all_three": 0,
+                    "mesas_analyzed": 0,
+                    "mesas_remaining": 0,
+                    "total_anomalias": 0,
+                    "total_universe": 122_020,
+                }
             return render_template(
                 "home.html",
                 logged_in=bool(email),
                 user_email=email,
                 is_open=state["is_open"],
                 launch_iso=state["launch_iso"],
+                mesas_all_three=public_stats["mesas_all_three"],
+                mesas_analyzed=public_stats["mesas_analyzed"],
+                mesas_remaining=public_stats["mesas_remaining"],
+                total_anomalias=public_stats["total_anomalias"],
+                total_universe=public_stats["total_universe"],
             )
 
         # ----------------------------------------------------------------
@@ -1355,6 +1377,25 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 if not png_path.exists():
                     return Response("Not found", status=404)
                 return send_file(str(png_path), mimetype="image/png")
+
+        # ----------------------------------------------------------------
+        # GET /api/public-stats (no auth — public transparency counters)
+        # ----------------------------------------------------------------
+
+        @app.route("/api/public-stats")
+        def public_stats_view() -> Response:
+            """Return aggregate transparency counters as JSON. No auth required."""
+            try:
+                data = _db.get_public_stats()
+            except Exception:
+                data = {
+                    "mesas_all_three": 0,
+                    "mesas_analyzed": 0,
+                    "mesas_remaining": 0,
+                    "total_anomalias": 0,
+                    "total_universe": 122_020,
+                }
+            return jsonify(data)
 
         # ----------------------------------------------------------------
         # GET /status (no auth — public monitoring endpoint)

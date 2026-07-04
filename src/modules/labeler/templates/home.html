@@ -82,6 +82,34 @@
     .role-validator { background: #1a2a3a; color: #7ec8e3; border: 1px solid #2a4a6a; }
     .role-reviewer  { background: #2a2a1a; color: #ffd740; border: 1px solid #4a4a1a; }
     .role-reader    { background: #2a1a2a; color: #ce93d8; border: 1px solid #4a2a4a; }
+
+    /* --- Auditoría en cifras section ---------------------------------- */
+    .stats-section {
+      width: 100%; max-width: 700px; margin: 32px auto 0;
+      text-align: center;
+    }
+    .stats-section h2 {
+      font-size: 0.7rem; letter-spacing: 2px; text-transform: uppercase;
+      color: #7ec8e3; margin-bottom: 16px;
+    }
+    .stats-cards {
+      display: flex; flex-wrap: wrap; gap: 12px; justify-content: center;
+    }
+    .stat-card {
+      background: #161b22; border: 1px solid #21262d; border-radius: 12px;
+      padding: 18px 22px; min-width: 200px; flex: 1 1 200px; max-width: 260px;
+      text-align: center;
+    }
+    .stat-value {
+      font-size: 2rem; font-weight: bold; color: #58a6ff;
+      line-height: 1; margin-bottom: 8px; font-family: monospace;
+    }
+    .stat-label {
+      font-size: 0.72rem; color: #e6edf3; line-height: 1.4; margin-bottom: 4px;
+    }
+    .stat-sublabel {
+      font-size: 0.62rem; color: #7d8590; line-height: 1.4;
+    }
   </style>
 </head>
 <body>
@@ -202,6 +230,31 @@
       </div>
     </div>
   </div>
+
+  <!-- Auditoría en cifras — public transparency counters (no auth required) -->
+  <section class="stats-section">
+    <h2>Auditoría en cifras</h2>
+    <div class="stats-cards">
+
+      <div class="stat-card">
+        <div class="stat-value">{{ "—" if mesas_all_three == 0 else mesas_all_three | format_number }}</div>
+        <div class="stat-label">Mesas con acta completa<br>(E14C + E14T + E14D)</div>
+        <div class="stat-sublabel">de {{ total_universe | format_number }} mesas totales</div>
+      </div>
+
+      <div class="stat-card">
+        <div class="stat-value">{{ "—" if mesas_analyzed == 0 else mesas_analyzed | format_number }}</div>
+        <div class="stat-label">Mesas analizadas transversalmente</div>
+        <div class="stat-sublabel">{{ mesas_remaining | format_number }} pendientes</div>
+      </div>
+
+      <div class="stat-card">
+        <div class="stat-value">{{ "—" if total_anomalias == 0 else total_anomalias | format_number }}</div>
+        <div class="stat-label">Anomalías detectadas</div>
+      </div>
+
+    </div>
+  </section>
 
   <div class="ver">v{{ app_version }}</div>
 
