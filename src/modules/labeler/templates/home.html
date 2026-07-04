@@ -254,6 +254,17 @@
       </div>
 
     </div>
+
+    {% if semaphore_global %}
+    <div style="margin-top:18px; font-size:0.78rem; color:#9fb0c0; line-height:1.6;">
+      <span style="color:#9fb0c0;">⚪ Sin alerta: <strong style="color:#c9d8e8;">{{ semaphore_global.sin_alerta | format_number }}</strong></span>
+      &nbsp;·&nbsp;
+      <span style="color:#ef5350;">🔴 Alerta: <strong>{{ semaphore_global.alerta | format_number }}</strong></span>
+      &nbsp;·&nbsp;
+      <a href="/mesas" style="color:#7ec8e3; text-decoration:none;">Ver por departamento →</a>
+    </div>
+    {% endif %}
+
   </section>
 
   <div class="ver">v{{ app_version }}</div>

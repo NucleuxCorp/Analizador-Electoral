@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Estado de la Auditoría — Por Departamento</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: monospace;
+      background: radial-gradient(1200px 600px at 50% -10%, #1f2a44, #14182a 60%, #0d1018);
+      color: #e6edf3;
+      min-height: 100vh;
+      padding: 32px 18px;
+    }
+
+    .page-header {
+      text-align: center;
+      margin-bottom: 32px;
+    }
+    .badge-top {
+      display: inline-block; font-size: 0.62rem; letter-spacing: 1.5px;
+      text-transform: uppercase; color: #7ec8e3; border: 1px solid #2a3a5a;
+      border-radius: 999px; padding: 4px 12px; margin-bottom: 14px;
+    }
+    h1 { font-size: 1.45rem; color: #fff; line-height: 1.3; margin-bottom: 6px; }
+    h1 .accent { color: #7ec8e3; }
+    .back-link {
+      display: inline-block; font-size: 0.75rem; color: #7ec8e3;
+      text-decoration: none; margin-bottom: 20px;
+    }
+    .back-link:hover { text-decoration: underline; }
+
+    /* Global summary */
+    .summary-row {
+      text-align: center;
+      font-size: 0.88rem;
+      color: #c9d8e8;
+      margin-bottom: 28px;
+      line-height: 1.6;
+    }
+    .summary-row .sin-alerta { color: #9fb0c0; }
+    .summary-row .alerta { color: #ef5350; }
+
+    /* Table */
+    .table-wrap {
+      width: 100%; max-width: 700px; margin: 0 auto; overflow-x: auto;
+    }
+    table {
+      width: 100%; border-collapse: collapse;
+      font-size: 0.82rem;
+    }
+    thead th {
+      background: #161b22; border-bottom: 1px solid #21262d;
+      color: #7ec8e3; font-size: 0.68rem; text-transform: uppercase;
+      letter-spacing: 1.2px; padding: 10px 14px; text-align: left;
+    }
+    thead th.num { text-align: right; }
+    tbody tr { border-bottom: 1px solid #1a1f27; }
+    tbody tr:hover { background: #0d1220; }
+    td { padding: 9px 14px; }
+    td.dept-name { color: #c9d8e8; }
+    td.num { text-align: right; font-size: 0.85rem; font-weight: bold; }
+    td.sin-alerta { color: #9fb0c0; }
+    td.alerta { color: #ef5350; }
+    td.total { color: #58a6ff; }
+
+    /* Unavailable fallback */
+    .unavailable {
+      text-align: center; padding: 48px 20px;
+      color: #667; font-size: 0.85rem;
+    }
+    .unavailable strong { display: block; font-size: 1rem; color: #9fb0c0; margin-bottom: 8px; }
+
+    .ver { position: fixed; bottom: 8px; left: 10px; font-size: 0.6rem; color: #445; }
+  </style>
+</head>
+<body>
+  <div class="page-header">
+    <div><a class="back-link" href="/">← Volver al inicio</a></div>
+    <span class="badge-top">Elecciones Presidenciales 2026 · Acta E-14</span>
+    <h1>Estado de la <span class="accent">Auditoría</span> — Por Departamento</h1>
+  </div>
+
+  {% if semaphore %}
+    <div class="summary-row">
+      <span class="sin-alerta">⚪ Sin Alerta: <strong>{{ semaphore.global.sin_alerta | format_number }}</strong> mesas</span>
+      &nbsp;·&nbsp;
+      <span class="alerta">🔴 Alerta: <strong>{{ semaphore.global.alerta | format_number }}</strong> mesas</span>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Departamento</th>
+            <th class="num">⚪ Sin Alerta</th>
+            <th class="num">🔴 Alerta</th>
+            <th class="num">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in semaphore.by_dept %}
+          <tr>
+            <td class="dept-name">{{ row.dept_name }}</td>
+            <td class="num sin-alerta">{{ row.sin_alerta | format_number }}</td>
+            <td class="num alerta">{{ row.alerta | format_number }}</td>
+            <td class="num total">{{ row.total | format_number }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="unavailable">
+      <strong>Datos no disponibles temporalmente</strong>
+      El servicio de estadísticas no pudo responder. Intentá de nuevo en unos minutos.
+    </div>
+  {% endif %}
+
+  <div class="ver">v{{ app_version }}</div>
+</body>
+</html>
