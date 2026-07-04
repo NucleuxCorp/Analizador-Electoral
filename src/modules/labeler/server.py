@@ -376,6 +376,86 @@ from src.modules.labeler.queue import ValidationQueue
 
 
 # ---------------------------------------------------------------------------
+# Semaphore data builder — algorithm alert state per department
+# ---------------------------------------------------------------------------
+
+# Loaded once at module level (populated in _load_departamentos).
+_DEPT_NAMES: dict[str, str] = {}  # dept_code → dept_name
+
+
+def _load_departamentos(root: Path) -> None:
+    """Load dept_code → dept_name mapping from data/departamentos.json."""
+    global _DEPT_NAMES
+    path = root / "data" / "departamentos.json"
+    if path.exists():
+        try:
+            entries = json.loads(path.read_text(encoding="utf-8"))
+            _DEPT_NAMES = {e["id"]: e["nombre"] for e in entries if "id" in e and "nombre" in e}
+        except Exception:
+            _DEPT_NAMES = {}
+
+
+def _build_semaphore_data() -> dict | None:
+    """
+    Build per-department algorithm semaphore data from get_mesa_stats().
+
+    Mapping:
+        overall_status == 'clean'  → sin_alerta (⚪)
+        any other status           → alerta (🔴)
+
+    Returns:
+        {
+            "by_dept": [
+                {"dept_code": "01", "dept_name": "ANTIOQUIA",
+                 "sin_alerta": N, "alerta": N, "total": N},
+                ...  (sorted by dept_name)
+            ],
+            "global": {"sin_alerta": N, "alerta": N, "total": N},
+        }
+        Returns None if get_mesa_stats() returns empty (Supabase unreachable).
+    """
+    try:
+        import src.modules.labeler.db as _db
+        stats = _db.get_mesa_stats()
+    except Exception:
+        return None
+
+    if not stats:
+        return None
+
+    by_dept = []
+    for dept_code, counts in stats.items():
+        if dept_code == "_global":
+            continue
+        sin_alerta = counts.get("clean", 0)
+        total = counts.get("total", 0)
+        alerta = total - sin_alerta
+        by_dept.append({
+            "dept_code": dept_code,
+            "dept_name": _DEPT_NAMES.get(dept_code, dept_code),
+            "sin_alerta": sin_alerta,
+            "alerta": max(0, alerta),
+            "total": total,
+        })
+
+    by_dept.sort(key=lambda r: r["dept_name"])
+
+    global_counts = stats.get("_global", {})
+    global_sin_alerta = global_counts.get("clean", 0)
+    global_total = global_counts.get("total", 0)
+    global_alerta = max(0, global_total - global_sin_alerta)
+
+    return {
+        "by_dept": by_dept,
+        "global": {
+            "sin_alerta": global_sin_alerta,
+            "alerta": global_alerta,
+            "total": global_total,
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
 # Auto-skip heuristics — check PNG before presenting to human
 # ---------------------------------------------------------------------------
 
@@ -780,9 +860,10 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
             "user_role": getattr(g, "user_role", ""),
         }
 
-    # Load lookup tables for both modes (mesa info + fraud flags)
+    # Load lookup tables for both modes (mesa info + fraud flags + dept names)
     _load_divipole(Path.cwd())
     _load_acta_flags(Path.cwd())
+    _load_departamentos(Path.cwd())
 
     if _production_mode:
         # --- Production: validate required env vars at startup (not at request time) ---
@@ -1123,6 +1204,8 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                     "total_anomalias": 0,
                     "total_universe": 122_020,
                 }
+            semaphore_data = _build_semaphore_data()
+            semaphore_global = semaphore_data["global"] if semaphore_data else None
             return render_template(
                 "home.html",
                 logged_in=bool(email),
@@ -1134,7 +1217,17 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 mesas_remaining=public_stats["mesas_remaining"],
                 total_anomalias=public_stats["total_anomalias"],
                 total_universe=public_stats["total_universe"],
+                semaphore_global=semaphore_global,
             )
+
+        # ----------------------------------------------------------------
+        # GET /mesas — public semaphore page (no auth)
+        # ----------------------------------------------------------------
+
+        @app.route("/mesas")
+        def mesas_view() -> str:
+            semaphore = _build_semaphore_data()
+            return render_template("mesas.html", semaphore=semaphore)
 
         # ----------------------------------------------------------------
         # Main labeling route (production) — gated by launch time
