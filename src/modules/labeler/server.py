@@ -313,13 +313,17 @@ def _reconstruct_source_url(pdf_path: str) -> str:
     Reconstruct the Registraduría public URL from a local pdf_path when
     source_url was not stored in the database.
 
-    Filename format: E14_PRE_{dept}_{mpio}_{zona_3digit}_{??}_{puesto}_{mesa}_{timestamp}
-    URL format:      /docs/E14/{dept}/{mpio}/{zona_2digit}/{puesto}/{filename}.pdf
+    Local files may be named {prefix}_E14_PRE_{dept}_{mpio}_{zona_3digit}_{??}_{puesto}_...
+    or just E14_PRE_{dept}_{mpio}_{zona_3digit}_{??}_{puesto}_...
+    URL format: /docs/E14/{dept}/{mpio}/{zona_2digit}/{puesto}/{E14_PRE_...}.pdf
     """
-    stem = Path(pdf_path).stem  # e.g. E14_PRE_05_001_004_01_03_011_5403
-    if not stem.startswith("E14_PRE_"):
+    full_stem = Path(pdf_path).stem
+    marker = "E14_PRE_"
+    idx = full_stem.find(marker)
+    if idx == -1:
         return ""
-    tail = stem[len("E14_PRE_"):]  # "05_001_004_01_03_011_5403"
+    stem = full_stem[idx:]  # e.g. E14_PRE_05_001_004_01_03_011_5403
+    tail = stem[len(marker):]  # "05_001_004_01_03_011_5403"
     parts = tail.split("_")
     if len(parts) < 5:
         return ""
