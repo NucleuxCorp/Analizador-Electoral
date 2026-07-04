@@ -1379,25 +1379,6 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 return send_file(str(png_path), mimetype="image/png")
 
         # ----------------------------------------------------------------
-        # GET /api/public-stats (no auth — public transparency counters)
-        # ----------------------------------------------------------------
-
-        @app.route("/api/public-stats")
-        def public_stats_view() -> Response:
-            """Return aggregate transparency counters as JSON. No auth required."""
-            try:
-                data = _db.get_public_stats()
-            except Exception:
-                data = {
-                    "mesas_all_three": 0,
-                    "mesas_analyzed": 0,
-                    "mesas_remaining": 0,
-                    "total_anomalias": 0,
-                    "total_universe": 122_020,
-                }
-            return jsonify(data)
-
-        # ----------------------------------------------------------------
         # GET /status (no auth — public monitoring endpoint)
         # ----------------------------------------------------------------
 
