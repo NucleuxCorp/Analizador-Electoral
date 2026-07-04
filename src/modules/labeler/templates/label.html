@@ -134,10 +134,9 @@
       grid-template-rows: repeat(5, 52px);
       gap: 5px;
     }
-    .nk-act-back  { grid-column:1; grid-row:1; }
-    .nk-act-e     { grid-column:2; grid-row:1; }
-    .nk-act-fraud { grid-column:3; grid-row:1; }
-    .nk-act-esc   { grid-column:4; grid-row:1; }
+    .nk-act-back  { grid-column:1;   grid-row:1; }
+    .nk-act-fraud { grid-column:2/4; grid-row:1; }
+    .nk-act-esc   { grid-column:4;   grid-row:1; }
     .nk-7    { grid-column:1; grid-row:2; }
     .nk-8    { grid-column:2; grid-row:2; }
     .nk-9    { grid-column:3; grid-row:2; }
@@ -523,7 +522,6 @@
       <div class="card-body p-2">
         <div class="numpad">
           <button class="nk-btn nk-gray nk-act-back" onclick="doAtrás()"><span class="k">&larr;</span><span class="d">Atrás</span></button>
-          <button class="nk-btn nk-yellow nk-act-e" onclick="toggleEnmienda()"><span class="k">E</span><span class="d">Enmienda</span></button>
           <button class="nk-btn nk-orange nk-act-fraud" onclick="markFraud()"><span class="k">F</span><span class="d">Fraude</span></button>
           <button class="nk-btn nk-red nk-act-esc" onclick="doSaltar()"><span class="k">Esc</span><span class="d">Saltar</span></button>
           <button class="nk-btn nk-7" onclick="doDigit('7')"><span class="k">7</span></button>
