@@ -787,7 +787,11 @@ def _get_mesa_stats_uncached(dept: str | None = None) -> dict:
     Returns {} on any exception (fail-closed).
     """
     try:
-        query = _client().table("mesa_results").select("dept, overall_status")
+        query = (
+            _client().table("mesa_results")
+            .select("dept, overall_status")
+            .limit(100_000)
+        )
         if dept is not None:
             query = query.eq("dept", dept)
         response = query.execute()

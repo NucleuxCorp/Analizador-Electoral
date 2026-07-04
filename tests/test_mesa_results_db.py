@@ -179,9 +179,10 @@ class TestGetMesaStatsAllDepts:
     """get_mesa_stats returns a dict keyed by dept code plus a _global key."""
 
     def _make_stats_client(self, rows: list[dict]) -> MagicMock:
-        """Return a client whose .table().select().execute() returns rows."""
+        """Return a client whose .table().select().limit().eq().execute() returns rows."""
         chain = MagicMock()
         chain.select.return_value = chain
+        chain.limit.return_value = chain
         chain.eq.return_value = chain
         chain.execute.return_value = MagicMock(data=rows)
         client = MagicMock()
@@ -254,6 +255,7 @@ class TestGetMesaStatsFiltered:
         rows = [{"dept": "01", "overall_status": "clean"}]
         chain = MagicMock()
         chain.select.return_value = chain
+        chain.limit.return_value = chain
         chain.eq.return_value = chain
         chain.execute.return_value = MagicMock(data=rows)
         mock_client = MagicMock()
@@ -344,6 +346,7 @@ class TestGetMesaStatsSupabaseUnavailable:
 
         chain = MagicMock()
         chain.select.return_value = chain
+        chain.limit.return_value = chain
         chain.eq.return_value = chain
         chain.execute.side_effect = Exception("timeout")
         mock_client = MagicMock()
