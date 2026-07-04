@@ -494,6 +494,98 @@ import re as _re
 # Accepted value tokens: "", "0"–"9", "E<digit>", "*", "-", "."
 _VALUE_TOKEN_PATTERN = _re.compile(r'^(|[0-9]{1,5}|E[0-9]{1,5}|\*|-|\.|\+|/{1,3})$')
 
+# ---------------------------------------------------------------------------
+# Report glyph validation — single canonical source shared with label.html JS
+# ---------------------------------------------------------------------------
+
+# Canonical glyph pattern: digits 0-9 and zero-variant glyphs (*, ., -, +, o, O, /, //, ///).
+# The + quantifier allows //, /// because / is in the character class.
+# Length cap for slash-only sequences is enforced by _validate_report_payload, not the regex.
+VALID_REPORT_GLYPH_RE = _re.compile(r'^[0-9*.+oO/-]+$')
+
+# JS-safe regex string injected into label.html templates via |tojson filter.
+VALID_REPORT_GLYPH_JS = r'^[0-9*.+oO/-]+$'
+
+# Maximum length for a slash-only glyph sequence (/, //, ///)
+_MAX_SLASH_LEN = 3
+
+
+def _validate_glyph(value: str) -> bool:
+    """Return True if value is a non-empty, valid glyph of acceptable length."""
+    if not value:
+        return False
+    if not VALID_REPORT_GLYPH_RE.match(value):
+        return False
+    # Slash-only sequences longer than 3 chars are not valid glyphs
+    if set(value) == {"/"}:
+        return len(value) <= _MAX_SLASH_LEN
+    return True
+
+
+def _validate_report_payload(body: dict) -> tuple[dict, str | None]:
+    """Validate a POST /report JSON body.
+
+    Returns:
+        (cleaned_payload, error_message)  — error_message is None on success.
+
+    Validation rules:
+        - crop_id: required
+        - report_type: must be 'enmienda' or 'otro'
+        - enmienda: digit_original and digit_corrected required and valid glyphs;
+                    digit forced None
+        - otro:     notes required non-empty; digit optional but must be valid glyph if present;
+                    digit_original and digit_corrected forced None
+    """
+    crop_id = (body.get("crop_id") or "").strip()
+    if not crop_id:
+        return {}, "crop_id is required"
+
+    report_type = (body.get("report_type") or "").strip()
+    if report_type not in ("enmienda", "otro"):
+        return {}, f"report_type must be 'enmienda' or 'otro', got: {report_type!r}"
+
+    payload: dict = {
+        "crop_id": crop_id,
+        "report_type": report_type,
+        "pdf_path": body.get("pdf_path") or None,
+        "digit_original": None,
+        "digit_corrected": None,
+        "digit": None,
+        "notes": (body.get("notes") or "").strip() or None,
+    }
+
+    if report_type == "enmienda":
+        digit_original = (body.get("digit_original") or "").strip()
+        digit_corrected = (body.get("digit_corrected") or "").strip()
+        if not digit_original:
+            return {}, "digit_original is required for enmienda reports"
+        if not digit_corrected:
+            return {}, "digit_corrected is required for enmienda reports"
+        if not _validate_glyph(digit_original):
+            return {}, f"digit_original contains invalid glyph: {digit_original!r}"
+        if not _validate_glyph(digit_corrected):
+            return {}, f"digit_corrected contains invalid glyph: {digit_corrected!r}"
+        payload["digit_original"] = digit_original
+        payload["digit_corrected"] = digit_corrected
+        # digit is irrelevant for enmienda — force None
+        payload["digit"] = None
+
+    elif report_type == "otro":
+        notes = (body.get("notes") or "").strip()
+        if not notes:
+            return {}, "notes is required for otro reports"
+        payload["notes"] = notes
+        digit = (body.get("digit") or "").strip()
+        if digit:
+            if not _validate_glyph(digit):
+                return {}, f"digit contains invalid glyph: {digit!r}"
+            payload["digit"] = digit
+        # digit_original and digit_corrected are irrelevant for otro — force None
+        payload["digit_original"] = None
+        payload["digit_corrected"] = None
+
+    return payload, None
+
 
 def _parse_value_token(raw: str) -> tuple[str, bool]:
     """
@@ -746,6 +838,8 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                     concordancias=[_FAKE_CROP_ID, _FAKE_CROP_ID, _FAKE_CROP_ID],
                     acta_flags=[{"type": "ARITMETICA_SUMA", "description": "La suma total escrita no coincide con la suma de los votos por candidato + blancos + nulos.", "detail": "suma_total=114 != calculado=109"}],
                     user_email="demo@local.test",
+                    valid_report_glyph_js=VALID_REPORT_GLYPH_JS,
+                    supabase_mode=True,
                 )
 
         # ----------------------------------------------------------------
@@ -1052,6 +1146,8 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                     pct=pct,
                     labeled=0,
                     user_email=session.get("user_email", ""),
+                    valid_report_glyph_js=VALID_REPORT_GLYPH_JS,
+                    supabase_mode=True,
                 )
 
             crop = _db.get_crop_details(crop_id)
@@ -1114,6 +1210,8 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 acta_flags=_get_acta_flags(pdf_path),
                 user_email=session.get("user_email", ""),
                 pdf_source_url=crop.get("source_url", "") or _reconstruct_source_url(pdf_path),
+                valid_report_glyph_js=VALID_REPORT_GLYPH_JS,
+                supabase_mode=True,
             )
 
         # ----------------------------------------------------------------
@@ -1267,7 +1365,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 rows = crops_resp.data or []
 
                 confirmed = sum(1 for r in rows if r.get("status") == "confirmed")
-                conflicts = sum(1 for r in rows if r.get("status") == "conflict")
+                conflicts = sum(1 for r in rows if r.get("status") == "disputed")
                 labeled = confirmed + conflicts
                 remaining = total - labeled
 
@@ -1320,15 +1418,37 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
         @require_auth
         @require_role(ROLE_ADMIN, ROLE_MODERATOR)
         def admin_conflicts_view() -> Response:
-            conflicts     = _db.get_conflict_crops()
-            fraud_marks   = _db.get_fraud_marks()
+            conflicts      = _db.get_conflict_crops()
+            fraud_marks    = _db.get_fraud_marks()
             feedback_marks = _db.get_feedback_marks()
+            amended_crops  = _db.get_amended_crops()
+            reports        = _db.get_reports()
             return render_template(
                 "admin.html",
                 conflicts=conflicts,
                 fraud_marks=fraud_marks,
                 feedback_marks=feedback_marks,
+                amended_crops=amended_crops,
+                reports=reports,
             )
+
+        # ----------------------------------------------------------------
+        # POST /admin/hide — soft-delete a fraud/feedback/report record (admin only)
+        # ----------------------------------------------------------------
+
+        @app.route("/admin/hide", methods=["POST"])
+        @require_auth
+        @require_role(ROLE_ADMIN)
+        def admin_hide_view() -> Response:
+            body = request.get_json(force=True, silent=True) or {}
+            table = body.get("table", "")
+            record_id = body.get("id")
+            if table not in {"fraud_marks", "feedback_marks", "reports"}:
+                return jsonify({"ok": False, "error": "Invalid table"}), 400
+            if not isinstance(record_id, int):
+                return jsonify({"ok": False, "error": "Invalid id"}), 400
+            _db.hide_mark(table, record_id)
+            return jsonify({"ok": True})
 
         # ----------------------------------------------------------------
         # GET /debug/sentry-test (admin only) — raises a controlled exception
@@ -1466,6 +1586,12 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 _cli.table("assignments").delete().eq("annotator_id", g.user_id).execute()
             except Exception as exc:
                 return _error_response(f"Back failed: {exc}", 500)
+            # Best-effort retraction of recent reports/marks for the rolled-back crop.
+            # Errors are swallowed — retraction failure must never block /back.
+            try:
+                _db.retract_recent_marks(g.user_id, last_crop)
+            except Exception as exc:
+                app.logger.warning("retract_recent_marks failed: %s", exc)
             return jsonify({"ok": True})
 
         # ----------------------------------------------------------------
@@ -1553,6 +1679,40 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
         def admin_feedback_view() -> Response:
             rows = _db.get_feedback_marks()
             return jsonify({"feedback": rows, "total": len(rows)})
+
+        # ----------------------------------------------------------------
+        # POST /report — structured anomaly report (enmienda or otro)
+        # ----------------------------------------------------------------
+
+        @app.route("/report", methods=["POST"])
+        @require_auth
+        @require_role(ROLE_VALIDATOR, ROLE_ADMIN)
+        def report_view_prod() -> Response:
+            from flask import g
+            body = request.get_json(force=True, silent=True) or {}
+            payload, err = _validate_report_payload(body)
+            if err:
+                return jsonify({"ok": False, "error": err}), 400
+            # Enrich pdf_path from crop details when not provided by client
+            try:
+                details = _db.get_crop_details(payload["crop_id"])
+            except Exception:
+                details = None
+            pdf_path = (details or {}).get("pdf_path", "") or payload.get("pdf_path") or ""
+            try:
+                _db.record_report(
+                    crop_id=payload["crop_id"],
+                    pdf_path=pdf_path or None,
+                    report_type=payload["report_type"],
+                    annotator=g.user_id,
+                    digit_original=payload.get("digit_original"),
+                    digit_corrected=payload.get("digit_corrected"),
+                    digit=payload.get("digit"),
+                    notes=payload.get("notes"),
+                )
+            except Exception as exc:
+                return jsonify({"ok": False, "error": f"Could not record: {exc}"}), 500
+            return jsonify({"ok": True})
 
     else:
         # ----------------------------------------------------------------

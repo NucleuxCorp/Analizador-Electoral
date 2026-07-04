@@ -511,6 +511,9 @@
                  data-crop-id="{{ crop_id }}">
           <div id="mode-ind"></div>
           <button onclick="openWa()" class="btn btn-outline-success ms-auto" style="font-size:1rem;padding:5px 14px;">💬 Feedback</button>
+          {% if supabase_mode %}
+          <button onclick="openReport()" class="btn btn-outline-info" style="font-size:1rem;padding:5px 14px;">📋 Reportar</button>
+          {% endif %}
         </div>
       </div>
     </div>
@@ -819,6 +822,102 @@
         });
     };
 
+    // ── Report modal ──
+    var _reportType = "enmienda";
+
+    window.openReport = function () {
+      var m = document.getElementById("report-modal");
+      if (!m) return;
+      // Reset form state
+      document.getElementById("report-digit-original").value = "";
+      document.getElementById("report-digit-corrected").value = "";
+      document.getElementById("report-enmienda-notes").value = "";
+      document.getElementById("report-otro-digit").value = "";
+      document.getElementById("report-otro-notes").value = "";
+      document.getElementById("report-error").textContent = "";
+      setReportType("enmienda");
+      m.style.display = "flex";
+      setTimeout(function () { document.getElementById("report-digit-original").focus(); }, 50);
+    };
+    window.closeReport = function () {
+      var m = document.getElementById("report-modal");
+      if (m) m.style.display = "none";
+      if (!('ontouchstart' in window || navigator.maxTouchPoints > 0)) { inp.focus(); inp.select(); }
+    };
+    window.setReportType = function (t) {
+      _reportType = t;
+      var fe = document.getElementById("report-fields-enmienda");
+      var fo = document.getElementById("report-fields-otro");
+      var be = document.getElementById("report-btn-enmienda");
+      var bo = document.getElementById("report-btn-otro");
+      if (!fe) return;
+      if (t === "enmienda") {
+        fe.removeAttribute("hidden");
+        fo.setAttribute("hidden", "");
+        be.style.background = "#1a2436"; be.style.borderColor = "#2a4a6a"; be.style.color = "#7ec8e3";
+        bo.style.background = "transparent"; bo.style.borderColor = "#2a3a5a"; bo.style.color = "#556";
+        setTimeout(function () { document.getElementById("report-digit-original").focus(); }, 30);
+      } else {
+        fo.removeAttribute("hidden");
+        fe.setAttribute("hidden", "");
+        bo.style.background = "#1a2436"; bo.style.borderColor = "#2a4a6a"; bo.style.color = "#7ec8e3";
+        be.style.background = "transparent"; be.style.borderColor = "#2a3a5a"; be.style.color = "#556";
+        setTimeout(function () { document.getElementById("report-otro-notes").focus(); }, 30);
+      }
+    };
+    window.submitReport = function () {
+      var errEl = document.getElementById("report-error");
+      var btn   = document.getElementById("report-submit");
+      var c = window._currentCrop || {};
+      var crop_id = c.crop_id || inp.dataset.cropId;
+
+      errEl.textContent = "";
+      var payload = { crop_id: crop_id, report_type: _reportType };
+      var re = window.VALID_REPORT_GLYPH_RE;
+
+      if (_reportType === "enmienda") {
+        var dOrig = (document.getElementById("report-digit-original").value || "").trim();
+        var dCorr = (document.getElementById("report-digit-corrected").value || "").trim();
+        var notes = (document.getElementById("report-enmienda-notes").value || "").trim();
+        if (!dOrig) { errEl.textContent = "El dígito original es obligatorio."; return; }
+        if (!dCorr) { errEl.textContent = "El dígito corregido es obligatorio."; return; }
+        if (re && !re.test(dOrig)) { errEl.textContent = "Dígito original inválido: " + dOrig; return; }
+        if (re && !re.test(dCorr)) { errEl.textContent = "Dígito corregido inválido: " + dCorr; return; }
+        payload.digit_original = dOrig;
+        payload.digit_corrected = dCorr;
+        if (notes) payload.notes = notes;
+      } else {
+        var digit = (document.getElementById("report-otro-digit").value || "").trim();
+        var notes2 = (document.getElementById("report-otro-notes").value || "").trim();
+        if (!notes2) { errEl.textContent = "La observación es obligatoria."; return; }
+        if (digit && re && !re.test(digit)) { errEl.textContent = "Dígito de referencia inválido: " + digit; return; }
+        payload.notes = notes2;
+        if (digit) payload.digit = digit;
+      }
+
+      btn.disabled = true; btn.textContent = "Guardando…";
+      fetch("/report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          btn.disabled = false; btn.textContent = "Enviar reporte";
+          if (d.ok === false) { errEl.textContent = "Error: " + (d.error || "?"); return; }
+          closeReport();
+        })
+        .catch(function () {
+          btn.disabled = false; btn.textContent = "Enviar reporte";
+          errEl.textContent = "Error de red — intentá de nuevo.";
+        });
+    };
+
+    function reportOpen() {
+      var m = document.getElementById("report-modal");
+      return m && m.style.display === "flex";
+    }
+
     function fraudModal() { return document.getElementById("fraud-modal"); }
     function fraudOpen()  { return fraudModal() && fraudModal().style.display === "flex"; }
 
@@ -878,6 +977,10 @@
       }
       if (document.getElementById("wa-modal").style.display === "flex") {
         if (e.key === "Escape") { e.preventDefault(); closeWa(); return; }
+        return;
+      }
+      if (reportOpen()) {
+        if (e.key === "Escape") { e.preventDefault(); closeReport(); return; }
         return;
       }
       if (fraudOpen()) {
@@ -1166,6 +1269,73 @@
     <div style="font-size:.64rem;color:var(--lab-muted);margin-top:10px;text-align:right;">Esc para cancelar · Ctrl+Enter para confirmar</div>
   </div>
 </div>
+
+{% if supabase_mode %}
+<script>window.VALID_REPORT_GLYPH_RE = new RegExp({{ valid_report_glyph_js | tojson }});</script>
+
+<!-- Report modal -->
+<div id="report-modal" style="position:fixed;inset:0;z-index:10001;background:rgba(8,10,16,.8);display:none;align-items:center;justify-content:center;">
+  <div style="width:min(460px,94vw);background:var(--bs-card-bg);border:1px solid #0e3a5a;border-radius:12px;padding:22px 24px;box-shadow:0 12px 40px rgba(0,0,0,.6);">
+    <div style="font-size:1rem;font-weight:bold;color:#7ec8e3;display:flex;align-items:center;gap:8px;">📋 Reportar anomalía</div>
+    <div style="font-size:.74rem;color:var(--lab-muted);margin-top:8px;line-height:1.5;">Registrá una corrección OCR (enmienda) o una observación libre sobre este recorte.</div>
+
+    <!-- Type selector -->
+    <div class="d-flex gap-2 mt-3">
+      <button id="report-btn-enmienda" onclick="setReportType('enmienda')"
+              class="btn btn-sm fw-bold"
+              style="flex:1;background:#1a2436;border-color:#2a4a6a;color:#7ec8e3;">Enmienda</button>
+      <button id="report-btn-otro" onclick="setReportType('otro')"
+              class="btn btn-sm"
+              style="flex:1;background:transparent;border-color:#2a3a5a;color:#556;">Otro reporte</button>
+    </div>
+
+    <!-- Enmienda fields -->
+    <div id="report-fields-enmienda" style="margin-top:14px;">
+      <div class="d-flex gap-2">
+        <div style="flex:1;">
+          <label style="font-size:.7rem;color:var(--lab-muted);display:block;margin-bottom:4px;">Dígito original</label>
+          <input id="report-digit-original" type="text" maxlength="3" autocomplete="off"
+                 placeholder="ej: 9"
+                 style="width:100%;background:var(--bs-secondary-bg);border:1px solid var(--bs-border-color);border-radius:6px;color:var(--bs-body-color);font-size:1.1rem;padding:7px 10px;font-family:monospace;text-align:center;">
+        </div>
+        <div style="flex:1;">
+          <label style="font-size:.7rem;color:var(--lab-muted);display:block;margin-bottom:4px;">Dígito corregido</label>
+          <input id="report-digit-corrected" type="text" maxlength="3" autocomplete="off"
+                 placeholder="ej: 4"
+                 style="width:100%;background:var(--bs-secondary-bg);border:1px solid var(--bs-border-color);border-radius:6px;color:var(--bs-body-color);font-size:1.1rem;padding:7px 10px;font-family:monospace;text-align:center;">
+        </div>
+      </div>
+      <div style="margin-top:10px;">
+        <label style="font-size:.7rem;color:var(--lab-muted);display:block;margin-bottom:4px;">Notas (opcional)</label>
+        <textarea id="report-enmienda-notes" rows="2" placeholder="Contexto adicional…"
+          style="width:100%;background:var(--bs-secondary-bg);border:1px solid var(--bs-border-color);border-radius:6px;color:var(--bs-body-color);font-size:.85rem;padding:8px 10px;resize:vertical;box-sizing:border-box;font-family:inherit;"></textarea>
+      </div>
+    </div>
+
+    <!-- Otro fields -->
+    <div id="report-fields-otro" hidden style="margin-top:14px;">
+      <div>
+        <label style="font-size:.7rem;color:var(--lab-muted);display:block;margin-bottom:4px;">Dígito de referencia (opcional)</label>
+        <input id="report-otro-digit" type="text" maxlength="3" autocomplete="off"
+               placeholder="ej: 7 o déjalo vacío"
+               style="width:100%;background:var(--bs-secondary-bg);border:1px solid var(--bs-border-color);border-radius:6px;color:var(--bs-body-color);font-size:1.1rem;padding:7px 10px;font-family:monospace;">
+      </div>
+      <div style="margin-top:10px;">
+        <label style="font-size:.7rem;color:var(--lab-muted);display:block;margin-bottom:4px;">Observación <span style="color:#ef5350;">*</span></label>
+        <textarea id="report-otro-notes" rows="3" placeholder="Descripción de la anomalía…"
+          style="width:100%;background:var(--bs-secondary-bg);border:1px solid var(--bs-border-color);border-radius:6px;color:var(--bs-body-color);font-size:.85rem;padding:8px 10px;resize:vertical;box-sizing:border-box;font-family:inherit;"></textarea>
+      </div>
+    </div>
+
+    <div id="report-error" style="color:#ef5350;font-size:.72rem;min-height:14px;margin-top:6px;"></div>
+    <div class="d-flex gap-2 justify-content-end mt-3">
+      <button onclick="closeReport()" class="btn btn-sm btn-outline-secondary">Cancelar</button>
+      <button id="report-submit" onclick="submitReport()" class="btn btn-sm fw-bold" style="background:#0a2a3a;border-color:#0e3a5a;color:#7ec8e3;">Enviar reporte</button>
+    </div>
+    <div style="font-size:.64rem;color:var(--lab-muted);margin-top:10px;text-align:right;">Esc para cancelar</div>
+  </div>
+</div>
+{% endif %}
 
 <!-- Loading overlay -->
 <div id="load-overlay" style="position:fixed;inset:0;z-index:9999;background:rgba(10,14,22,.75);display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity .15s ease;">

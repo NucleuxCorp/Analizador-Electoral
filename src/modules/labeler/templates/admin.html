@@ -64,6 +64,9 @@
     .badge-conflict  { background: #3a1010; color: #ef5350; }
     .badge-fraud     { background: #3a2008; color: #ff9100; }
     .badge-feedback  { background: #0d2a1a; color: #66bb6a; }
+    .badge-enmienda  { background: #2a1a3a; color: #ce93d8; }
+    .amended-label   { color: #ce93d8; font-weight: bold; }
+    .ocr-label       { color: #556; text-decoration: line-through; }
 
     .crop-thumb {
       width: 52px; height: 52px; object-fit: contain;
@@ -78,6 +81,12 @@
       background: #141a26; border: 1px solid #2a3a5a; border-radius: 4px;
       padding: 2px 8px; font-size: .72rem; color: #ccc;
     }
+    .btn-hide {
+      background: none; border: 1px solid #3a1a1a; color: #7a3030;
+      border-radius: 4px; font-size: .62rem; padding: 2px 8px; cursor: pointer;
+      font-family: monospace;
+    }
+    .btn-hide:hover { background: #3a1010; color: #ef5350; border-color: #ef5350; }
   </style>
 </head>
 <body>
@@ -103,6 +112,12 @@
     </div>
     <div class="tab" onclick="showTab('feedback', this)">
       Feedback <span class="cnt">{{ feedback_marks|length }}</span>
+    </div>
+    <div class="tab" onclick="showTab('enmiendas', this)">
+      Correcciones OCR <span class="cnt yellow">{{ amended_crops|length }}</span>
+    </div>
+    <div class="tab" onclick="showTab('reports', this)">
+      Reportes <span class="cnt">{{ reports|length }}</span>
     </div>
   </div>
 
@@ -171,15 +186,17 @@
           <th>Anotador</th>
           <th>Motivo</th>
           <th>Acta</th>
+          <th></th>
         </tr>
       </thead>
       <tbody>
         {% for m in fraud_marks %}
-        <tr>
+        <tr id="fraud-row-{{ m.id }}">
           <td class="muted" style="font-size:.68rem;white-space:nowrap;">{{ m.marked_at or '—' }}</td>
           <td class="muted mono" style="font-size:.68rem;">{{ m.annotator or '—' }}</td>
           <td class="reason">{{ m.reason or '—' }}</td>
           <td class="mono muted" style="font-size:.65rem;">{{ (m.pdf_path or '—') | replace('\\','/') | truncate(50, True, '…') }}</td>
+          <td><button class="btn-hide" onclick="hideRecord('fraud_marks', {{ m.id }}, 'fraud-row-{{ m.id }}')">Ocultar</button></td>
         </tr>
         {% endfor %}
       </tbody>
@@ -199,11 +216,12 @@
           <th>Anotador</th>
           <th>Observación</th>
           <th>Crop / Acta</th>
+          <th></th>
         </tr>
       </thead>
       <tbody>
         {% for m in feedback_marks %}
-        <tr>
+        <tr id="feedback-row-{{ m.id }}">
           <td class="muted" style="font-size:.68rem;white-space:nowrap;">{{ m.reported_at or '—' }}</td>
           <td class="muted mono" style="font-size:.68rem;">{{ m.annotator or '—' }}</td>
           <td class="feedback-msg">{{ m.message or '—' }}</td>
@@ -213,6 +231,124 @@
             <div class="mono muted" style="font-size:.62rem;margin-top:2px;">{{ m.crop_id[:12] }}…</div>
             {% else %}
             <span class="muted" style="font-size:.68rem;">General</span>
+            {% endif %}
+          </td>
+          <td><button class="btn-hide" onclick="hideRecord('feedback_marks', {{ m.id }}, 'feedback-row-{{ m.id }}')">Ocultar</button></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+  <!-- REPORTS -->
+  <div id="panel-reports" class="panel">
+    {% if not reports %}
+      <div class="empty">Sin reportes registrados.</div>
+    {% else %}
+    <table>
+      <thead>
+        <tr>
+          <th>Fecha</th>
+          <th>Tipo</th>
+          <th>Original → Corregido</th>
+          <th>Dígito ref.</th>
+          <th>Notas</th>
+          <th>Anotador</th>
+          <th>Crop</th>
+          <th>PDF</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in reports %}
+        <tr id="report-row-{{ r.id }}">
+          <td class="muted" style="font-size:.68rem;white-space:nowrap;">{{ (r.created_at or '—')[:16] }}</td>
+          <td>
+            {% if r.report_type == 'enmienda' %}
+            <span class="badge badge-enmienda">enmienda</span>
+            {% else %}
+            <span class="badge" style="background:#0d2a3a;color:#7ec8e3;">otro</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if r.digit_original or r.digit_corrected %}
+            <span class="ocr-label">{{ r.digit_original or '?' }}</span>
+            → <span class="amended-label">{{ r.digit_corrected or '?' }}</span>
+            {% else %}
+            <span class="muted">—</span>
+            {% endif %}
+          </td>
+          <td class="mono" style="font-size:.75rem;">{{ r.digit or '—' }}</td>
+          <td style="max-width:220px;word-break:break-word;font-size:.75rem;">{{ r.notes or '—' }}</td>
+          <td class="muted mono" style="font-size:.65rem;" title="{{ r.annotator or '' }}">
+            {{ (r.annotator or '—')[:8] }}…
+          </td>
+          <td>
+            {% if r.crop_id %}
+            <img class="crop-thumb"
+                 src="/crop-image/{{ r.crop_id }}"
+                 alt="{{ r.crop_id }}"
+                 onerror="this.style.display='none'">
+            {% endif %}
+          </td>
+          <td>
+            {% if r.crop_id %}
+            <a class="pdf-link" href="/pdf?v={{ r.crop_id }}" target="_blank">Ver acta</a>
+            {% elif r.pdf_path %}
+            <span class="muted mono" style="font-size:.62rem;">{{ r.pdf_path | truncate(30, True, '…') }}</span>
+            {% endif %}
+          </td>
+          <td><button class="btn-hide" onclick="hideRecord('reports', {{ r.id }}, 'report-row-{{ r.id }}')">Ocultar</button></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+
+  <!-- ENMIENDAS (Correcciones OCR) -->
+  <div id="panel-enmiendas" class="panel">
+    {% if not amended_crops %}
+      <div class="empty">Sin enmiendas reportadas.</div>
+    {% else %}
+    <table>
+      <thead>
+        <tr>
+          <th>Crop</th>
+          <th>Campo</th>
+          <th>OCR → Anotador</th>
+          <th>Fecha</th>
+          <th>Acta</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in amended_crops %}
+        <tr>
+          <td>
+            {% if e.crop_id %}
+            <img class="crop-thumb"
+                 src="/crop-image/{{ e.crop_id }}"
+                 alt="{{ e.crop_id }}"
+                 onerror="this.style.display='none'">
+            {% endif %}
+          </td>
+          <td>
+            <span class="field-badge">{{ e.field_name or '—' }}</span>
+            {% if e.digit_index is not none and e.digit_index != -1 %}
+            <span class="muted">[{{ e.digit_index }}]</span>
+            {% endif %}
+          </td>
+          <td>
+            <span class="ocr-label">{{ e.label_ocr or '?' }}</span>
+            → <span class="amended-label">{{ e.label_human or '—' }}</span>
+            <span class="badge badge-enmienda" style="margin-left:4px;">E</span>
+          </td>
+          <td class="muted" style="font-size:.68rem;white-space:nowrap;">
+            {{ (e.ts or '—')[:16] }}
+          </td>
+          <td>
+            {% if e.crop_id %}
+            <a class="pdf-link" href="/pdf?v={{ e.crop_id }}" target="_blank">Ver acta</a>
             {% endif %}
           </td>
         </tr>
@@ -229,6 +365,32 @@ function showTab(name, el) {
   document.querySelectorAll('.panel').forEach(function(p) { p.classList.remove('active'); });
   document.getElementById('panel-' + name).classList.add('active');
   el.classList.add('active');
+}
+
+function hideRecord(table, id, rowId) {
+  var btn = event.target;
+  btn.disabled = true;
+  btn.textContent = '…';
+  fetch('/admin/hide', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({table: table, id: id})
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    if (d.ok) {
+      var row = document.getElementById(rowId);
+      if (row) row.style.display = 'none';
+    } else {
+      btn.disabled = false;
+      btn.textContent = 'Ocultar';
+      alert('Error al ocultar: ' + (d.error || 'desconocido'));
+    }
+  })
+  .catch(function() {
+    btn.disabled = false;
+    btn.textContent = 'Ocultar';
+  });
 }
 </script>
 </body>

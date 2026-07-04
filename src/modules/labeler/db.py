@@ -18,7 +18,8 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime, timezone
+import uuid
+from datetime import datetime, timezone, timedelta
 from typing import Any
 
 logger = logging.getLogger("labeler.db")
@@ -407,7 +408,7 @@ def create_label_with_vuelta(
 
 def get_conflict_crops() -> list[dict]:
     """
-    Fetch all crops with status = 'conflict' for admin resolution.
+    Fetch all crops with status = 'disputed' for admin resolution.
 
     Returns:
         List of crop dicts ordered by priority ASC, crop_id ASC.
@@ -416,7 +417,7 @@ def get_conflict_crops() -> list[dict]:
         _client()
         .table("crops")
         .select("*")
-        .eq("status", "conflict")
+        .eq("status", "disputed")
         .order("priority", desc=False)
         .order("crop_id", desc=False)
         .execute()
@@ -451,6 +452,7 @@ def get_fraud_marks(limit: int = 500) -> list[dict]:
             _client()
             .table("fraud_marks")
             .select("*")
+            .eq("hidden", False)
             .order("marked_at", desc=True)
             .limit(limit)
             .execute()
@@ -467,11 +469,62 @@ def get_feedback_marks(limit: int = 500) -> list[dict]:
             _client()
             .table("feedback_marks")
             .select("*")
+            .eq("hidden", False)
             .order("reported_at", desc=True)
             .limit(limit)
             .execute()
         )
         return response.data or []
+    except Exception:
+        return []
+
+
+def get_amended_crops(limit: int = 500) -> list[dict]:
+    """Fetch labels where amended=True, enriched with crop metadata.
+
+    Returns a list of dicts merging label fields (label_human, annotator_id, ts)
+    with crop fields (field_name, digit_index, pdf_path, label_ocr, storage_url).
+    Returns [] on any error.
+    """
+    try:
+        cli = _client()
+        labels_resp = (
+            cli.table("labels")
+            .select("crop_id, label_human, annotator_id, ts")
+            .eq("amended", True)
+            .order("ts", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        labels = labels_resp.data or []
+        if not labels:
+            return []
+
+        crop_ids = list({lb["crop_id"] for lb in labels if lb.get("crop_id")})
+        crops_resp = (
+            cli.table("crops")
+            .select("crop_id, field_name, digit_index, pdf_path, label_ocr, storage_url")
+            .in_("crop_id", crop_ids)
+            .execute()
+        )
+        crop_map = {r["crop_id"]: r for r in (crops_resp.data or [])}
+
+        result = []
+        for lb in labels:
+            cid = lb.get("crop_id", "")
+            crop = crop_map.get(cid, {})
+            result.append({
+                "crop_id": cid,
+                "label_human": lb.get("label_human"),
+                "annotator_id": lb.get("annotator_id"),
+                "ts": lb.get("ts"),
+                "field_name": crop.get("field_name"),
+                "digit_index": crop.get("digit_index"),
+                "pdf_path": crop.get("pdf_path"),
+                "label_ocr": crop.get("label_ocr"),
+                "storage_url": crop.get("storage_url"),
+            })
+        return result
     except Exception:
         return []
 
@@ -523,6 +576,138 @@ def get_global_stats(user_id: str = "") -> dict:
         my_labeled = my_resp.count or 0
 
     return {"global_labeled": global_labeled, "my_labeled": my_labeled, "total": total}
+
+
+# ---------------------------------------------------------------------------
+# 3.11b  reports — record_report, get_reports, retract_recent_marks
+# ---------------------------------------------------------------------------
+
+def record_report(
+    crop_id: str,
+    pdf_path: str | None,
+    report_type: str,
+    annotator: str,
+    digit_original: str | None = None,
+    digit_corrected: str | None = None,
+    digit: str | None = None,
+    notes: str | None = None,
+) -> None:
+    """Insert a structured anomaly report into the reports table.
+
+    Args:
+        crop_id:         Crop being reported.
+        pdf_path:        Source PDF path (nullable).
+        report_type:     'enmienda' or 'otro'.
+        annotator:       UUID string of the reporting annotator.
+        digit_original:  Original digit value (enmienda only).
+        digit_corrected: Corrected digit value (enmienda only).
+        digit:           Optional digit reference (otro only).
+        notes:           Free-text note (required for otro, optional for enmienda).
+    """
+    # Cast annotator to canonical UUID string — raises ValueError for invalid input,
+    # which surfaces to the caller as a data-integrity error rather than silent bad data.
+    annotator_uuid = str(uuid.UUID(annotator))
+    _client().table("reports").insert({
+        "crop_id": crop_id,
+        "pdf_path": pdf_path or None,
+        "report_type": report_type,
+        "digit_original": digit_original,
+        "digit_corrected": digit_corrected,
+        "digit": digit,
+        "notes": notes,
+        "annotator": annotator_uuid,
+    }).execute()
+
+
+def get_reports(limit: int = 500) -> list[dict]:
+    """Fetch anomaly reports ordered by most recent first.
+
+    Returns:
+        List of report dicts. Returns [] if the table is missing or on any error.
+    """
+    try:
+        response = (
+            _client()
+            .table("reports")
+            .select("*")
+            .eq("hidden", False)
+            .order("created_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        return response.data or []
+    except Exception:
+        return []
+
+
+_HIDE_ALLOWED_TABLES: frozenset[str] = frozenset({"fraud_marks", "feedback_marks", "reports"})
+
+
+def hide_mark(table: str, record_id: int) -> None:
+    """Soft-delete a record by setting hidden=True. Silently swallows errors."""
+    if table not in _HIDE_ALLOWED_TABLES:
+        raise ValueError(f"hide_mark: table {table!r} not in allowed set")
+    try:
+        _client().table(table).update({"hidden": True}).eq("id", record_id).execute()
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning("hide_mark(%s, %s) failed: %s", table, record_id, exc)
+
+
+def retract_recent_marks(user_id: str, crop_id: str) -> None:
+    """Best-effort DELETE across reports/fraud_marks/feedback_marks for (user, crop) < 3h.
+
+    Silently swallows any error per table — a retraction failure MUST NOT block /back.
+    Each table is deleted independently so one failure does not abort the others.
+
+    Args:
+        user_id: UUID string of the annotator (from JWT sub claim).
+        crop_id: The crop being rolled back.
+    """
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=3)).isoformat()
+
+    # reports table — annotator column is UUID type
+    try:
+        annotator_uuid = str(uuid.UUID(user_id))
+        (
+            _client()
+            .table("reports")
+            .delete()
+            .eq("annotator", annotator_uuid)
+            .eq("crop_id", crop_id)
+            .gt("created_at", cutoff)
+            .execute()
+        )
+    except Exception as exc:
+        logger.warning("retract_recent_marks reports failed: %s", exc)
+
+    # fraud_marks table — annotator column is TEXT
+    try:
+        (
+            _client()
+            .table("fraud_marks")
+            .delete()
+            .eq("annotator", user_id)
+            .eq("crop_id", crop_id)
+            .gt("marked_at", cutoff)
+            .execute()
+        )
+    except Exception as exc:
+        logger.warning("retract_recent_marks fraud_marks failed: %s", exc)
+
+    # feedback_marks table — annotator column is TEXT
+    try:
+        (
+            _client()
+            .table("feedback_marks")
+            .delete()
+            .eq("annotator", user_id)
+            .eq("crop_id", crop_id)
+            .gt("reported_at", cutoff)
+            .execute()
+        )
+    except Exception as exc:
+        logger.warning("retract_recent_marks feedback_marks failed: %s", exc)
 
 
 # ---------------------------------------------------------------------------
