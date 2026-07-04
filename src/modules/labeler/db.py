@@ -787,15 +787,23 @@ def _get_mesa_stats_uncached(dept: str | None = None) -> dict:
     Returns {} on any exception (fail-closed).
     """
     try:
-        query = (
-            _client().table("mesa_results")
-            .select("dept, overall_status")
-            .limit(100_000)
-        )
-        if dept is not None:
-            query = query.eq("dept", dept)
-        response = query.execute()
-        rows: list[dict] = response.data or []
+        # Supabase enforces db-max-rows=1000 regardless of .limit(); paginate.
+        _BATCH = 1000
+        rows: list[dict] = []
+        offset = 0
+        while True:
+            q = (
+                _client().table("mesa_results")
+                .select("dept, overall_status")
+                .range(offset, offset + _BATCH - 1)
+            )
+            if dept is not None:
+                q = q.eq("dept", dept)
+            batch = (q.execute().data) or []
+            rows.extend(batch)
+            if len(batch) < _BATCH:
+                break
+            offset += _BATCH
 
         # Aggregate per-dept counts
         per_dept: dict[str, dict[str, int]] = {}

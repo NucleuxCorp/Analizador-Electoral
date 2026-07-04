@@ -18,9 +18,9 @@ def _make_chain(rows: list[dict] | None = None) -> MagicMock:
     """Return a fluent chain mock that ends with .execute() returning rows."""
     chain = MagicMock()
     chain.select.return_value = chain
+    chain.range.return_value = chain
     chain.eq.return_value = chain
     chain.order.return_value = chain
-    chain.range.return_value = chain
     chain.execute.return_value = MagicMock(data=rows if rows is not None else [])
     return chain
 
@@ -160,8 +160,8 @@ class TestGetMesaResultsSupabaseUnavailable:
 
         chain = MagicMock()
         chain.select.return_value = chain
-        chain.eq.return_value = chain
         chain.range.return_value = chain
+        chain.eq.return_value = chain
         chain.execute.side_effect = Exception("timeout")
         mock_client = _make_client(chain)
 
@@ -182,6 +182,7 @@ class TestGetMesaStatsAllDepts:
         """Return a client whose .table().select().limit().eq().execute() returns rows."""
         chain = MagicMock()
         chain.select.return_value = chain
+        chain.range.return_value = chain
         chain.limit.return_value = chain
         chain.eq.return_value = chain
         chain.execute.return_value = MagicMock(data=rows)
@@ -255,6 +256,7 @@ class TestGetMesaStatsFiltered:
         rows = [{"dept": "01", "overall_status": "clean"}]
         chain = MagicMock()
         chain.select.return_value = chain
+        chain.range.return_value = chain
         chain.limit.return_value = chain
         chain.eq.return_value = chain
         chain.execute.return_value = MagicMock(data=rows)
@@ -281,6 +283,7 @@ class TestGetMesaStatsCacheHit:
         rows = [{"dept": "01", "overall_status": "clean"}]
         chain = MagicMock()
         chain.select.return_value = chain
+        chain.range.return_value = chain
         chain.eq.return_value = chain
         chain.execute.return_value = MagicMock(data=rows)
         mock_client = MagicMock()
@@ -311,6 +314,7 @@ class TestGetMesaStatsCacheHit:
 
         chain = MagicMock()
         chain.select.return_value = chain
+        chain.range.return_value = chain
         chain.eq.return_value = chain
         chain.execute.side_effect = execute_side_effect
         mock_client = MagicMock()
@@ -346,6 +350,7 @@ class TestGetMesaStatsSupabaseUnavailable:
 
         chain = MagicMock()
         chain.select.return_value = chain
+        chain.range.return_value = chain
         chain.limit.return_value = chain
         chain.eq.return_value = chain
         chain.execute.side_effect = Exception("timeout")
