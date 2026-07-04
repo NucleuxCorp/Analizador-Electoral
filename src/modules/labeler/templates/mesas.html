@@ -44,7 +44,7 @@
 
     /* Table */
     .table-wrap {
-      width: 100%; max-width: 700px; margin: 0 auto; overflow-x: auto;
+      width: 100%; max-width: 900px; margin: 0 auto; overflow-x: auto;
     }
     table {
       width: 100%; border-collapse: collapse;
@@ -63,6 +63,8 @@
     td.num { text-align: right; font-size: 0.85rem; font-weight: bold; }
     td.sin-alerta { color: #9fb0c0; }
     td.alerta { color: #ef5350; }
+    td.en-revision { color: #f5a623; }
+    td.revisada { color: #56c25a; }
     td.total { color: #58a6ff; }
 
     /* Unavailable fallback */
@@ -96,6 +98,8 @@
             <th>Departamento</th>
             <th class="num">⚪ Sin Alerta</th>
             <th class="num">🔴 Alerta</th>
+            <th class="num">🟡 En Revisión</th>
+            <th class="num">🟢 Revisada</th>
             <th class="num">Total</th>
           </tr>
         </thead>
@@ -105,6 +109,19 @@
             <td class="dept-name">{{ row.dept_name }}</td>
             <td class="num sin-alerta">{{ row.sin_alerta | format_number }}</td>
             <td class="num alerta">{{ row.alerta | format_number }}</td>
+            <td class="num en-revision">{{ row.en_revision | format_number if row.en_revision > 0 else '—' }}</td>
+            <td class="num revisada">
+              {% if row.revisada %}
+                {{ row.revisada | format_number }}
+                {% if row.limpia_count or row.fraude_count %}
+                  <span style="font-size:9px;color:#475569;">
+                    ({{ row.limpia_count }} limpia / {{ row.fraude_count }} fraude)
+                  </span>
+                {% endif %}
+              {% else %}
+                —
+              {% endif %}
+            </td>
             <td class="num total">{{ row.total | format_number }}</td>
           </tr>
           {% endfor %}

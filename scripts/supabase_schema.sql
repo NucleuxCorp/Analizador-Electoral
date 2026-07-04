@@ -73,6 +73,19 @@ CREATE INDEX IF NOT EXISTS idx_assignments_expires_at
     ON assignments (expires_at);
 
 -- ---------------------------------------------------------------------------
+-- cell-crop-full-pipeline migration (2026-07-03)
+-- Additive nullable columns — existing rows remain valid (no defaults needed).
+-- Each statement is idempotent (IF NOT EXISTS); running twice is safe.
+-- ---------------------------------------------------------------------------
+ALTER TABLE crops ADD COLUMN IF NOT EXISTS mesa_key TEXT;
+ALTER TABLE crops ADD COLUMN IF NOT EXISTS e14_type TEXT;
+ALTER TABLE crops ADD COLUMN IF NOT EXISTS crop_type TEXT;
+ALTER TABLE crops ADD COLUMN IF NOT EXISTS concordance_state TEXT;
+ALTER TABLE crops ADD COLUMN IF NOT EXISTS jsd_e14c_e14t FLOAT;
+ALTER TABLE crops ADD COLUMN IF NOT EXISTS jsd_e14c_e14d FLOAT;
+ALTER TABLE crops ADD COLUMN IF NOT EXISTS jsd_e14t_e14d FLOAT;
+
+-- ---------------------------------------------------------------------------
 -- Functions
 -- ---------------------------------------------------------------------------
 
@@ -98,3 +111,11 @@ AS $$
   SELECT COUNT(DISTINCT crop_id)::integer
   FROM public.labels WHERE label_human != '_skip';
 $$;
+
+-- ---------------------------------------------------------------------------
+-- mesa-semaphore Slice 2 migration (2026-07-04)
+-- Additive nullable column — existing rows remain valid (NULL is valid).
+-- Each statement is idempotent (IF NOT EXISTS); running twice is safe.
+-- ---------------------------------------------------------------------------
+ALTER TABLE crops ADD COLUMN IF NOT EXISTS mesa_key_mr TEXT;
+CREATE INDEX IF NOT EXISTS idx_crops_mesa_key_mr ON crops (mesa_key_mr);

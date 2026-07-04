@@ -397,20 +397,27 @@ def _load_departamentos(root: Path) -> None:
 
 def _build_semaphore_data() -> dict | None:
     """
-    Build per-department algorithm semaphore data from get_mesa_stats().
+    Build per-department semaphore data combining algorithm alerts (⚪/🔴) and
+    human-review state (🟡/🟢) from their respective db functions.
 
-    Mapping:
+    Mapping (algorithm):
         overall_status == 'clean'  → sin_alerta (⚪)
         any other status           → alerta (🔴)
+
+    Mapping (human review — Slice 2):
+        🟡 EN REVISIÓN: mesa has annotation_count >= 1 and not all priority crops confirmed
+        🟢 REVISADA:    all priority <= 1 crops have status = 'confirmed'
 
     Returns:
         {
             "by_dept": [
                 {"dept_code": "01", "dept_name": "ANTIOQUIA",
-                 "sin_alerta": N, "alerta": N, "total": N},
+                 "sin_alerta": N, "alerta": N, "total": N,
+                 "en_revision": N, "revisada": N},
                 ...  (sorted by dept_name)
             ],
-            "global": {"sin_alerta": N, "alerta": N, "total": N},
+            "global": {"sin_alerta": N, "alerta": N, "total": N,
+                       "en_revision": N, "revisada": N},
         }
         Returns None if get_mesa_stats() returns empty (Supabase unreachable).
     """
@@ -423,6 +430,14 @@ def _build_semaphore_data() -> dict | None:
     if not stats:
         return None
 
+    # Fetch 🟡/🟢 counts — fail gracefully (Slice 2 may not be deployed yet).
+    review_stats: dict = {}
+    try:
+        import src.modules.labeler.db as _db
+        review_stats = _db.get_mesa_semaphore_stats() or {}
+    except Exception:
+        review_stats = {}
+
     by_dept = []
     for dept_code, counts in stats.items():
         if dept_code == "_global":
@@ -430,12 +445,17 @@ def _build_semaphore_data() -> dict | None:
         sin_alerta = counts.get("clean", 0)
         total = counts.get("total", 0)
         alerta = total - sin_alerta
+        review = review_stats.get(dept_code, {})
         by_dept.append({
             "dept_code": dept_code,
             "dept_name": _DEPT_NAMES.get(dept_code, dept_code),
             "sin_alerta": sin_alerta,
             "alerta": max(0, alerta),
             "total": total,
+            "en_revision": review.get("en_revision", 0),
+            "revisada": review.get("revisada", 0),
+            "limpia_count": review.get("limpia_count", 0),
+            "fraude_count": review.get("fraude_count", 0),
         })
 
     by_dept.sort(key=lambda r: r["dept_name"])
@@ -444,6 +464,7 @@ def _build_semaphore_data() -> dict | None:
     global_sin_alerta = global_counts.get("clean", 0)
     global_total = global_counts.get("total", 0)
     global_alerta = max(0, global_total - global_sin_alerta)
+    global_review = review_stats.get("_global", {})
 
     return {
         "by_dept": by_dept,
@@ -451,6 +472,8 @@ def _build_semaphore_data() -> dict | None:
             "sin_alerta": global_sin_alerta,
             "alerta": global_alerta,
             "total": global_total,
+            "en_revision": global_review.get("en_revision", 0),
+            "revisada": global_review.get("revisada", 0),
         },
     }
 

@@ -959,3 +959,156 @@ def get_real_progress() -> dict:
             started = 0
 
     return {"started": started, "confirmed": confirmed, "total": total}
+
+
+# ---------------------------------------------------------------------------
+# mesa-semaphore Slice 2 — review-state aggregator
+# ---------------------------------------------------------------------------
+
+# Separate TTL cache for the review semaphore (same 5-min TTL as mesa stats).
+_review_semaphore_cache: dict = {}
+_REVIEW_SEMAPHORE_TTL = 300  # seconds
+
+
+def _classify_revisada_result(crops_for_mesa: list[dict]) -> str:
+    """
+    Classify a REVISADA mesa as mesa_limpia, posible_fraude, or sin_datos.
+
+    Logic (design D6):
+      - sum confirmed_label of all crops where field_name starts with 'candidato_'
+      - compare to confirmed_label of the crop where field_name == 'total_urna'
+      - if sum == total → 'mesa_limpia'
+      - if sum != total → 'posible_fraude'
+      - if any operand is non-numeric or missing → 'sin_datos'
+    """
+    candidato_labels = [
+        c.get("confirmed_label")
+        for c in crops_for_mesa
+        if (c.get("field_name") or "").startswith("candidato_")
+    ]
+    total_urna_label = next(
+        (c.get("confirmed_label") for c in crops_for_mesa if c.get("field_name") == "total_urna"),
+        None,
+    )
+    if not candidato_labels:
+        return "sin_datos"
+    try:
+        suma = sum(int(x) for x in candidato_labels if x is not None)
+        total = int(total_urna_label)
+    except (TypeError, ValueError):
+        return "sin_datos"
+    return "mesa_limpia" if suma == total else "posible_fraude"
+
+
+def _get_review_semaphore_uncached(dept: str | None = None) -> dict:
+    """
+    Call the get_review_semaphore_by_dept RPC and return classified results.
+
+    Return shape:
+        {
+            "<mesa_key_mr>": {
+                "dept": "01",
+                "en_revision": bool,
+                "revisada": bool,
+                "revisada_result": "mesa_limpia" | "posible_fraude" | "sin_datos" | None,
+            },
+            ...
+        }
+
+    Returns {} on any exception (fail-closed).
+    """
+    try:
+        params: dict = {}
+        if dept is not None:
+            params["p_dept"] = dept
+        response = _client().rpc("get_review_semaphore_by_dept", params).execute()
+        rows: list[dict] = response.data or []
+
+        result: dict[str, dict] = {}
+        for row in rows:
+            mesa_mr = row.get("mesa_key_mr")
+            if not mesa_mr:
+                continue
+            ann_sum = int(row.get("annotation_count_sum") or 0)
+            prio_total = int(row.get("priority_total") or 0)
+            prio_confirmed = int(row.get("priority_confirmed") or 0)
+
+            en_revision = ann_sum >= 1 and not (prio_total > 0 and prio_confirmed == prio_total)
+            revisada = prio_total > 0 and prio_confirmed == prio_total
+
+            if revisada:
+                candidato_sum = int(row.get("candidato_sum") or 0)
+                total_urna_val = row.get("total_urna_val")
+                if total_urna_val is not None:
+                    revisada_result = "mesa_limpia" if candidato_sum == int(total_urna_val) else "posible_fraude"
+                else:
+                    revisada_result = "sin_datos"
+            else:
+                revisada_result = None
+
+            result[mesa_mr] = {
+                "dept": row.get("dept", mesa_mr[:2]),
+                "en_revision": en_revision,
+                "revisada": revisada,
+                "revisada_result": revisada_result,
+            }
+        return result
+    except Exception as exc:
+        logger.warning("_get_review_semaphore_uncached failed: %s", exc)
+        return {}
+
+
+def get_mesa_semaphore_stats(dept: str | None = None) -> dict:
+    """
+    Return per-department 🟡/🟢 review state counts, with a 5-minute TTL cache.
+
+    Return shape:
+        {
+            "01": {"en_revision": N, "revisada": N},
+            ...
+            "_global": {"en_revision": N, "revisada": N},
+        }
+
+    Crops with mesa_key_mr IS NULL are excluded (handled by the RPC).
+    Returns {} on any exception (fail-closed).
+    """
+    cache_key = dept
+    now = time.monotonic()
+    entry = _review_semaphore_cache.get(cache_key)
+    if entry is not None and (now - entry["ts"]) < _REVIEW_SEMAPHORE_TTL:
+        return entry["data"]
+
+    mesa_data = _get_review_semaphore_uncached(dept=dept)
+    if not mesa_data:
+        _review_semaphore_cache[cache_key] = {"data": {}, "ts": now}
+        return {}
+
+    # Aggregate per-dept counts
+    per_dept: dict[str, dict[str, int]] = {}
+    for mesa_mr, info in mesa_data.items():
+        d = info.get("dept", mesa_mr[:2])
+        if d not in per_dept:
+            per_dept[d] = {"en_revision": 0, "revisada": 0, "limpia_count": 0, "fraude_count": 0}
+        if info["revisada"]:
+            per_dept[d]["revisada"] += 1
+            result_str = info.get("revisada_result")
+            if result_str == "mesa_limpia":
+                per_dept[d]["limpia_count"] += 1
+            elif result_str == "posible_fraude":
+                per_dept[d]["fraude_count"] += 1
+        elif info["en_revision"]:
+            per_dept[d]["en_revision"] += 1
+
+    global_en_revision = sum(v["en_revision"] for v in per_dept.values())
+    global_revisada = sum(v["revisada"] for v in per_dept.values())
+    global_limpia = sum(v["limpia_count"] for v in per_dept.values())
+    global_fraude = sum(v["fraude_count"] for v in per_dept.values())
+    result = {**per_dept, "_global": {
+        "en_revision": global_en_revision,
+        "revisada": global_revisada,
+        "limpia_count": global_limpia,
+        "fraude_count": global_fraude,
+    }}
+
+    _review_semaphore_cache[cache_key] = {"data": result, "ts": now}
+    return result
