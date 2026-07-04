@@ -1687,6 +1687,44 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
             return jsonify({"feedback": rows, "total": len(rows)})
 
         # ----------------------------------------------------------------
+        # GET /admin/mesas/data — paginated mesa_results list (admin only)
+        # ----------------------------------------------------------------
+
+        @app.route("/admin/mesas/data")
+        @require_auth
+        @require_role(ROLE_ADMIN, ROLE_MODERATOR)
+        def admin_mesas_data_view() -> Response:
+            try:
+                dept = request.args.get("dept") or None
+                status = request.args.get("status") or None
+                try:
+                    page = int(request.args.get("page", 1))
+                except (TypeError, ValueError):
+                    page = 1
+                rows = _db.get_mesa_results(dept=dept, status=status, page=page)
+                stats = _db.get_mesa_stats()
+                total = (stats.get("_global") or {}).get("total", 0)
+                return jsonify({"rows": rows, "page": page, "total": total})
+            except Exception as exc:
+                logger.warning("admin_mesas_data_view error: %s", exc)
+                return jsonify({"rows": [], "page": 1, "total": 0})
+
+        # ----------------------------------------------------------------
+        # GET /admin/mesas/stats — aggregated mesa status counts (admin only)
+        # ----------------------------------------------------------------
+
+        @app.route("/admin/mesas/stats")
+        @require_auth
+        @require_role(ROLE_ADMIN, ROLE_MODERATOR)
+        def admin_mesas_stats_view() -> Response:
+            try:
+                stats = _db.get_mesa_stats()
+                return jsonify(stats)
+            except Exception as exc:
+                logger.warning("admin_mesas_stats_view error: %s", exc)
+                return jsonify({})
+
+        # ----------------------------------------------------------------
         # POST /report — structured anomaly report (enmienda or otro)
         # ----------------------------------------------------------------
 

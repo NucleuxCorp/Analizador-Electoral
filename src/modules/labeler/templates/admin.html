@@ -87,6 +87,57 @@
       font-family: monospace;
     }
     .btn-hide:hover { background: #3a1010; color: #ef5350; border-color: #ef5350; }
+
+    /* Mesas tab — filter row, stats bar, status-colored rows */
+    .filter-row {
+      display: flex; gap: 8px; align-items: center;
+      margin-bottom: 14px; flex-wrap: wrap;
+    }
+    .filter-row input, .filter-row select {
+      background: #141a26; border: 1px solid #2a3a5a; color: #e6edf3;
+      border-radius: 4px; padding: 4px 8px; font-size: .75rem; font-family: monospace;
+    }
+    .filter-row input { width: 80px; }
+    .btn-filter {
+      background: #1a2436; border: 1px solid #2a3a5a; color: #7ec8e3;
+      border-radius: 4px; font-size: .75rem; padding: 4px 12px; cursor: pointer;
+      font-family: monospace;
+    }
+    .btn-filter:hover { background: #2a3a5a; }
+    .stats-bar {
+      display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 14px;
+      font-size: .72rem; padding: 8px 10px; background: #141a26;
+      border: 1px solid #1e2a3a; border-radius: 6px;
+    }
+    .stats-bar .stat-item { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+    .stats-bar .stat-label { color: #556; font-size: .62rem; text-transform: uppercase; letter-spacing: .04em; }
+    .stats-bar .stat-val { color: #e6edf3; font-weight: bold; }
+    .stats-bar .stat-val.red { color: #ef5350; }
+    .stats-bar .stat-val.yellow { color: #ff9100; }
+    .stats-bar .stat-val.green { color: #66bb6a; }
+    .stats-bar .stat-val.gray { color: #778; }
+    .pagination-row {
+      display: flex; align-items: center; gap: 12px; margin-top: 12px;
+      font-size: .75rem;
+    }
+    .btn-page {
+      background: #1a2436; border: 1px solid #2a3a5a; color: #7ec8e3;
+      border-radius: 4px; padding: 3px 12px; cursor: pointer; font-family: monospace;
+    }
+    .btn-page:disabled { opacity: 0.35; cursor: default; }
+    .page-label { color: #556; }
+    .loading-msg { color: #556; font-size: .8rem; padding: 16px 0; }
+    /* Row coloring by overall_status */
+    tr.status-critical td { background: #2a0a0a; }
+    tr.status-discrepancy td { background: #2a1800; }
+    tr.status-warning td { background: #1e1a00; }
+    tr.status-known_anomaly td { background: #1a1a1e; }
+    tr.status-critical:hover td { background: #3a0e0e; }
+    tr.status-discrepancy:hover td { background: #3a2200; }
+    tr.status-warning:hover td { background: #2a2400; }
+    tr.status-known_anomaly:hover td { background: #222228; }
+    .bool-yes { color: #ef5350; font-weight: bold; }
+    .bool-no  { color: #445; }
   </style>
 </head>
 <body>
@@ -118,6 +169,9 @@
     </div>
     <div class="tab" onclick="showTab('reports', this)">
       Reportes <span class="cnt">{{ reports|length }}</span>
+    </div>
+    <div class="tab" id="tab-mesas" onclick="showTab('mesas', this); loadMesasTab()">
+      Mesas <span class="cnt" id="mesas-count">—</span>
     </div>
   </div>
 
@@ -306,6 +360,89 @@
     {% endif %}
   </div>
 
+  <!-- MESAS -->
+  <div id="panel-mesas" class="panel">
+    <!-- Stats bar (populated by JS on tab activate) -->
+    <div id="mesas-stats-bar" class="stats-bar" style="display:none;">
+      <div class="stat-item">
+        <span class="stat-label">Total</span>
+        <span class="stat-val" id="mesas-stat-total">—</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">Critical</span>
+        <span class="stat-val red" id="mesas-stat-critical">—</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">Discrepancy</span>
+        <span class="stat-val yellow" id="mesas-stat-discrepancy">—</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">Warning</span>
+        <span class="stat-val yellow" id="mesas-stat-warning">—</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">Known anomaly</span>
+        <span class="stat-val gray" id="mesas-stat-known_anomaly">—</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">Clean</span>
+        <span class="stat-val green" id="mesas-stat-clean">—</span>
+      </div>
+    </div>
+
+    <!-- Filter row -->
+    <div class="filter-row">
+      <input type="text" id="mesas-filter-dept" placeholder="Dept (05)" maxlength="2" title="2-digit department code">
+      <select id="mesas-filter-status">
+        <option value="">All statuses</option>
+        <option value="critical">Critical</option>
+        <option value="discrepancy">Discrepancy</option>
+        <option value="warning">Warning</option>
+        <option value="known_anomaly">Known anomaly</option>
+        <option value="clean">Clean</option>
+      </select>
+      <select id="mesas-filter-flag">
+        <option value="">All flags</option>
+        <option value="cross_discrepancy">Cross discrepancy</option>
+        <option value="arith_failed">Arith failed</option>
+        <option value="tachon_suspicious">Tachon suspicious</option>
+      </select>
+      <button class="btn-filter" onclick="filterMesas()">Filtrar</button>
+    </div>
+
+    <!-- Loading indicator -->
+    <div id="mesas-loading" class="loading-msg" style="display:none;">Cargando...</div>
+
+    <!-- Results table (populated by JS) -->
+    <div id="mesas-table-wrap">
+      <div class="empty" id="mesas-empty" style="display:none;">Sin resultados para los filtros aplicados.</div>
+      <table id="mesas-table" style="display:none;">
+        <thead>
+          <tr>
+            <th>Mesa key</th>
+            <th>Dept</th>
+            <th>Status</th>
+            <th>Cross disc.</th>
+            <th>Arith failed</th>
+            <th>Tachon susp.</th>
+            <th>E14C</th>
+            <th>E14T</th>
+            <th>E14D</th>
+            <th>Updated</th>
+          </tr>
+        </thead>
+        <tbody id="mesas-tbody"></tbody>
+      </table>
+    </div>
+
+    <!-- Pagination -->
+    <div class="pagination-row">
+      <button class="btn-page" id="mesas-prev" onclick="mesasChangePage(-1)" disabled>&#8592; Anterior</button>
+      <span class="page-label">Página <span id="mesas-page-num">1</span></span>
+      <button class="btn-page" id="mesas-next" onclick="mesasChangePage(1)">Siguiente &#8594;</button>
+    </div>
+  </div>
+
   <!-- ENMIENDAS (Correcciones OCR) -->
   <div id="panel-enmiendas" class="panel">
     {% if not amended_crops %}
@@ -391,6 +528,155 @@ function hideRecord(table, id, rowId) {
     btn.disabled = false;
     btn.textContent = 'Ocultar';
   });
+}
+
+// ---------------------------------------------------------------------------
+// Mesas tab — state, data loader, renderer
+// ---------------------------------------------------------------------------
+
+var _mesasState = {
+  page: 1,
+  dept: '',
+  status: '',
+  flag: '',
+  total: 0,
+  loaded: false,
+};
+
+function loadMesasTab() {
+  if (!_mesasState.loaded) {
+    _mesasState.loaded = true;
+    _loadMesasStats();
+    _fetchMesas(1);
+  }
+}
+
+function filterMesas() {
+  _mesasState.dept   = document.getElementById('mesas-filter-dept').value.trim();
+  _mesasState.status = document.getElementById('mesas-filter-status').value;
+  _mesasState.flag   = document.getElementById('mesas-filter-flag').value;
+  _fetchMesas(1);
+}
+
+function mesasChangePage(delta) {
+  var next = _mesasState.page + delta;
+  if (next < 1) return;
+  _fetchMesas(next);
+}
+
+function _loadMesasStats() {
+  fetch('/admin/mesas/stats')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      var g = data['_global'] || {};
+      document.getElementById('mesas-stat-total').textContent        = g.total          != null ? g.total          : '—';
+      document.getElementById('mesas-stat-critical').textContent     = g.critical        != null ? g.critical        : '—';
+      document.getElementById('mesas-stat-discrepancy').textContent  = g.discrepancy     != null ? g.discrepancy     : '—';
+      document.getElementById('mesas-stat-warning').textContent      = g.warning         != null ? g.warning         : '—';
+      document.getElementById('mesas-stat-known_anomaly').textContent = g.known_anomaly  != null ? g.known_anomaly   : '—';
+      document.getElementById('mesas-stat-clean').textContent        = g.clean           != null ? g.clean           : '—';
+      document.getElementById('mesas-stats-bar').style.display = 'flex';
+      // Update tab count badge
+      document.getElementById('mesas-count').textContent = g.total != null ? g.total : '—';
+    })
+    .catch(function() {
+      document.getElementById('mesas-stats-bar').style.display = 'flex';
+    });
+}
+
+function _fetchMesas(page) {
+  _mesasState.page = page;
+  var params = new URLSearchParams();
+  if (_mesasState.dept)   params.set('dept',   _mesasState.dept);
+  if (_mesasState.status) params.set('status', _mesasState.status);
+  if (_mesasState.flag)   params.set('flag',   _mesasState.flag);
+  params.set('page', page);
+
+  document.getElementById('mesas-loading').style.display = 'block';
+  document.getElementById('mesas-table').style.display   = 'none';
+  document.getElementById('mesas-empty').style.display   = 'none';
+
+  fetch('/admin/mesas/data?' + params.toString())
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      document.getElementById('mesas-loading').style.display = 'none';
+      _mesasState.total = data.total || 0;
+      _renderMesasTable(data.rows || []);
+      _updateMesPagination(data.page || 1, data.total || 0);
+    })
+    .catch(function() {
+      document.getElementById('mesas-loading').style.display = 'none';
+      _renderMesasTable([]);
+    });
+}
+
+function _bool(val) {
+  if (val === true  || val === 'true' ) return '<span class="bool-yes">&#x2713;</span>';
+  if (val === false || val === 'false') return '<span class="bool-no">—</span>';
+  return '<span class="bool-no">—</span>';
+}
+
+function _escHtml(s) {
+  if (s == null) return '';
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function _statusClass(status) {
+  if (!status) return '';
+  return 'status-' + status;
+}
+
+function _renderMesasTable(rows) {
+  if (!rows.length) {
+    document.getElementById('mesas-empty').style.display = 'block';
+    document.getElementById('mesas-table').style.display = 'none';
+    return;
+  }
+  var tbody = document.getElementById('mesas-tbody');
+  var html = '';
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i];
+    var cls = _statusClass(r.overall_status);
+    html += '<tr class="' + _escHtml(cls) + '">';
+    html += '<td class="mono" style="font-size:.68rem;">' + _escHtml(r.mesa_key) + '</td>';
+    html += '<td>' + _escHtml(r.dept_code || r.dept) + '</td>';
+    html += '<td><span class="badge" style="' + _statusBadgeStyle(r.overall_status) + '">' + _escHtml(r.overall_status) + '</span></td>';
+    html += '<td>' + _bool(r.cross_discrepancy) + '</td>';
+    html += '<td>' + _bool(r.arith_failed) + '</td>';
+    html += '<td>' + _bool(r.tachon_suspicious) + '</td>';
+    html += '<td class="muted">' + (r.e14c_count != null ? r.e14c_count : '—') + '</td>';
+    html += '<td class="muted">' + (r.e14t_count != null ? r.e14t_count : '—') + '</td>';
+    html += '<td class="muted">' + (r.e14d_count != null ? r.e14d_count : '—') + '</td>';
+    html += '<td class="muted" style="font-size:.65rem;white-space:nowrap;">' + _escHtml((r.updated_at || r.uploaded_at || '—').slice(0, 16)) + '</td>';
+    html += '</tr>';
+  }
+  tbody.innerHTML = html;
+  document.getElementById('mesas-table').style.display = 'table';
+  document.getElementById('mesas-empty').style.display = 'none';
+}
+
+function _statusBadgeStyle(status) {
+  var styles = {
+    'critical':      'background:#3a0a0a;color:#ef5350;',
+    'discrepancy':   'background:#3a1800;color:#ff9100;',
+    'warning':       'background:#2a2000;color:#fdd835;',
+    'known_anomaly': 'background:#1e1e22;color:#778;',
+    'clean':         'background:#0d2a1a;color:#66bb6a;',
+  };
+  return styles[status] || 'background:#1a2436;color:#7ec8e3;';
+}
+
+function _updateMesPagination(page, total) {
+  document.getElementById('mesas-page-num').textContent = page;
+  document.getElementById('mesas-prev').disabled = (page <= 1);
+  // Disable next if fewer than 50 rows (last page approximation)
+  var perPage = 50;
+  var offset = (page - 1) * perPage;
+  document.getElementById('mesas-next').disabled = (offset + perPage >= total);
 }
 </script>
 </body>
