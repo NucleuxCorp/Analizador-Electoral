@@ -313,9 +313,6 @@
         <span id="theme-icon">☀</span>
       </button>
       <button onclick="openWa()" class="btn btn-sm btn-outline-success py-0 px-2" style="font-size:.65rem;">💬 Feedback</button>
-      {% if supabase_mode %}
-      <button onclick="openReport()" class="btn btn-sm btn-outline-info py-0 px-2" style="font-size:.65rem;">📋 Reportar</button>
-      {% endif %}
       <form action="/auth/logout" method="post" style="margin:0;">
         <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-2" style="font-size:.65rem;">Cerrar sesión</button>
       </form>
@@ -514,6 +511,9 @@
                  data-fallback="{{ 'true' if is_fallback else 'false' }}"
                  data-crop-id="{{ crop_id }}">
           <div id="mode-ind"></div>
+          {% if supabase_mode %}
+          <button onclick="openReport()" class="btn btn-outline-info ms-auto" style="font-size:1rem;padding:5px 14px;">📋 Reportar</button>
+          {% endif %}
         </div>
       </div>
     </div>
@@ -874,6 +874,7 @@
       errEl.textContent = "";
       var payload = { crop_id: crop_id, report_type: _reportType };
       var re = window.VALID_REPORT_GLYPH_RE;
+      var autoVal = null; // digit to auto-submit as label after saving
 
       if (_reportType === "enmienda") {
         var dOrig = (document.getElementById("report-digit-original").value || "").trim();
@@ -886,13 +887,14 @@
         payload.digit_original = dOrig;
         payload.digit_corrected = dCorr;
         if (notes) payload.notes = notes;
+        autoVal = dCorr;
       } else {
         var digit = (document.getElementById("report-otro-digit").value || "").trim();
         var notes2 = (document.getElementById("report-otro-notes").value || "").trim();
         if (!notes2) { errEl.textContent = "La observación es obligatoria."; return; }
         if (digit && re && !re.test(digit)) { errEl.textContent = "Dígito de referencia inválido: " + digit; return; }
         payload.notes = notes2;
-        if (digit) payload.digit = digit;
+        if (digit) { payload.digit = digit; autoVal = digit; }
       }
 
       btn.disabled = true; btn.textContent = "Guardando…";
@@ -906,6 +908,7 @@
           btn.disabled = false; btn.textContent = "Enviar reporte";
           if (d.ok === false) { errEl.textContent = "Error: " + (d.error || "?"); return; }
           closeReport();
+          if (autoVal) { inp.value = autoVal; window.doConfirmOCR(); }
         })
         .catch(function () {
           btn.disabled = false; btn.textContent = "Enviar reporte";
