@@ -1,39 +1,71 @@
 # Environment & credentials
 .env
 .env.*
-!.env.example
 
-# Data — PDFs, crops, labels (too large for git)
+# Local-only directories
+debug_sv/
+debug/
+docs/
+openspec/
+specs/
+Herramientas/
+
+# Local-only scripts (root)
+analyze_all_depts.py
+compare_models.py
+diagnostic_roles.py
+fetch_confirmed_crops.py
+fraud_report.py
+prepare_v2_export.py
+revalidate_actas.py
+setup_local_portal.py
+split_dataset.py
+summarize_suspicious.py
+train_digit_classifier.py
+train_dual_finetune.py
+
+# Local monitor/util scripts
+monitor-*.ps1
+validate-*.ps1
+*.ps1
+
+# Local-only scripts (scripts/)
+scripts/archive_primera_vuelta.py
+scripts/audit_cloud_to_local.py
+scripts/backfill_*.py
+scripts/check_one_crop.py
+scripts/diagnose_pdf_proxy.py
+scripts/diagnostic*.py
+scripts/download_labels_to_local.py
+scripts/migrate_to_supabase.py
+scripts/upload_full_cells.py
+scripts/verify_full_cells_uploaded.py
+scripts/add_reports_tables.sql
+
+# Data — PDFs, crops, raw data (too large / private)
 data/pdfs/
 data/labels/
 data/labels_v2/
+data/analysis_segunda_vuelta/
 data/e14c_urls.jsonl
+data/e14c_sv_urls.jsonl
 data/e14c_failed.jsonl
 data/e14c_progress.json
 data/*_cnn.jsonl
 data/suspicious_summary.jsonl
 data/review_summary.jsonl
 data/fraud_report.json
-
-# --- Bundle crops metadata for prod deploy (text only; PNGs stay excluded) ---
-# Full-cell context + concordancias need crops/index.jsonl; flag descriptions
-# need suspicious_summary.jsonl. Re-include just these files.
-!data/suspicious_summary.jsonl
-!data/labels_v2/
-data/labels_v2/*
-!data/labels_v2/crops/
-data/labels_v2/crops/*
-!data/labels_v2/crops/index.jsonl
+data/revalidation.jsonl
+data/urls/checkpoint.db
+data/urls/e14_urls.jsonl
 
 # Keep data dir tracked but not contents
 !data/.gitkeep
+!data/urls/.gitkeep
 
 # Models (large binary weights)
 models/*.pth
 models/training_report.json
-
-# Debug images
-debug/
 
 # Python
 __pycache__/
@@ -56,15 +88,9 @@ build/
 .DS_Store
 Thumbs.db
 
-# Debug / calibration images in data/
+# Debug / calibration images
 data/*.png
-data/debug_*.png
-data/calib_*.png
-data/crop_*.png
-data/form_*.png
-data/muestra_*.png
-data/p1_strip_*.png
 data/*.bak
 
-# Atl internal cache
+# Internal tool cache
 .atl/
