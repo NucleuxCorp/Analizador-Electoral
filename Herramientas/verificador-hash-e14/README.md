@@ -141,9 +141,9 @@ Archivo opcional que mapea cada nombre de archivo a su URL de descarga en el ser
 {
   "01_001_01_01_E14_...pdf": "https://escrutinios2vueltapresidente2026.registraduria.gov.co/docs/E14/...",
   "_meta": {
-    "generated_at": "2026-07-04T20:00",
-    "entries": 83497,
-    "skipped": 1,
+    "generated_at": "2026-07-04 20:44",
+    "entries": 109425,
+    "skipped": 0,
     "source": "Herramientas/verificador-hash-e14/hash_index_e14c.json"
   }
 }
