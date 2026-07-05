@@ -110,11 +110,13 @@ Durante el proceso de recolección se realizaron dos consultas al mismo índice 
 
 El índice de la Registraduría es dinámico: no tiene un estado fijo. Su contenido refleja exactamente lo que ha sido subido al servidor en el momento de la consulta. La diferencia entre 1,400 y 122,019 mesas no describe necesariamente un cambio ocurrido durante los nueve días entre consultas — la misma diferencia podría haberse observado entre dos consultas realizadas el mismo 21 de junio con horas de diferencia, dependiendo del ritmo de subida. La ventana de tiempo entre las dos capturas no es el dato relevante.
 
-Lo que sí es relevante es la siguiente implicación estructural:
+Esta variación no permite afirmar que hubo fraude. La carga progresiva de actas es un comportamiento técnico esperado. Lo que sí permite afirmar es que el sistema **no es transparente en su estado actual**: no existe una forma pública de saber cuántas actas estaban disponibles en un momento dado, ni cuándo se subió cada una, ni si alguna fue modificada o reemplazada.
+
+Lo que la variación evidencia es una ausencia de transparencia estructural:
 
 1. El estado del índice en cualquier momento pasado es **irreconstruible desde la misma fuente**. No existe un historial accesible públicamente. La única forma de saber qué mostraba el servidor en un instante determinado es disponer de una captura realizada en ese instante.
-2. El índice se genera a medida que se suben los PDFs — no hay un momento único de publicación ni un acto formal que marque cuándo una mesa "entra" al sistema.
-3. Las 23 actas registradas como pendientes el 21 de junio simplemente aún no habían sido subidas en ese momento; su ausencia en la consulta del 30 de junio es consistente con ese proceso de carga progresiva.
+2. No hay un acto formal que marque cuándo una mesa "entra" al sistema, ni un registro público de modificaciones posteriores.
+3. Un sistema electoral transparente debería publicar un registro inmutable de cuándo se subió cada acta y si fue reemplazada. La ausencia de ese registro no es evidencia de fraude, pero sí es una falla de transparencia que impide descartarlo con certeza.
 
 **Las capturas realizadas en este proyecto constituyen el único registro disponible del estado histórico de la plataforma en esas fechas.**
 
