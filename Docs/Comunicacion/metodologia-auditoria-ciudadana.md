@@ -92,7 +92,15 @@ Cada acta pesa entre 1.8 y 2.2 MB. Para la segunda vuelta completa (118,543 acta
 
 ## 2.4 Observación: variabilidad en los datos del índice de la Registraduría
 
-Durante el proceso de recolección se realizaron dos consultas al mismo índice de la Registraduría en fechas distintas. Los resultados obtenidos difieren de manera significativa:
+### El proceso de recolección
+
+Para obtener las actas, el sistema consulta un archivo de índice publicado por la Registraduría en su servidor. Ese índice es un listado que mapea cada mesa de votación a la ubicación de su acta en formato PDF. A partir de ese listado, el sistema descarga automáticamente cada PDF y lo almacena localmente. No se accede a ningún sistema privado ni se requieren credenciales — toda la información proviene de URLs públicas del servidor oficial de la Registraduría.
+
+### El índice de la Registraduría
+
+El índice es un archivo JSON disponible en el servidor de escrutinio de la Registraduría. Contiene una entrada por cada mesa, con la ruta al PDF correspondiente. No es una página web ni un portal visual — es un archivo de datos que el sistema consulta directamente mediante una petición HTTP estándar, de la misma forma en que un navegador descarga cualquier recurso de internet.
+
+Durante el proceso de recolección se realizaron dos consultas al mismo índice en fechas distintas. Los resultados obtenidos difieren de manera significativa:
 
 | Métrica | 2026-06-21 | 2026-06-30 | Variación |
 |---|---|---|---|
