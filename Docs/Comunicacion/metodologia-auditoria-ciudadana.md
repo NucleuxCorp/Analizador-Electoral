@@ -4,6 +4,26 @@
 
 ---
 
+## Glosario
+
+| Término | Significado |
+|---|---|
+| **E-14** | Formulario oficial de acta de votación. Lo diligencian los jurados al cierre de cada mesa. |
+| **E14C — Claveros** | Copia del acta custodiada en el arca triclave. Es la de **mayor valor legal** — base del escrutinio oficial. |
+| **E14T — Transmisión** | Copia dictada por teléfono la noche electoral para el preconteo informativo. |
+| **E14D — Delegados** | Copia escaneada en el puesto de votación la noche electoral. |
+| **Mesa** | Unidad básica de votación. Cada mesa tiene su propio acta E-14. |
+| **Jurado de votación** | Ciudadanos elegidos para administrar la mesa y diligenciar el acta. |
+| **Puesto de votación** | Sede física donde se agrupan varias mesas. |
+| **Registraduría** | Registraduría Nacional del Estado Civil — entidad que administra y publica las elecciones en Colombia. |
+| **Escrutinio** | Proceso oficial de conteo y verificación de votos posterior a la jornada electoral. |
+| **Tachón / enmienda** | Corrección física sobre el acta — línea que cubre un dígito o texto modificado. |
+| **SHA-256** | Huella digital criptográfica que identifica el contenido exacto de un archivo. Dos archivos con SHA-256 idéntico son byte a byte iguales. |
+| **Semáforo** | Sistema de colores del portal (⚪🔴🟡🟢) que indica el estado de revisión de cada mesa. |
+| **OCR** | Reconocimiento óptico de caracteres — tecnología que lee dígitos escritos a mano en el acta. |
+
+---
+
 ## 1. Contexto
 
 Las elecciones presidenciales colombianas 2026 generan **actas E-14** por mesa de votación en cada vuelta electoral. Cada acta registra los votos por candidato, votos en blanco, nulos, no marcados, e incinerados. La Registraduría Nacional publica estas actas en formato PDF a través de tres plataformas por vuelta:
@@ -16,8 +36,8 @@ El sistema cubre **ambas vueltas electorales**:
 
 | Vuelta | Estado | Actas disponibles |
 |--------|--------|-------------------|
-| **Primera vuelta** | Pausada — segunda vuelta es prioritaria | ~26,194 actas E-14C |
-| **Segunda vuelta** | Descarga completa — análisis transversal completo (34 departamentos, 115,741 mesas) | 118,543 actas únicas (E14C + E14T + E14D) |
+| **Primera vuelta** | Pausada (análisis no terminado) — segunda vuelta es prioritaria | ~26,194 actas E14C (Claveros) |
+| **Segunda vuelta** | Descarga completa — análisis transversal completo (34 departamentos, 115,741 mesas) | 118,543 actas únicas — E14C (Claveros) + E14T (Transmisión) + E14D (Delegados) |
 
 El objetivo del sistema es detectar posibles irregularidades: tachones, enmiendas, errores aritméticos, y patrones anómalos en los datos de votación.
 
@@ -25,7 +45,11 @@ El objetivo del sistema es detectar posibles irregularidades: tachones, enmienda
 
 ## 2. Fuentes de datos
 
-Los jurados de votación diligencian a mano **tres copias físicas idénticas** del formulario E-14 el mismo día de la elección. Aunque las llena el mismo jurado en la misma mesa, son documentos independientes — pueden presentar diferencias por tachaduras o errores humanos distintos en cada copia. La comparación entre las tres versiones tiene valor forense real.
+Los jurados de votación diligencian a mano **tres copias físicas idénticas** del formulario E-14 el mismo día de la elección. Aunque las llena el mismo jurado en la misma mesa, son documentos independientes — pueden presentar diferencias por tachaduras o errores humanos distintos en cada copia.
+
+Cuando esas diferencias son pequeñas y aisladas, corresponden a errores humanos normales del proceso. Cuando los números de una copia difieren sistemáticamente de las otras dos — especialmente en la copia E14C (Claveros), que es la base del escrutinio oficial — esa divergencia es una señal de posible irregularidad que merece revisión. Si la diferencia favorece a un candidato específico o se repite en varias mesas de la misma zona, el patrón adquiere mayor relevancia forense.
+
+La comparación entre las tres versiones tiene precisamente ese valor: detectar cuándo una diferencia deja de ser un error y se convierte en una anomalía.
 
 | Copia | Destino físico | Cuándo se digitaliza | Valor legal |
 |---|---|---|---|
@@ -33,7 +57,7 @@ Los jurados de votación diligencian a mano **tres copias físicas idénticas** 
 | **E14D** (Delegados) | Se escanea en el puesto de votación la misma noche | Noche electoral | Referencia inmediata |
 | **E14T** (Transmisión) | Se dicta por teléfono para el preconteo informativo | Noche electoral | Referencia inmediata |
 
-El E14C es el documento con **máximo valor legal y probatorio** — es la referencia para resolver reclamaciones. El E14D y E14T sirven para transparencia inmediata y preconteo informativo.
+El E14C (Claveros) es el documento con **máximo valor legal y probatorio** — es la referencia para resolver reclamaciones. El E14D (Delegados) y el E14T (Transmisión) sirven para transparencia inmediata y preconteo informativo.
 
 ### Organización de los archivos descargados
 
