@@ -639,8 +639,8 @@ def _validate_report_payload(body: dict) -> tuple[dict, str | None]:
     Validation rules:
         - crop_id: required
         - report_type: must be 'enmienda' or 'otro'
-        - enmienda: digit_original and digit_corrected required and valid glyphs;
-                    digit forced None
+        - enmienda: digit_original, digit_corrected, and notes all required;
+                    digit_original and digit_corrected must be valid glyphs; digit forced None
         - otro:     notes required non-empty; digit optional but must be valid glyph if present;
                     digit_original and digit_corrected forced None
     """
@@ -649,8 +649,8 @@ def _validate_report_payload(body: dict) -> tuple[dict, str | None]:
         return {}, "crop_id is required"
 
     report_type = (body.get("report_type") or "").strip()
-    if report_type not in ("enmienda", "otro"):
-        return {}, f"report_type must be 'enmienda' or 'otro', got: {report_type!r}"
+    if report_type not in ("enmienda", "otro", "mesa"):
+        return {}, f"report_type must be 'enmienda', 'otro', or 'mesa', got: {report_type!r}"
 
     payload: dict = {
         "crop_id": crop_id,
@@ -673,8 +673,12 @@ def _validate_report_payload(body: dict) -> tuple[dict, str | None]:
             return {}, f"digit_original contains invalid glyph: {digit_original!r}"
         if not _validate_glyph(digit_corrected):
             return {}, f"digit_corrected contains invalid glyph: {digit_corrected!r}"
+        notes = (body.get("notes") or "").strip()
+        if not notes:
+            return {}, "notes is required for enmienda reports"
         payload["digit_original"] = digit_original
         payload["digit_corrected"] = digit_corrected
+        payload["notes"] = notes
         # digit is irrelevant for enmienda — force None
         payload["digit"] = None
 
@@ -690,6 +694,20 @@ def _validate_report_payload(body: dict) -> tuple[dict, str | None]:
         payload["digit"] = digit
         payload["notes"] = notes
         # digit_original and digit_corrected are irrelevant for otro — force None
+        payload["digit_original"] = None
+        payload["digit_corrected"] = None
+
+    elif report_type == "mesa":
+        notes = (body.get("notes") or "").strip()
+        if not notes:
+            return {}, "notes is required for mesa reports"
+        # digit fields must be absent for mesa — reject any non-empty value
+        for field in ("digit_original", "digit_corrected", "digit"):
+            if (body.get(field) or "").strip():
+                return {}, f"{field} must be absent for mesa reports"
+        payload["notes"] = notes
+        # Force all digit fields to None — mesa is text-only
+        payload["digit"] = None
         payload["digit_original"] = None
         payload["digit_corrected"] = None
 
@@ -1353,7 +1371,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 concordancias=concordancias,
                 acta_flags=_get_acta_flags(pdf_path),
                 user_email=session.get("user_email", ""),
-                pdf_source_url=crop.get("source_url", "") or _reconstruct_source_url(pdf_path),
+                pdf_source_url=crop.get("source_url", ""),
                 valid_report_glyph_js=VALID_REPORT_GLYPH_JS,
                 supabase_mode=True,
             )
@@ -1675,7 +1693,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 "mesa": _mesa_info(pdf_path),
                 "concordancias": concordancias,
                 "acta_flags": _get_acta_flags(pdf_path),
-                "source_url": crop.get("source_url", "") or _reconstruct_source_url(pdf_path),
+                "source_url": crop.get("source_url", ""),
                 "recent": session.get("recent_labels", []),
                 "labeled": global_labeled,
                 "my_labeled": my_labeled,
@@ -1881,6 +1899,10 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
             except Exception:
                 details = None
             pdf_path = (details or {}).get("pdf_path", "") or payload.get("pdf_path") or ""
+            # Mesa dedup pre-check: one mesa report per (annotator, pdf_path)
+            if payload.get("report_type") == "mesa":
+                if _db.check_mesa_already_reported(pdf_path, g.user_id):
+                    return jsonify({"ok": False, "error": "already_reported"}), 409
             try:
                 _db.record_report(
                     crop_id=payload["crop_id"],
@@ -1893,6 +1915,12 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                     notes=payload.get("notes"),
                 )
             except Exception as exc:
+                # Catch DB unique-constraint violation (race between pre-check and INSERT)
+                pgcode = getattr(exc, "pgcode", None) or getattr(
+                    getattr(exc, "__cause__", None), "pgcode", None
+                )
+                if pgcode == "23505":
+                    return jsonify({"ok": False, "error": "already_reported"}), 409
                 return jsonify({"ok": False, "error": f"Could not record: {exc}"}), 500
             return jsonify({"ok": True})
 

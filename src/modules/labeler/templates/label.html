@@ -512,6 +512,7 @@
           <div id="mode-ind"></div>
           {% if supabase_mode %}
           <button onclick="openReport()" class="btn btn-outline-info ms-auto" style="font-size:1rem;padding:5px 14px;">📋 Reportar</button>
+          <span id="mesa-already-reported-msg" style="display:none;font-size:.72rem;color:#ef5350;margin-left:8px;">Ya reportada</span>
           {% endif %}
         </div>
       </div>
@@ -576,7 +577,7 @@
 
     <!-- PDF button -->
     <a id="btn-pdf" class="btn btn-outline-secondary w-100 d-flex align-items-center justify-content-center gap-2"
-       href="{{ pdf_source_url }}" target="_blank" rel="noopener noreferrer"
+       {% if pdf_source_url %}href="{{ pdf_source_url }}" target="_blank" rel="noopener noreferrer"{% else %}aria-disabled="true" style="opacity:.4;pointer-events:none;"{% endif %}
        style="font-family:monospace;padding:10px 14px;text-decoration:none;">
       <strong style="color:var(--lab-accent);">PDF</strong>
       <span style="font-size:.72rem;">Ver acta completa</span>
@@ -814,16 +815,31 @@
 
     // ── Report modal ──
     var _reportType = "enmienda";
+    var reportedMesas = new Set(); // tracks pdf_filenames already reported as mesa this session
 
     window.openReport = function () {
       var m = document.getElementById("report-modal");
       if (!m) return;
+      // Short-circuit: if this acta already has a mesa report, show message instead of modal
+      var c = window._currentCrop || {};
+      var pdfFn = c.pdf_filename || "";
+      if (pdfFn && reportedMesas.has(pdfFn)) {
+        var errEl = document.getElementById("report-error");
+        // Show inline already-reported message near the button instead of opening modal
+        var msgEl = document.getElementById("mesa-already-reported-msg");
+        if (msgEl) {
+          msgEl.style.display = "";
+          setTimeout(function () { msgEl.style.display = "none"; }, 3000);
+        }
+        return;
+      }
       // Reset form state
       document.getElementById("report-digit-original").value = "";
       document.getElementById("report-digit-corrected").value = "";
       document.getElementById("report-enmienda-notes").value = "";
       document.getElementById("report-otro-digit").value = "";
       document.getElementById("report-otro-notes").value = "";
+      document.getElementById("report-mesa-notes").value = "";
       document.getElementById("report-error").textContent = "";
       // Populate OCR preview
       var ocrVal = inp.value || inp.dataset.ocr || "—";
@@ -845,21 +861,39 @@
       _reportType = t;
       var fe = document.getElementById("report-fields-enmienda");
       var fo = document.getElementById("report-fields-otro");
+      var fm = document.getElementById("report-fields-mesa");
       var be = document.getElementById("report-btn-enmienda");
       var bo = document.getElementById("report-btn-otro");
+      var bm = document.getElementById("report-btn-mesa");
       if (!fe) return;
+      var activeStyle  = { background: "#1a2436", borderColor: "#2a4a6a", color: "#7ec8e3" };
+      var inactiveStyle = { background: "transparent", borderColor: "#2a3a5a", color: "#556" };
+      function applyStyle(el, style) {
+        el.style.background = style.background;
+        el.style.borderColor = style.borderColor;
+        el.style.color = style.color;
+      }
+      // Hide all fields first
+      fe.setAttribute("hidden", "");
+      fo.setAttribute("hidden", "");
+      if (fm) fm.setAttribute("hidden", "");
+      // Reset all buttons to inactive
+      applyStyle(be, inactiveStyle);
+      applyStyle(bo, inactiveStyle);
+      if (bm) applyStyle(bm, inactiveStyle);
+
       if (t === "enmienda") {
         fe.removeAttribute("hidden");
-        fo.setAttribute("hidden", "");
-        be.style.background = "#1a2436"; be.style.borderColor = "#2a4a6a"; be.style.color = "#7ec8e3";
-        bo.style.background = "transparent"; bo.style.borderColor = "#2a3a5a"; bo.style.color = "#556";
+        applyStyle(be, activeStyle);
         setTimeout(function () { document.getElementById("report-digit-original").focus(); }, 30);
-      } else {
+      } else if (t === "otro") {
         fo.removeAttribute("hidden");
-        fe.setAttribute("hidden", "");
-        bo.style.background = "#1a2436"; bo.style.borderColor = "#2a4a6a"; bo.style.color = "#7ec8e3";
-        be.style.background = "transparent"; be.style.borderColor = "#2a3a5a"; be.style.color = "#556";
+        applyStyle(bo, activeStyle);
         setTimeout(function () { document.getElementById("report-otro-notes").focus(); }, 30);
+      } else if (t === "mesa") {
+        if (fm) fm.removeAttribute("hidden");
+        if (bm) applyStyle(bm, activeStyle);
+        setTimeout(function () { document.getElementById("report-mesa-notes").focus(); }, 30);
       }
     };
     window.submitReport = function () {
@@ -886,7 +920,7 @@
         payload.digit_corrected = dCorr;
         payload.notes = notes;
         autoVal = dCorr;
-      } else {
+      } else if (_reportType === "otro") {
         var digit = (document.getElementById("report-otro-digit").value || "").trim();
         var notes2 = (document.getElementById("report-otro-notes").value || "").trim();
         if (!digit) { errEl.textContent = "El dígito observado es obligatorio."; return; }
@@ -895,18 +929,37 @@
         payload.digit = digit;
         payload.notes = notes2;
         autoVal = digit;
+      } else if (_reportType === "mesa") {
+        var mesaNotes = (document.getElementById("report-mesa-notes").value || "").trim();
+        if (!mesaNotes) { errEl.textContent = "La observación sobre la mesa es obligatoria."; return; }
+        payload.notes = mesaNotes;
+        autoVal = null; // mesa reports do NOT trigger doConfirmOCR
       }
 
       btn.disabled = true; btn.textContent = "Guardando…";
+      var currentPdfFn = (window._currentCrop || {}).pdf_filename || "";
       fetch("/report", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       })
-        .then(function (r) { return r.json(); })
-        .then(function (d) {
+        .then(function (r) { return r.json().then(function (d) { return { status: r.status, body: d }; }); })
+        .then(function (res) {
           btn.disabled = false; btn.textContent = "Enviar reporte";
+          var d = res.body;
+          if (res.status === 409 && d.error === "already_reported") {
+            // Race or duplicate — mark as reported and show message
+            if (currentPdfFn) reportedMesas.add(currentPdfFn);
+            _updateReportarBtn(currentPdfFn);
+            errEl.textContent = "Esta mesa ya fue reportada.";
+            return;
+          }
           if (d.ok === false) { errEl.textContent = "Error: " + (d.error || "?"); return; }
+          // Success
+          if (_reportType === "mesa" && currentPdfFn) {
+            reportedMesas.add(currentPdfFn);
+            _updateReportarBtn(currentPdfFn);
+          }
           closeReport();
           if (autoVal) { inp.value = autoVal; window.doConfirmOCR(); }
         })
@@ -915,6 +968,16 @@
           errEl.textContent = "Error de red — intentá de nuevo.";
         });
     };
+
+    function _updateReportarBtn(pdfFn) {
+      if (!pdfFn || !reportedMesas.has(pdfFn)) return;
+      var btn = document.querySelector("button[onclick='openReport()']");
+      if (btn) {
+        btn.textContent = "✓ Mesa reportada";
+        btn.classList.remove("btn-outline-info");
+        btn.classList.add("btn-outline-secondary");
+      }
+    }
 
     function reportOpen() {
       var m = document.getElementById("report-modal");
@@ -1296,6 +1359,9 @@
       <button id="report-btn-otro" onclick="setReportType('otro')"
               class="btn btn-sm"
               style="flex:1;background:transparent;border-color:#2a3a5a;color:#556;">Otro reporte</button>
+      <button id="report-btn-mesa" onclick="setReportType('mesa')"
+              class="btn btn-sm"
+              style="flex:1;background:transparent;border-color:#2a3a5a;color:#556;">Mesa</button>
     </div>
 
     <!-- Enmienda fields -->
@@ -1332,6 +1398,15 @@
       <div style="margin-top:10px;">
         <label style="font-size:.7rem;color:var(--lab-muted);display:block;margin-bottom:4px;">Observación <span style="color:#ef5350;">*</span></label>
         <textarea id="report-otro-notes" rows="3" placeholder="Descripción de la anomalía…"
+          style="width:100%;background:var(--bs-secondary-bg);border:1px solid var(--bs-border-color);border-radius:6px;color:var(--bs-body-color);font-size:.85rem;padding:8px 10px;resize:vertical;box-sizing:border-box;font-family:inherit;"></textarea>
+      </div>
+    </div>
+
+    <!-- Mesa fields -->
+    <div id="report-fields-mesa" hidden style="margin-top:14px;">
+      <div>
+        <label style="font-size:.7rem;color:var(--lab-muted);display:block;margin-bottom:4px;">Observación sobre la mesa <span style="color:#ef5350;">*</span></label>
+        <textarea id="report-mesa-notes" rows="3" placeholder="Ej: Acta ilegible, sello roto, puesto incorrecto…"
           style="width:100%;background:var(--bs-secondary-bg);border:1px solid var(--bs-border-color);border-radius:6px;color:var(--bs-body-color);font-size:.85rem;padding:8px 10px;resize:vertical;box-sizing:border-box;font-family:inherit;"></textarea>
       </div>
     </div>

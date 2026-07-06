@@ -620,6 +620,36 @@ def record_report(
     }).execute()
 
 
+def check_mesa_already_reported(pdf_path: str, annotator_uuid: str) -> bool:
+    """Return True if this annotator already filed a mesa report for this pdf_path.
+
+    Fail-open on any error: returns False so the server pre-check never blocks
+    a valid submission. The DB partial unique index remains the authoritative
+    dedup layer.
+
+    Args:
+        pdf_path:       PDF path of the acta being checked.
+        annotator_uuid: UUID string of the annotator.
+
+    Returns:
+        True if a mesa report row exists for (pdf_path, annotator), else False.
+    """
+    try:
+        resp = (
+            _client()
+            .table("reports")
+            .select("id")
+            .eq("pdf_path", pdf_path)
+            .eq("annotator", str(uuid.UUID(annotator_uuid)))
+            .eq("report_type", "mesa")
+            .limit(1)
+            .execute()
+        )
+        return bool(resp.data)
+    except Exception:
+        return False
+
+
 def get_reports(limit: int = 500) -> list[dict]:
     """Fetch anomaly reports ordered by most recent first.
 
