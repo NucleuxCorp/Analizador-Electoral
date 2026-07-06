@@ -820,19 +820,8 @@
     window.openReport = function () {
       var m = document.getElementById("report-modal");
       if (!m) return;
-      // Short-circuit: if this acta already has a mesa report, show message instead of modal
       var c = window._currentCrop || {};
       var pdfFn = c.pdf_filename || "";
-      if (pdfFn && reportedMesas.has(pdfFn)) {
-        var errEl = document.getElementById("report-error");
-        // Show inline already-reported message near the button instead of opening modal
-        var msgEl = document.getElementById("mesa-already-reported-msg");
-        if (msgEl) {
-          msgEl.style.display = "";
-          setTimeout(function () { msgEl.style.display = "none"; }, 3000);
-        }
-        return;
-      }
       // Reset form state
       document.getElementById("report-digit-original").value = "";
       document.getElementById("report-digit-corrected").value = "";
@@ -848,6 +837,7 @@
       var prevImg = document.getElementById("report-preview-img");
       if (prevOcr) prevOcr.textContent = ocrVal;
       if (prevImg) { prevImg.src = cropId ? "/image/" + cropId : ""; }
+      _updateReportarBtn(pdfFn);
       setReportType("enmienda");
       m.style.display = "flex";
       setTimeout(function () { document.getElementById("report-digit-original").focus(); }, 50);
@@ -970,12 +960,17 @@
     };
 
     function _updateReportarBtn(pdfFn) {
-      if (!pdfFn || !reportedMesas.has(pdfFn)) return;
-      var btn = document.querySelector("button[onclick='openReport()']");
-      if (btn) {
-        btn.textContent = "✓ Mesa reportada";
-        btn.classList.remove("btn-outline-info");
-        btn.classList.add("btn-outline-secondary");
+      var bm = document.getElementById("report-btn-mesa");
+      if (!bm) return;
+      var reported = pdfFn && reportedMesas.has(pdfFn);
+      bm.disabled = reported;
+      bm.title = reported ? "Ya reportaste esta mesa" : "";
+      if (reported) {
+        bm.textContent = "✓ Mesa";
+        bm.style.opacity = "0.45";
+      } else {
+        bm.textContent = "Mesa";
+        bm.style.opacity = "";
       }
     }
 
