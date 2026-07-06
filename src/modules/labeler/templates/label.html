@@ -745,21 +745,13 @@
   (function () {
     var inp      = document.getElementById("answer");
     var modeEl   = document.getElementById("mode-ind");
-    var enmienda = false;
     var _busy    = false;
 
     if (!('ontouchstart' in window || navigator.maxTouchPoints > 0)) inp.focus();
     inp.select();
 
-    function setEnmienda(on) {
-      enmienda = on;
-      modeEl.textContent = on ? "MODO ENMIENDA — digitá y Enter" : "";
-      if (on) { inp.value = ""; inp.focus(); }  // user initiated action
-    }
-
     function _guard() { if (_busy) return true; return false; }
 
-    window.toggleEnmienda = function () { if (_guard()) return; setEnmienda(!enmienda); };
     window.doVariant = function (v) { if (_guard()) return; post("/label", { crop_id: inp.dataset.cropId, value: v }); };
     window.doAtrás         = function () { if (_guard()) return; post("/back", {}); };
     window.doSaltar         = function () { if (_guard()) return; post("/skip", { crop_id: inp.dataset.cropId }); };
@@ -769,7 +761,7 @@
         if (inp.value === "?" || inp.value === inp.dataset.ocr && inp.dataset.ocr === "?") inp.value = "";
         inp.value = inp.value + d; inp.focus(); return;
       }
-      post("/label", { crop_id: inp.dataset.cropId, value: (enmienda ? "E" : "") + d });
+      post("/label", { crop_id: inp.dataset.cropId, value: d });
     };
 
     window.openPdf = function (url) { window.open(url, "_blank", "noopener"); };
@@ -889,9 +881,10 @@
         if (!dCorr) { errEl.textContent = "El dígito corregido es obligatorio."; return; }
         if (re && !re.test(dOrig)) { errEl.textContent = "Dígito original inválido: " + dOrig; return; }
         if (re && !re.test(dCorr)) { errEl.textContent = "Dígito corregido inválido: " + dCorr; return; }
+        if (!notes) { errEl.textContent = "La nota es obligatoria para reportar una enmienda."; return; }
         payload.digit_original = dOrig;
         payload.digit_corrected = dCorr;
-        if (notes) payload.notes = notes;
+        payload.notes = notes;
         autoVal = dCorr;
       } else {
         var digit = (document.getElementById("report-otro-digit").value || "").trim();
@@ -970,7 +963,6 @@
       if (e.key === "f" || e.key === "F") { e.preventDefault(); markFraud(); return; }
       if (e.key === "Escape")    { e.preventDefault(); doSaltar(); return; }
       if (e.key === "ArrowLeft") { e.preventDefault(); doAtrás(); return; }
-      if (e.key === "e" || e.key === "E") { if (!fb) { e.preventDefault(); setEnmienda(true); return; } }
       if (e.key === "Enter")     { e.preventDefault(); doConfirmOCR(); return; }
       if (!fb && /^[0-9]$/.test(e.key)) { e.preventDefault(); doDigit(e.key); return; }
       if (e.key === "+" || e.key === "*") { e.preventDefault(); doVariant("*"); return; }
@@ -1200,7 +1192,6 @@
           }
         }
 
-        setEnmienda(false);
         inp.focus();
         inp.select();
       }, 120);
