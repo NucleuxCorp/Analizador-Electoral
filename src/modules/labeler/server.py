@@ -1585,6 +1585,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
             feedback_marks = _db.get_feedback_marks()
             amended_crops  = _db.get_amended_crops()
             reports        = _db.get_reports()
+            mesa_reports   = _db.get_mesa_reports()
             return render_template(
                 "admin.html",
                 conflicts=conflicts,
@@ -1592,6 +1593,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 feedback_marks=feedback_marks,
                 amended_crops=amended_crops,
                 reports=reports,
+                mesa_reports=mesa_reports,
             )
 
         # ----------------------------------------------------------------

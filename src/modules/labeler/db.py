@@ -19,6 +19,7 @@ from __future__ import annotations
 import logging
 import os
 import time
+import re
 import uuid
 from datetime import datetime, timezone, timedelta
 from typing import Any
@@ -608,6 +609,8 @@ def record_report(
     # Cast annotator to canonical UUID string — raises ValueError for invalid input,
     # which surfaces to the caller as a data-integrity error rather than silent bad data.
     annotator_uuid = str(uuid.UUID(annotator))
+    _mk = re.search(r'E14_PRE_(\d+_\d+_\d+_\d+_\d+_\d+)_\d+', pdf_path or '')
+    mesa_key = _mk.group(1) if _mk else None
     _client().table("reports").insert({
         "crop_id": crop_id,
         "pdf_path": pdf_path or None,
@@ -617,6 +620,7 @@ def record_report(
         "digit": digit,
         "notes": notes,
         "annotator": annotator_uuid,
+        "mesa_key": mesa_key,
     }).execute()
 
 
@@ -648,6 +652,27 @@ def check_mesa_already_reported(pdf_path: str, annotator_uuid: str) -> bool:
         return bool(resp.data)
     except Exception:
         return False
+
+
+def get_mesa_reports(limit: int = 200) -> list[dict]:
+    """Fetch consolidated reports grouped by mesa from mesa_reports_view.
+
+    Each row has: mesa_key, total_reports, enmiendas, otros, mesa_reports,
+    annotators, last_report_at, reports (list of individual report dicts).
+    Returns [] on any error.
+    """
+    try:
+        response = (
+            _client()
+            .table("mesa_reports_view")
+            .select("*")
+            .order("total_reports", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        return response.data or []
+    except Exception:
+        return []
 
 
 def get_reports(limit: int = 500) -> list[dict]:

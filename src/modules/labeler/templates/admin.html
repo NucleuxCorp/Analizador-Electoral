@@ -138,6 +138,22 @@
     tr.status-known_anomaly:hover td { background: #222228; }
     .bool-yes { color: #ef5350; font-weight: bold; }
     .bool-no  { color: #445; }
+
+    /* Mesa report cards */
+    .mesa-report-list { display: flex; flex-direction: column; gap: 6px; }
+    .mesa-report-card { border: 1px solid #1e2a3a; border-radius: 6px; overflow: hidden; }
+    .mesa-report-header {
+      display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+      padding: 10px 14px; background: #141a26; cursor: pointer;
+      user-select: none;
+    }
+    .mesa-report-header:hover { background: #1a2436; }
+    .mesa-card-chevron { margin-left: auto; color: #445; font-size: .7rem; transition: transform .15s; }
+    .mesa-report-body { display: none; border-top: 1px solid #1e2a3a; }
+    .mesa-report-body.open { display: block; }
+    .mesa-report-body table { margin: 0; }
+    .mesa-report-body td { border-bottom: 1px solid #0d1018; }
+    .stat-val.yellow { color: #ff9100; }
   </style>
 </head>
 <body>
@@ -168,7 +184,7 @@
       Correcciones OCR <span class="cnt yellow">{{ amended_crops|length }}</span>
     </div>
     <div class="tab" onclick="showTab('reports', this)">
-      Reportes <span class="cnt">{{ reports|length }}</span>
+      Reportes <span class="cnt yellow">{{ mesa_reports|length }}</span>
     </div>
     <div class="tab" id="tab-mesas" onclick="showTab('mesas', this); loadMesasTab()">
       Mesas <span class="cnt" id="mesas-count">—</span>
@@ -296,67 +312,70 @@
   </div>
   <!-- REPORTS -->
   <div id="panel-reports" class="panel">
-    {% if not reports %}
+    {% if not mesa_reports %}
       <div class="empty">Sin reportes registrados.</div>
     {% else %}
-    <table>
-      <thead>
-        <tr>
-          <th>Fecha</th>
-          <th>Tipo</th>
-          <th>Original → Corregido</th>
-          <th>Dígito ref.</th>
-          <th>Notas</th>
-          <th>Anotador</th>
-          <th>Crop</th>
-          <th>PDF</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for r in reports %}
-        <tr id="report-row-{{ r.id }}">
-          <td class="muted" style="font-size:.68rem;white-space:nowrap;">{{ (r.created_at or '—')[:16] }}</td>
-          <td>
-            {% if r.report_type == 'enmienda' %}
-            <span class="badge badge-enmienda">enmienda</span>
-            {% else %}
-            <span class="badge" style="background:#0d2a3a;color:#7ec8e3;">otro</span>
-            {% endif %}
-          </td>
-          <td>
-            {% if r.digit_original or r.digit_corrected %}
-            <span class="ocr-label">{{ r.digit_original or '?' }}</span>
-            → <span class="amended-label">{{ r.digit_corrected or '?' }}</span>
-            {% else %}
-            <span class="muted">—</span>
-            {% endif %}
-          </td>
-          <td class="mono" style="font-size:.75rem;">{{ r.digit or '—' }}</td>
-          <td style="max-width:220px;word-break:break-word;font-size:.75rem;">{{ r.notes or '—' }}</td>
-          <td class="muted mono" style="font-size:.65rem;" title="{{ r.annotator or '' }}">
-            {{ (r.annotator or '—')[:8] }}…
-          </td>
-          <td>
-            {% if r.crop_id %}
-            <img class="crop-thumb"
-                 src="/crop-image/{{ r.crop_id }}"
-                 alt="{{ r.crop_id }}"
-                 onerror="this.style.display='none'">
-            {% endif %}
-          </td>
-          <td>
-            {% if r.crop_id %}
-            <a class="pdf-link" href="/pdf?v={{ r.crop_id }}" target="_blank">Ver acta</a>
-            {% elif r.pdf_path %}
-            <span class="muted mono" style="font-size:.62rem;">{{ r.pdf_path | truncate(30, True, '…') }}</span>
-            {% endif %}
-          </td>
-          <td><button class="btn-hide" onclick="hideRecord('reports', {{ r.id }}, 'report-row-{{ r.id }}')">Ocultar</button></td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    <div class="stats-bar" style="margin-bottom:16px;">
+      <div class="stat-item"><span class="stat-label">Mesas</span><span class="stat-val">{{ mesa_reports|length }}</span></div>
+      <div class="stat-item"><span class="stat-label">Total reportes</span><span class="stat-val yellow">{{ mesa_reports|sum(attribute='total_reports') }}</span></div>
+      <div class="stat-item"><span class="stat-label">Enmiendas</span><span class="stat-val" style="color:#ce93d8">{{ mesa_reports|sum(attribute='enmiendas') }}</span></div>
+      <div class="stat-item"><span class="stat-label">Otros</span><span class="stat-val" style="color:#7ec8e3">{{ mesa_reports|sum(attribute='otros') }}</span></div>
+      <div class="stat-item"><span class="stat-label">Reporte mesa</span><span class="stat-val red">{{ mesa_reports|sum(attribute='mesa_reports') }}</span></div>
+    </div>
+    <div class="mesa-report-list">
+      {% for m in mesa_reports %}
+      <div class="mesa-report-card" id="mrcard-{{ loop.index }}">
+        <div class="mesa-report-header" onclick="toggleMesaCard({{ loop.index }})">
+          <span class="mono" style="color:#e6edf3;font-size:.8rem;">{{ m.mesa_key }}</span>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+            {% if m.enmiendas %}<span class="badge badge-enmienda">{{ m.enmiendas }} enmienda{{ 's' if m.enmiendas != 1 }}</span>{% endif %}
+            {% if m.otros %}<span class="badge" style="background:#0d2a3a;color:#7ec8e3;">{{ m.otros }} otro{{ 's' if m.otros != 1 }}</span>{% endif %}
+            {% if m.mesa_reports %}<span class="badge badge-conflict">{{ m.mesa_reports }} mesa</span>{% endif %}
+            <span class="muted" style="font-size:.65rem;">{{ m.annotators }} anotador{{ 'es' if m.annotators != 1 }} · {{ (m.last_report_at or '')[:10] }}</span>
+          </div>
+          <span class="mesa-card-chevron" id="chev-{{ loop.index }}">▶</span>
+        </div>
+        <div class="mesa-report-body" id="mrbody-{{ loop.index }}">
+          <table style="margin-top:0;">
+            <thead>
+              <tr>
+                <th>Fecha</th><th>Tipo</th><th>Original → Corregido</th>
+                <th>Dígito ref.</th><th>Notas</th><th>Crop</th><th>Acta</th><th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for r in m.reports %}
+              <tr id="report-row-{{ r.id }}">
+                <td class="muted" style="font-size:.65rem;white-space:nowrap;">{{ (r.created_at or '—')[:16] }}</td>
+                <td>
+                  {% if r.report_type == 'enmienda' %}<span class="badge badge-enmienda">enmienda</span>
+                  {% elif r.report_type == 'mesa' %}<span class="badge badge-conflict">mesa</span>
+                  {% else %}<span class="badge" style="background:#0d2a3a;color:#7ec8e3;">otro</span>{% endif %}
+                </td>
+                <td>
+                  {% if r.digit_original or r.digit_corrected %}
+                  <span class="ocr-label">{{ r.digit_original or '?' }}</span> → <span class="amended-label">{{ r.digit_corrected or '?' }}</span>
+                  {% else %}<span class="muted">—</span>{% endif %}
+                </td>
+                <td class="mono" style="font-size:.75rem;">{{ r.digit or '—' }}</td>
+                <td style="max-width:220px;word-break:break-word;font-size:.72rem;">{{ r.notes or '—' }}</td>
+                <td>
+                  {% if r.crop_id %}
+                  <img class="crop-thumb" src="/crop-image/{{ r.crop_id }}" alt="{{ r.crop_id }}" onerror="this.style.display='none'">
+                  {% endif %}
+                </td>
+                <td>
+                  {% if r.crop_id %}<a class="pdf-link" href="/pdf?v={{ r.crop_id }}" target="_blank">Ver acta</a>{% endif %}
+                </td>
+                <td><button class="btn-hide" onclick="hideRecord('reports', {{ r.id }}, 'report-row-{{ r.id }}')">Ocultar</button></td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
     {% endif %}
   </div>
 
@@ -497,6 +516,13 @@
 </div>
 
 <script>
+function toggleMesaCard(idx) {
+  var body = document.getElementById('mrbody-' + idx);
+  var chev = document.getElementById('chev-' + idx);
+  var open = body.classList.toggle('open');
+  chev.textContent = open ? '▼' : '▶';
+}
+
 function showTab(name, el) {
   document.querySelectorAll('.tab').forEach(function(t) { t.classList.remove('active'); });
   document.querySelectorAll('.panel').forEach(function(p) { p.classList.remove('active'); });
