@@ -654,11 +654,31 @@ def check_mesa_already_reported(pdf_path: str, annotator_uuid: str) -> bool:
         return False
 
 
+_E14_TYPE_LABELS = {
+    "E14C": "E14C Claveros",
+    "E14D": "E14D Delegados",
+    "E14T": "E14T Transmisión",
+}
+_E14_TYPE_ORDER = ["E14C", "E14D", "E14T"]
+
+
+def _derive_e14_type(pdf_path: str | None) -> str:
+    p = (pdf_path or "").lower()
+    if "e14c" in p:
+        return "E14C"
+    if "e14d" in p:
+        return "E14D"
+    if "e14t" in p:
+        return "E14T"
+    return "E14C"
+
+
 def get_mesa_reports(limit: int = 200) -> list[dict]:
-    """Fetch consolidated reports grouped by mesa from mesa_reports_view.
+    """Fetch consolidated reports grouped by mesa, with nested reports grouped by E14 type.
 
     Each row has: mesa_key, total_reports, enmiendas, otros, mesa_reports,
-    annotators, last_report_at, reports (list of individual report dicts).
+    annotators, last_report_at, reports_by_type (dict E14C/D/T → list),
+    first_crop_id (for Ver acta link at mesa level).
     Returns [] on any error.
     """
     try:
@@ -670,9 +690,23 @@ def get_mesa_reports(limit: int = 200) -> list[dict]:
             .limit(limit)
             .execute()
         )
-        return response.data or []
+        rows = response.data or []
     except Exception:
         return []
+
+    for row in rows:
+        reports = row.get("reports") or []
+        by_type: dict[str, list] = {}
+        for rep in reports:
+            e14 = _derive_e14_type(rep.get("pdf_path"))
+            rep["e14_type"] = e14
+            rep["e14_label"] = _E14_TYPE_LABELS.get(e14, e14)
+            by_type.setdefault(e14, []).append(rep)
+        # Ordered dict: E14C first, then D, then T
+        row["reports_by_type"] = {k: by_type[k] for k in _E14_TYPE_ORDER if k in by_type}
+        row["first_crop_id"] = reports[0].get("crop_id") if reports else None
+
+    return rows
 
 
 def get_reports(limit: int = 500) -> list[dict]:

@@ -155,18 +155,17 @@
     .mesa-report-body td { border-bottom: 1px solid #0d1018; }
     .stat-val.yellow { color: #ff9100; }
 
-    /* Mesa key breadcrumb */
-    .mk-breadcrumb { display:flex; align-items:center; gap:4px; flex-wrap:wrap; }
-    .mk-chip {
-      display:inline-flex; flex-direction:column; align-items:center;
-      background:#0d1018; border:1px solid #1e2a3a; border-radius:4px;
-      padding:2px 8px; line-height:1.2;
+    .mk-inline { font-size:.8rem; font-family:monospace; }
+    .mk-sep    { color:#334; margin: 0 3px; }
+
+    .e14-group-header {
+      padding: 5px 14px; font-size:.7rem; font-weight:bold;
+      text-transform:uppercase; letter-spacing:.06em;
+      border-bottom: 1px solid #1e2a3a;
     }
-    .mk-label { font-size:.55rem; color:#445; text-transform:uppercase; letter-spacing:.06em; }
-    .mk-val   { font-size:.78rem; color:#e6edf3; font-family:monospace; }
-    .mk-chip.mk-dept .mk-val { color:#fbbf24; }
-    .mk-chip.mk-mesa .mk-val { color:#7ec8e3; }
-    .mk-sep   { color:#334; font-size:.8rem; }
+    .e14-e14c { background:#0d1f1a; color:#66bb6a; }
+    .e14-e14d { background:#1a1020; color:#ce93d8; }
+    .e14-e14t { background:#0d1a2a; color:#7ec8e3; }
   </style>
 </head>
 <body>
@@ -341,32 +340,16 @@
       {% set parts = m.mesa_key.split('_') %}
       <div class="mesa-report-card" id="mrcard-{{ loop.index }}">
         <div class="mesa-report-header" onclick="toggleMesaCard({{ loop.index }})">
-          <div class="mk-breadcrumb">
-            <div class="mk-chip mk-dept">
-              <span class="mk-label">Departamento</span>
-              <span class="mk-val">{{ DEPT_NAMES.get(parts[0], parts[0]) }}</span>
-            </div>
-            <span class="mk-sep">›</span>
-            <div class="mk-chip">
-              <span class="mk-label">Municipio</span>
-              <span class="mk-val">{{ parts[1] }}</span>
-            </div>
-            <span class="mk-sep">›</span>
-            <div class="mk-chip">
-              <span class="mk-label">Zona</span>
-              <span class="mk-val">{{ parts[2] | int }}</span>
-            </div>
-            <span class="mk-sep">›</span>
-            <div class="mk-chip">
-              <span class="mk-label">Puesto</span>
-              <span class="mk-val">{{ parts[4] | int }}</span>
-            </div>
-            <span class="mk-sep">›</span>
-            <div class="mk-chip mk-mesa">
-              <span class="mk-label">Mesa</span>
-              <span class="mk-val">{{ parts[5] | int }}</span>
-            </div>
-          </div>
+          <span class="mk-inline">
+            <span style="color:#fbbf24;font-weight:bold">{{ DEPT_NAMES.get(parts[0], parts[0]) }}</span>
+            <span class="mk-sep">·</span> Mpio <b>{{ parts[1] | int }}</b>
+            <span class="mk-sep">·</span> Zona <b>{{ parts[2] | int }}</b>
+            <span class="mk-sep">·</span> Puesto <b>{{ parts[4] | int }}</b>
+            <span class="mk-sep">·</span> Mesa <b style="color:#7ec8e3">{{ parts[5] | int }}</b>
+          </span>
+          {% if m.first_crop_id %}
+          <a class="pdf-link" href="/pdf?v={{ m.first_crop_id }}" target="_blank" onclick="event.stopPropagation()">Ver acta</a>
+          {% endif %}
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
             {% if m.enmiendas %}<span class="badge badge-enmienda">{{ m.enmiendas }} enmienda{{ 's' if m.enmiendas != 1 }}</span>{% endif %}
             {% if m.otros %}<span class="badge" style="background:#0d2a3a;color:#7ec8e3;">{{ m.otros }} otro{{ 's' if m.otros != 1 }}</span>{% endif %}
@@ -376,15 +359,17 @@
           <span class="mesa-card-chevron" id="chev-{{ loop.index }}">▶</span>
         </div>
         <div class="mesa-report-body" id="mrbody-{{ loop.index }}">
-          <table style="margin-top:0;">
+          {% for e14_type, type_reports in m.reports_by_type.items() %}
+          <div class="e14-group-header e14-{{ e14_type | lower }}">
+            {{ {'E14C':'E14C — Claveros','E14D':'E14D — Delegados','E14T':'E14T — Transmisión'}.get(e14_type, e14_type) }}
+            <span class="muted" style="font-weight:normal;font-size:.7rem;">({{ type_reports | length }} reporte{{ 's' if type_reports | length != 1 }})</span>
+          </div>
+          <table>
             <thead>
-              <tr>
-                <th>Fecha</th><th>Tipo</th><th>Original → Corregido</th>
-                <th>Dígito ref.</th><th>Notas</th><th>Crop</th><th>Acta</th><th></th>
-              </tr>
+              <tr><th>Fecha</th><th>Tipo</th><th>Original → Corregido</th><th>Dígito ref.</th><th>Notas</th><th>Crop</th><th></th></tr>
             </thead>
             <tbody>
-              {% for r in m.reports %}
+              {% for r in type_reports %}
               <tr id="report-row-{{ r.id }}">
                 <td class="muted" style="font-size:.65rem;white-space:nowrap;">{{ (r.created_at or '—')[:16] }}</td>
                 <td>
@@ -398,20 +383,18 @@
                   {% else %}<span class="muted">—</span>{% endif %}
                 </td>
                 <td class="mono" style="font-size:.75rem;">{{ r.digit or '—' }}</td>
-                <td style="max-width:220px;word-break:break-word;font-size:.72rem;">{{ r.notes or '—' }}</td>
+                <td style="max-width:260px;word-break:break-word;font-size:.72rem;">{{ r.notes or '—' }}</td>
                 <td>
                   {% if r.crop_id %}
                   <img class="crop-thumb" src="/crop-image/{{ r.crop_id }}" alt="{{ r.crop_id }}" onerror="this.style.display='none'">
                   {% endif %}
-                </td>
-                <td>
-                  {% if r.crop_id %}<a class="pdf-link" href="/pdf?v={{ r.crop_id }}" target="_blank">Ver acta</a>{% endif %}
                 </td>
                 <td><button class="btn-hide" onclick="hideRecord('reports', {{ r.id }}, 'report-row-{{ r.id }}')">Ocultar</button></td>
               </tr>
               {% endfor %}
             </tbody>
           </table>
+          {% endfor %}
         </div>
       </div>
       {% endfor %}
