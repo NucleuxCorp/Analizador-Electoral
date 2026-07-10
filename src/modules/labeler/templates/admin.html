@@ -148,12 +148,25 @@
       user-select: none;
     }
     .mesa-report-header:hover { background: #1a2436; }
-    .mesa-card-chevron { margin-left: auto; color: #445; font-size: .7rem; transition: transform .15s; }
+    .mesa-card-chevron { margin-left: auto; color: #445; font-size: .7rem; flex-shrink:0; }
     .mesa-report-body { display: none; border-top: 1px solid #1e2a3a; }
     .mesa-report-body.open { display: block; }
     .mesa-report-body table { margin: 0; }
     .mesa-report-body td { border-bottom: 1px solid #0d1018; }
     .stat-val.yellow { color: #ff9100; }
+
+    /* Mesa key breadcrumb */
+    .mk-breadcrumb { display:flex; align-items:center; gap:4px; flex-wrap:wrap; }
+    .mk-chip {
+      display:inline-flex; flex-direction:column; align-items:center;
+      background:#0d1018; border:1px solid #1e2a3a; border-radius:4px;
+      padding:2px 8px; line-height:1.2;
+    }
+    .mk-label { font-size:.55rem; color:#445; text-transform:uppercase; letter-spacing:.06em; }
+    .mk-val   { font-size:.78rem; color:#e6edf3; font-family:monospace; }
+    .mk-chip.mk-dept .mk-val { color:#fbbf24; }
+    .mk-chip.mk-mesa .mk-val { color:#7ec8e3; }
+    .mk-sep   { color:#334; font-size:.8rem; }
   </style>
 </head>
 <body>
@@ -322,11 +335,38 @@
       <div class="stat-item"><span class="stat-label">Otros</span><span class="stat-val" style="color:#7ec8e3">{{ mesa_reports|sum(attribute='otros') }}</span></div>
       <div class="stat-item"><span class="stat-label">Reporte mesa</span><span class="stat-val red">{{ mesa_reports|sum(attribute='mesa_reports') }}</span></div>
     </div>
+    {% set DEPT_NAMES = {'01':'ANTIOQUIA','05':'BOLIVAR','07':'BOYACA','08':'ATLANTICO','11':'BOGOTA D.C.','13':'CALDAS','15':'CAQUETA','16':'BOGOTA D.C','17':'CHOCO','18':'CORDOBA','19':'HUILA','20':'LA GUAJIRA','21':'MAGDALENA','22':'META','23':'NARIÑO','24':'N. SANTANDER','25':'PUTUMAYO','26':'QUINDIO','27':'RISARALDA','28':'SUCRE','29':'SANTANDER','31':'TOLIMA','40':'ARAUCA','44':'CASANARE','46':'GUAINIA','48':'LA GUAJIRA','50':'VICHADA','52':'VAUPES','54':'N. SANTANDER','56':'GUAVIARE','60':'TOLIMA','64':'HUILA','68':'SANTANDER','72':'SUCRE','76':'VALLE','81':'ARAUCA','85':'CASANARE','86':'PUTUMAYO','88':'CONSULADOS','91':'AMAZONAS','94':'GUAINIA','95':'GUAVIARE','97':'VAUPES','99':'VICHADA'} %}
     <div class="mesa-report-list">
       {% for m in mesa_reports %}
+      {% set parts = m.mesa_key.split('_') %}
       <div class="mesa-report-card" id="mrcard-{{ loop.index }}">
         <div class="mesa-report-header" onclick="toggleMesaCard({{ loop.index }})">
-          <span class="mono" style="color:#e6edf3;font-size:.8rem;">{{ m.mesa_key }}</span>
+          <div class="mk-breadcrumb">
+            <div class="mk-chip mk-dept">
+              <span class="mk-label">Departamento</span>
+              <span class="mk-val">{{ DEPT_NAMES.get(parts[0], parts[0]) }}</span>
+            </div>
+            <span class="mk-sep">›</span>
+            <div class="mk-chip">
+              <span class="mk-label">Municipio</span>
+              <span class="mk-val">{{ parts[1] }}</span>
+            </div>
+            <span class="mk-sep">›</span>
+            <div class="mk-chip">
+              <span class="mk-label">Zona</span>
+              <span class="mk-val">{{ parts[2] | int }}</span>
+            </div>
+            <span class="mk-sep">›</span>
+            <div class="mk-chip">
+              <span class="mk-label">Puesto</span>
+              <span class="mk-val">{{ parts[4] | int }}</span>
+            </div>
+            <span class="mk-sep">›</span>
+            <div class="mk-chip mk-mesa">
+              <span class="mk-label">Mesa</span>
+              <span class="mk-val">{{ parts[5] | int }}</span>
+            </div>
+          </div>
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
             {% if m.enmiendas %}<span class="badge badge-enmienda">{{ m.enmiendas }} enmienda{{ 's' if m.enmiendas != 1 }}</span>{% endif %}
             {% if m.otros %}<span class="badge" style="background:#0d2a3a;color:#7ec8e3;">{{ m.otros }} otro{{ 's' if m.otros != 1 }}</span>{% endif %}
