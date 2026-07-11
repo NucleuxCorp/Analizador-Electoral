@@ -795,22 +795,30 @@
       if (!msg) { errEl.textContent = "Escribí tu observación primero."; return; }
       var c = window._currentCrop || {};
       btn.disabled = true; btn.textContent = "Guardando…";
-      fetch("/feedback", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ crop_id: c.crop_id || inp.dataset.cropId, message: msg }),
-      })
-        .then(function (r) { return r.json(); })
-        .then(function (d) {
-          btn.disabled = false; btn.textContent = "Enviar";
-          if (d.ok === false) { errEl.textContent = "Error: " + (d.error || "?"); return; }
-          document.getElementById("wa-msg").value = "";
-          closeWa();
+      var _fbSiteKey = {{ RECAPTCHA_SITE_KEY | tojson }};
+      function _doFeedbackFetch(token) {
+        fetch("/feedback", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ crop_id: c.crop_id || inp.dataset.cropId, message: msg, g_recaptcha_response: token }),
         })
-        .catch(function () {
-          btn.disabled = false; btn.textContent = "Enviar";
-          errEl.textContent = "Error de red — intentá de nuevo.";
-        });
+          .then(function (r) { return r.json(); })
+          .then(function (d) {
+            btn.disabled = false; btn.textContent = "Enviar";
+            if (d.ok === false) { errEl.textContent = "Error: " + (d.error || "?"); return; }
+            document.getElementById("wa-msg").value = "";
+            closeWa();
+          })
+          .catch(function () {
+            btn.disabled = false; btn.textContent = "Enviar";
+            errEl.textContent = "Error de red — intentá de nuevo.";
+          });
+      }
+      if (_fbSiteKey && typeof grecaptcha !== "undefined" && grecaptcha.enterprise) {
+        grecaptcha.enterprise.execute(_fbSiteKey, { action: "feedback" }).then(_doFeedbackFetch);
+      } else {
+        _doFeedbackFetch("");
+      }
     };
 
     // ── Report modal ──
@@ -1426,5 +1434,6 @@
 <style>@keyframes spin { to { transform: rotate(360deg); } }</style>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" crossorigin="anonymous"></script>
+{% if RECAPTCHA_SITE_KEY %}<script src="https://www.google.com/recaptcha/enterprise.js?render={{ RECAPTCHA_SITE_KEY }}" async defer></script>{% endif %}
 </body>
 </html>
