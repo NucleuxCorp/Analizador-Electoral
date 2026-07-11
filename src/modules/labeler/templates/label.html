@@ -911,7 +911,6 @@
         if (!dCorr) { errEl.textContent = "El dígito corregido es obligatorio."; return; }
         if (re && !re.test(dOrig)) { errEl.textContent = "Dígito original inválido: " + dOrig; return; }
         if (re && !re.test(dCorr)) { errEl.textContent = "Dígito corregido inválido: " + dCorr; return; }
-        if (!notes) { errEl.textContent = "La nota es obligatoria para reportar una enmienda."; return; }
         payload.digit_original = dOrig;
         payload.digit_corrected = dCorr;
         payload.notes = notes;
