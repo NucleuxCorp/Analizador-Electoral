@@ -639,7 +639,7 @@ def _validate_report_payload(body: dict) -> tuple[dict, str | None]:
     Validation rules:
         - crop_id: required
         - report_type: must be 'enmienda' or 'otro'
-        - enmienda: digit_original, digit_corrected, and notes all required;
+        - enmienda: digit_original and digit_corrected required; notes optional;
                     digit_original and digit_corrected must be valid glyphs; digit forced None
         - otro:     notes required non-empty; digit optional but must be valid glyph if present;
                     digit_original and digit_corrected forced None
@@ -673,12 +673,9 @@ def _validate_report_payload(body: dict) -> tuple[dict, str | None]:
             return {}, f"digit_original contains invalid glyph: {digit_original!r}"
         if not _validate_glyph(digit_corrected):
             return {}, f"digit_corrected contains invalid glyph: {digit_corrected!r}"
-        notes = (body.get("notes") or "").strip()
-        if not notes:
-            return {}, "notes is required for enmienda reports"
         payload["digit_original"] = digit_original
         payload["digit_corrected"] = digit_corrected
-        payload["notes"] = notes
+        payload["notes"] = (body.get("notes") or "").strip() or None
         # digit is irrelevant for enmienda — force None
         payload["digit"] = None
 
