@@ -1815,6 +1815,9 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
         def feedback_prod() -> Response:
             from flask import g
             body = request.get_json(force=True, silent=True) or {}
+            recaptcha_token = body.get("g_recaptcha_response", "")
+            if not _verify_recaptcha(recaptcha_token, "feedback"):
+                return jsonify({"ok": False, "error": "Verificación de seguridad fallada."}), 403
             crop_id = body.get("crop_id", "")
             message = (body.get("message", "") or "").strip()
             if not message:
