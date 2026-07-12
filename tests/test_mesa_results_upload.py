@@ -131,7 +131,7 @@ def _make_row(
 class TestClassifyClean:
     def test_classify_clean(self):
         """Row with no flags returns 'clean'."""
-        from scripts.upload_mesa_results import compute_overall_status
+        from scripts.upload.upload_mesa_results import compute_overall_status
 
         row = _make_row()
         assert compute_overall_status(row) == "clean"
@@ -140,14 +140,14 @@ class TestClassifyClean:
 class TestClassifyKnownAnomaly:
     def test_classify_known_anomaly_missing_sources(self):
         """When sources_ok_count < 2, returns 'known_anomaly'."""
-        from scripts.upload_mesa_results import compute_overall_status
+        from scripts.upload.upload_mesa_results import compute_overall_status
 
         row = _make_row(sources_ok=1)
         assert compute_overall_status(row) == "known_anomaly"
 
     def test_classify_known_anomaly_urna_zero_with_votes(self):
         """When URNA is 0 but sum_votes > 0 in a source, returns 'known_anomaly'."""
-        from scripts.upload_mesa_results import compute_overall_status
+        from scripts.upload.upload_mesa_results import compute_overall_status
 
         row = _make_row(e14c_urna=0, e14c_sum_votes=100)
         assert compute_overall_status(row) == "known_anomaly"
@@ -156,7 +156,7 @@ class TestClassifyKnownAnomaly:
 class TestClassifyWarning:
     def test_classify_warning_tachon_only(self):
         """tachon_suspicious=True with no arithmetic delta returns 'warning'."""
-        from scripts.upload_mesa_results import compute_overall_status
+        from scripts.upload.upload_mesa_results import compute_overall_status
 
         row = _make_row(e14c_tachon_suspicious=True)
         assert compute_overall_status(row) == "warning"
@@ -165,14 +165,14 @@ class TestClassifyWarning:
 class TestClassifyDiscrepancy:
     def test_classify_discrepancy_cross(self):
         """cross_discrepancy=True returns 'discrepancy'."""
-        from scripts.upload_mesa_results import compute_overall_status
+        from scripts.upload.upload_mesa_results import compute_overall_status
 
         row = _make_row(cross_discrepancy=True)
         assert compute_overall_status(row) == "discrepancy"
 
     def test_classify_discrepancy_arith_delta(self):
         """Any arith_delta > 0 (but <= 30) returns 'discrepancy'."""
-        from scripts.upload_mesa_results import compute_overall_status
+        from scripts.upload.upload_mesa_results import compute_overall_status
 
         row = _make_row(e14c_arith_delta=5)
         assert compute_overall_status(row) == "discrepancy"
@@ -181,21 +181,21 @@ class TestClassifyDiscrepancy:
 class TestClassifyCritical:
     def test_classify_needs_review_large_delta_delta_over_30(self):
         """Any arith_delta > 30 returns 'needs_review_large_delta'."""
-        from scripts.upload_mesa_results import compute_overall_status
+        from scripts.upload.upload_mesa_results import compute_overall_status
 
         row = _make_row(e14c_arith_delta=31)
         assert compute_overall_status(row) == "needs_review_large_delta"
 
     def test_classify_needs_review_large_delta_tachon_and_discrepancy(self):
         """cross_discrepancy AND tachon_suspicious together returns 'needs_review_large_delta'."""
-        from scripts.upload_mesa_results import compute_overall_status
+        from scripts.upload.upload_mesa_results import compute_overall_status
 
         row = _make_row(cross_discrepancy=True, e14c_tachon_suspicious=True)
         assert compute_overall_status(row) == "needs_review_large_delta"
 
     def test_classify_needs_review_large_delta_delta_exactly_30_is_not_needs_review(self):
         """arith_delta == 30 is NOT needs_review_large_delta (must be strictly > 30)."""
-        from scripts.upload_mesa_results import compute_overall_status
+        from scripts.upload.upload_mesa_results import compute_overall_status
 
         row = _make_row(e14c_arith_delta=30)
         # delta==30 does NOT exceed FRAUD_MAX_DIFF (30), so not needs_review_large_delta
@@ -204,7 +204,7 @@ class TestClassifyCritical:
 
     def test_classify_needs_review_large_delta_uses_abs_delta(self):
         """Negative delta with abs > 30 is treated as needs_review_large_delta."""
-        from scripts.upload_mesa_results import compute_overall_status
+        from scripts.upload.upload_mesa_results import compute_overall_status
 
         row = _make_row(e14c_arith_delta=-31)
         assert compute_overall_status(row) == "needs_review_large_delta"
@@ -217,7 +217,7 @@ class TestClassifyCritical:
 class TestBuildRow:
     def test_build_row_flattens_all_columns(self):
         """build_row returns a flat dict with all expected column keys."""
-        from scripts.upload_mesa_results import build_row
+        from scripts.upload.upload_mesa_results import build_row
 
         raw = _make_row()
         result = build_row(raw)
@@ -243,7 +243,7 @@ class TestBuildRow:
 
     def test_build_row_preserves_raw_data(self):
         """build_row sets raw_data to the entire original dict."""
-        from scripts.upload_mesa_results import build_row
+        from scripts.upload.upload_mesa_results import build_row
 
         raw = _make_row(dept="05", mesa="099")
         result = build_row(raw)
@@ -252,7 +252,7 @@ class TestBuildRow:
 
     def test_build_row_overall_status_is_set(self):
         """build_row calls compute_overall_status and stores it."""
-        from scripts.upload_mesa_results import build_row
+        from scripts.upload.upload_mesa_results import build_row
 
         raw = _make_row(e14c_tachon_suspicious=True)
         result = build_row(raw)
@@ -261,7 +261,7 @@ class TestBuildRow:
 
     def test_build_row_null_sources_handled(self):
         """build_row handles None source entries without raising."""
-        from scripts.upload_mesa_results import build_row
+        from scripts.upload.upload_mesa_results import build_row
 
         raw = _make_row()
         # Explicitly null out e14t and e14d sources
@@ -281,7 +281,7 @@ class TestBuildRow:
 class TestDiscoverFiles:
     def test_skip_test_files(self):
         """Files with '_test' in the name are excluded from discovery."""
-        from scripts.upload_mesa_results import discover_files
+        from scripts.upload.upload_mesa_results import discover_files
 
         with tempfile.TemporaryDirectory() as tmp:
             p = Path(tmp)
@@ -297,7 +297,7 @@ class TestDiscoverFiles:
 
     def test_dept_filter_2digit_only(self):
         """Only files matching cross_mesa_validation_{2-digit}.jsonl are returned."""
-        from scripts.upload_mesa_results import discover_files
+        from scripts.upload.upload_mesa_results import discover_files
 
         with tempfile.TemporaryDirectory() as tmp:
             p = Path(tmp)
@@ -332,7 +332,7 @@ def _make_mock_supabase():
 class TestUploadIdempotentUpsert:
     def test_idempotent_upsert(self):
         """upload() calls upsert with on_conflict='mesa_key'."""
-        from scripts.upload_mesa_results import upload
+        from scripts.upload.upload_mesa_results import upload
 
         mock_client, chain = _make_mock_supabase()
 
@@ -343,7 +343,7 @@ class TestUploadIdempotentUpsert:
                 json.dumps(row) + "\n"
             )
 
-            with patch("scripts.upload_mesa_results._get_supabase_client", return_value=mock_client):
+            with patch("scripts.upload.upload_mesa_results._get_supabase_client", return_value=mock_client):
                 summary = upload(data_dir=p, dry_run=False)
 
         # Must use on_conflict='mesa_key'
@@ -357,7 +357,7 @@ class TestUploadIdempotentUpsert:
 class TestUploadDryRun:
     def test_dry_run_no_write(self):
         """When dry_run=True, upsert is never called."""
-        from scripts.upload_mesa_results import upload
+        from scripts.upload.upload_mesa_results import upload
 
         mock_client, chain = _make_mock_supabase()
 
@@ -366,7 +366,7 @@ class TestUploadDryRun:
             row = _make_row()
             (p / "cross_mesa_validation_01.jsonl").write_text(json.dumps(row) + "\n")
 
-            with patch("scripts.upload_mesa_results._get_supabase_client", return_value=mock_client):
+            with patch("scripts.upload.upload_mesa_results._get_supabase_client", return_value=mock_client):
                 summary = upload(data_dir=p, dry_run=True)
 
         chain.upsert.assert_not_called()
@@ -376,7 +376,7 @@ class TestUploadDryRun:
 class TestUploadBatchSize:
     def test_batch_size_500(self):
         """Rows are submitted in batches of at most 500."""
-        from scripts.upload_mesa_results import upload
+        from scripts.upload.upload_mesa_results import upload
 
         mock_client, chain = _make_mock_supabase()
 
@@ -388,7 +388,7 @@ class TestUploadBatchSize:
                 for r in rows:
                     fh.write(json.dumps(r) + "\n")
 
-            with patch("scripts.upload_mesa_results._get_supabase_client", return_value=mock_client):
+            with patch("scripts.upload.upload_mesa_results._get_supabase_client", return_value=mock_client):
                 summary = upload(data_dir=p, dry_run=False)
 
         # 750 rows in batches of 500 → 2 upsert calls

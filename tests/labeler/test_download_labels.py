@@ -34,7 +34,7 @@ def _table_client(**pages):
 
 
 def test_download_labels_writes_manifest(tmp_path: Path):
-    from scripts.download_labels_to_local import download_labels
+    from scripts.upload.download_labels_to_local import download_labels
 
     client = _table_client(
         labels=[
@@ -59,7 +59,7 @@ def test_download_labels_writes_manifest(tmp_path: Path):
 
 
 def test_download_labels_paginates(tmp_path: Path, monkeypatch):
-    from scripts import download_labels_to_local as dll
+    from scripts.upload import download_labels_to_local as dll
 
     monkeypatch.setattr(dll, "PAGE", 2)
     client = _table_client(
@@ -83,7 +83,7 @@ def test_download_labels_paginates(tmp_path: Path, monkeypatch):
 
 
 def test_download_crops_index(tmp_path: Path):
-    from scripts.download_labels_to_local import download_crops_index
+    from scripts.upload.download_labels_to_local import download_crops_index
 
     crops_dir = tmp_path / "crops"
     crops_dir.mkdir(parents=True)
