@@ -2,7 +2,7 @@
 """Export portal crops from segunda-vuelta tachon/enmienda focused PDF list.
 
 Reads data/analysis_segunda_vuelta/tachon_enmienda_focused_list.json, runs the
-grid_detector_v2 pipeline per PDF, and writes CropRecord-compatible PNGs +
+grid_detector (v3) pipeline per PDF, and writes CropRecord-compatible PNGs +
 index.jsonl under data/labels_segunda/crops/.
 
 Usage:

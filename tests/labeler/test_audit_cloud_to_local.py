@@ -7,6 +7,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+pytestmark = pytest.mark.skip(reason="audit_cloud_to_local.py moved to scripts/archive/ — one-time script")
+
 
 def _client(storage=None, crops=None, labels=None, assignments=None):
     client = MagicMock()

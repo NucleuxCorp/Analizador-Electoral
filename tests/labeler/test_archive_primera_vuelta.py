@@ -30,7 +30,7 @@ def temp_git_repo(tmp_path: Path) -> Path:
     return repo
 
 
-SCRIPT_PATH = Path(__file__).parents[2] / "scripts" / "archive_primera_vuelta.py"
+SCRIPT_PATH = Path(__file__).parents[2] / "scripts" / "archive" / "archive_primera_vuelta.py"
 
 
 class TestArchivePrimeraVuelta:
