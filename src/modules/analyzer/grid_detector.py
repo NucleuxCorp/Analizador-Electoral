@@ -658,7 +658,9 @@ def ocr_cell(
     if crop.size == 0:
         return ("?", 0.0, [])
 
-    ch, conf, top3 = engine._read_single_digit(crop)
+    _raw = engine._read_single_digit(crop)
+    ch, conf = _raw[0], _raw[1]
+    top3: list[dict] = _raw[2] if len(_raw) > 2 else []
     # Do NOT coerce symbols to "0" here. With expanded allowlist the engine
     # can now return *, -, +, x, X. Caller (using cell_has_ink) will decide:
     #   - ink + digit → digit
