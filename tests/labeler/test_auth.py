@@ -5,72 +5,37 @@ Covers:
   - decode_jwt: valid token, expired token, malformed token
   - @require_auth: JSON route (401), HTML route (redirect), dev bypass
   - refresh flow: expired token triggers refresh, session updated
+
+decode_jwt() now delegates verification to the Supabase client
+(``init_supabase_client().auth.get_user(token)``) instead of local JWKS/RS256
+verification, so these tests mock ``init_supabase_client`` rather than signing
+real JWTs.
 """
 from __future__ import annotations
 
 import os
-import time
-from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-
-# ---------------------------------------------------------------------------
-# Helpers to generate test JWTs without a real Supabase project
-# ---------------------------------------------------------------------------
-
-def _make_rsa_keypair():
-    """Generate a throwaway RSA key pair for test signing."""
-    from cryptography.hazmat.primitives.asymmetric import rsa
-    from cryptography.hazmat.backends import default_backend
-
-    private_key = rsa.generate_private_key(
-        public_exponent=65537,
-        key_size=2048,
-        backend=default_backend(),
-    )
-    return private_key, private_key.public_key()
+VALID_TOKEN = "valid-token-string"
+EXPIRED_TOKEN = "expired-token-string"
 
 
-def _make_jwt(claims: dict, private_key, kid: str = "test-kid") -> str:
-    """Sign a JWT with the given RSA private key."""
-    import jwt as pyjwt
-
-    return pyjwt.encode(
-        claims,
-        private_key,
-        algorithm="RS256",
-        headers={"kid": kid},
-    )
-
-
-@pytest.fixture(scope="module")
-def rsa_keys():
-    return _make_rsa_keypair()
-
-
-@pytest.fixture(scope="module")
-def valid_token(rsa_keys):
-    private_key, _ = rsa_keys
-    claims = {
-        "sub": "user-uuid-123",
-        "email": "test@example.com",
-        "exp": int(time.time()) + 3600,  # valid for 1 hour
-        "iat": int(time.time()),
-    }
-    return _make_jwt(claims, private_key)
-
-
-@pytest.fixture(scope="module")
-def expired_token(rsa_keys):
-    private_key, _ = rsa_keys
-    claims = {
-        "sub": "user-uuid-123",
-        "exp": int(time.time()) - 3600,  # expired 1 hour ago
-        "iat": int(time.time()) - 7200,
-    }
-    return _make_jwt(claims, private_key)
+def _make_supabase_client(*, user_id: str | None = None, email: str | None = None,
+                           side_effect: Exception | None = None) -> MagicMock:
+    """Build a MagicMock standing in for the supabase-py client returned by
+    init_supabase_client(), with client.auth.get_user(token) configured."""
+    client = MagicMock()
+    if side_effect is not None:
+        client.auth.get_user.side_effect = side_effect
+    else:
+        response = MagicMock()
+        response.user = MagicMock()
+        response.user.id = user_id
+        response.user.email = email
+        client.auth.get_user.return_value = response
+    return client
 
 
 # ---------------------------------------------------------------------------
@@ -78,33 +43,33 @@ def expired_token(rsa_keys):
 # ---------------------------------------------------------------------------
 
 class TestDecodeJwtValid:
-    def test_returns_claims_dict(self, rsa_keys, valid_token):
+    def test_returns_claims_dict(self):
         """decode_jwt with a valid token must return a dict with 'sub'."""
-        _, public_key = rsa_keys
+        mock_client = _make_supabase_client(user_id="user-uuid-123", email="test@example.com")
 
         with patch(
-            "src.modules.labeler.auth._get_jwks",
-            return_value={"test-kid": public_key},
+            "src.modules.labeler.auth.init_supabase_client",
+            return_value=mock_client,
         ):
             from src.modules.labeler.auth import decode_jwt
 
-            claims = decode_jwt(valid_token)
+            claims = decode_jwt(VALID_TOKEN)
 
         assert isinstance(claims, dict)
         assert claims["sub"] == "user-uuid-123"
         assert claims["email"] == "test@example.com"
 
-    def test_sub_claim_present(self, rsa_keys, valid_token):
+    def test_sub_claim_present(self):
         """sub claim must be present and non-empty."""
-        _, public_key = rsa_keys
+        mock_client = _make_supabase_client(user_id="user-uuid-123", email="test@example.com")
 
         with patch(
-            "src.modules.labeler.auth._get_jwks",
-            return_value={"test-kid": public_key},
+            "src.modules.labeler.auth.init_supabase_client",
+            return_value=mock_client,
         ):
             from src.modules.labeler.auth import decode_jwt
 
-            claims = decode_jwt(valid_token)
+            claims = decode_jwt(VALID_TOKEN)
 
         assert "sub" in claims
         assert claims["sub"]
@@ -115,19 +80,20 @@ class TestDecodeJwtValid:
 # ---------------------------------------------------------------------------
 
 class TestDecodeJwtExpired:
-    def test_raises_expired_signature_error(self, rsa_keys, expired_token):
+    def test_raises_expired_signature_error(self):
         """decode_jwt with expired token must raise jwt.ExpiredSignatureError."""
         import jwt as pyjwt
-        _, public_key = rsa_keys
+
+        mock_client = _make_supabase_client(side_effect=Exception("token expired"))
 
         with patch(
-            "src.modules.labeler.auth._get_jwks",
-            return_value={"test-kid": public_key},
+            "src.modules.labeler.auth.init_supabase_client",
+            return_value=mock_client,
         ):
             from src.modules.labeler.auth import decode_jwt
 
             with pytest.raises(pyjwt.ExpiredSignatureError):
-                decode_jwt(expired_token)
+                decode_jwt(EXPIRED_TOKEN)
 
 
 # ---------------------------------------------------------------------------
@@ -139,19 +105,31 @@ class TestDecodeJwtMalformed:
         """decode_jwt with garbage string must raise jwt.InvalidTokenError."""
         import jwt as pyjwt
 
-        from src.modules.labeler.auth import decode_jwt
+        mock_client = _make_supabase_client(side_effect=Exception("invalid jwt"))
 
-        with pytest.raises(pyjwt.InvalidTokenError):
-            decode_jwt("not.a.valid.jwt.string")
+        with patch(
+            "src.modules.labeler.auth.init_supabase_client",
+            return_value=mock_client,
+        ):
+            from src.modules.labeler.auth import decode_jwt
+
+            with pytest.raises(pyjwt.InvalidTokenError):
+                decode_jwt("not.a.valid.jwt.string")
 
     def test_raises_on_empty_string(self):
         """decode_jwt with empty string must raise jwt.InvalidTokenError."""
         import jwt as pyjwt
 
-        from src.modules.labeler.auth import decode_jwt
+        mock_client = _make_supabase_client(side_effect=Exception("invalid jwt"))
 
-        with pytest.raises(pyjwt.InvalidTokenError):
-            decode_jwt("")
+        with patch(
+            "src.modules.labeler.auth.init_supabase_client",
+            return_value=mock_client,
+        ):
+            from src.modules.labeler.auth import decode_jwt
+
+            with pytest.raises(pyjwt.InvalidTokenError):
+                decode_jwt("")
 
 
 # ---------------------------------------------------------------------------
@@ -159,7 +137,7 @@ class TestDecodeJwtMalformed:
 # ---------------------------------------------------------------------------
 
 class TestRequireAuthDevBypass:
-    def test_sets_g_user_id_to_fake_user_id(self, rsa_keys):
+    def test_sets_g_user_id_to_fake_user_id(self):
         """
         When SUPABASE_URL is unset, @require_auth must set g.user_id = FAKE_USER_ID
         and call the decorated view without any JWT decode.
@@ -167,6 +145,7 @@ class TestRequireAuthDevBypass:
         from flask import Flask, g, jsonify
 
         app = Flask(__name__)
+        app.config["SECRET_KEY"] = "test-secret"
 
         with app.app_context():
             with patch.dict(
@@ -193,8 +172,8 @@ class TestRequireAuthDevBypass:
         from flask import Flask, g, jsonify
 
         app = Flask(__name__)
+        app.config["SECRET_KEY"] = "test-secret"
 
-        env_patch = {"SUPABASE_URL": ""}
         env_no_fake = {k: v for k, v in os.environ.items() if k != "FAKE_USER_ID"}
         env_no_fake["SUPABASE_URL"] = ""
 
@@ -281,31 +260,39 @@ class TestRequireAuthHtmlRoute:
 # ---------------------------------------------------------------------------
 
 class TestRequireAuthRefreshFlow:
-    def test_expired_token_triggers_refresh_and_updates_session(
-        self, rsa_keys, expired_token, valid_token
-    ):
+    def test_expired_token_triggers_refresh_and_updates_session(self):
         """
         When the session has an expired access_token plus a refresh_token,
         @require_auth must call refresh_jwt and update the session with the
         new access token.
         """
-        import jwt as pyjwt
-        from flask import Flask, g, jsonify, session
+        from flask import Flask, g, jsonify
 
-        _, public_key = rsa_keys
         app = Flask(__name__)
         app.config["SECRET_KEY"] = "test-secret"
 
+        def get_user_side_effect(token):
+            if token == EXPIRED_TOKEN:
+                raise Exception("token expired")
+            if token == VALID_TOKEN:
+                response = MagicMock()
+                response.user = MagicMock()
+                response.user.id = "user-uuid-123"
+                response.user.email = "test@example.com"
+                return response
+            raise Exception("invalid jwt")
+
+        mock_client = MagicMock()
+        mock_client.auth.get_user.side_effect = get_user_side_effect
+
         with patch.dict(os.environ, {"SUPABASE_URL": "https://fake.supabase.co"}):
-            # Patch _get_jwks to return our test key
             with patch(
-                "src.modules.labeler.auth._get_jwks",
-                return_value={"test-kid": public_key},
+                "src.modules.labeler.auth.init_supabase_client",
+                return_value=mock_client,
             ):
-                # Patch refresh_jwt to return valid_token
                 with patch(
                     "src.modules.labeler.auth.refresh_jwt",
-                    return_value=(valid_token, "new-refresh-token"),
+                    return_value=(VALID_TOKEN, "new-refresh-token"),
                 ) as mock_refresh:
                     from src.modules.labeler.auth import require_auth
 
@@ -317,7 +304,7 @@ class TestRequireAuthRefreshFlow:
                     client = app.test_client()
 
                     with client.session_transaction() as sess:
-                        sess["access_token"] = expired_token
+                        sess["access_token"] = EXPIRED_TOKEN
                         sess["refresh_token"] = "old-refresh-token"
 
                     resp = client.get(
