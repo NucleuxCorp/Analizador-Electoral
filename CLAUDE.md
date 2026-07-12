@@ -18,7 +18,7 @@ python main.py download-e14c --departamento AMAZONAS --concurrent 20
 
 # Análisis y detección de fraude
 python main.py analyze-e14c --dir data/pdfs/AMAZONAS --output data/amazonas_cnn.jsonl
-python analyze_all_depts.py --max-pdfs 3000         # Análisis batch por departamento
+python scripts/analyze/analyze_all_depts.py --max-pdfs 3000         # Análisis batch por departamento
 
 # Notas de jurado
 python main.py extract-notes --dir data/pdfs/AMAZONAS --output data/amazonas_notes.jsonl
