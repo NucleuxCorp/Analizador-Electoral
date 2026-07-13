@@ -1,0 +1,7 @@
+# Archivo de ejemplo — reemplaza con tus cédulas reales como cedulas.txt
+# Una cédula por línea. Líneas vacías y comentarios (#) se ignoran.
+#
+# NUIPs ficticios para demostración (no consultar en producción sin autorización):
+1234567890
+9876543210
+1122334455
