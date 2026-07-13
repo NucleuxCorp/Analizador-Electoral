@@ -83,6 +83,7 @@ python consulta_defunciones.py --file lista.csv --delay 1.5 --resume
 [3] Reanudar consulta pendiente
 [4] Configuración (delay, workers, IP)
 [5] Ver último informe
+[6] Diagnóstico SSL (probar conexión)
 [0] Salir
 ```
 
@@ -145,6 +146,23 @@ Cada ejecución escribe `reportes/consulta.log` con:
 **El log nunca incluye números de cédula** — solo información técnica de la conexión, para que se pueda compartir sin riesgo de exponer datos personales.
 
 Si algo falla, comparte `reportes/consulta.log` para que se pueda diagnosticar.
+
+### Diagnóstico SSL (`[6]` en el menú o `--diag-ssl`)
+
+Si las consultas fallan con un error de certificado (`CERTIFICATE_VERIFY_FAILED`), corré:
+
+```bash
+python consulta_defunciones.py --diag-ssl
+```
+
+Esto se conecta al servidor sin validar el certificado, muestra el `subject`/`issuer` real que recibe esa máquina, y clasifica la causa:
+
+| Diagnóstico | Significado |
+|---|---|
+| `OK` | La verificación SSL funciona correctamente. |
+| `INTERCEPTACION_LOCAL` | El certificado está firmado por un antivirus/proxy local (Kaspersky, ESET, Fortinet, etc.) que inspecciona el tráfico HTTPS. Hay que desactivar esa inspección para este sitio. |
+| `CADENA_AUTOFIRMADA_DESCONOCIDA` | Certificado autofirmado no identificado — proxy corporativo desconocido o problema de configuración. |
+| `CADENA_INCOMPLETA_SERVIDOR` | El servidor de la Registraduría no envía la cadena completa — problema del lado del servidor, no de esta máquina. |
 
 ---
 

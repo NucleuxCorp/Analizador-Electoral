@@ -27,6 +27,7 @@ import threading
 import time
 import traceback
 import urllib.error
+import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
@@ -431,6 +432,105 @@ def consult_nuip(nuip: str, ip_value: str) -> tuple[dict[str, Any] | None, int, 
     except Exception as exc:
         logger.warning("Error inesperado consultando la API: %s: %s", type(exc).__name__, exc)
         return None, 0, f"ERROR: {exc}"
+
+
+# ---------------------------------------------------------------------------
+# SSL diagnostics
+# ---------------------------------------------------------------------------
+_AV_PROXY_KEYWORDS = (
+    "kaspersky", "eset", "avast", "avg", "mcafee", "norton", "bitdefender",
+    "fortinet", "fortigate", "zscaler", "netskope", "cisco umbrella",
+    "sonicwall", "forcepoint", "websense", "sophos", "trendmicro",
+    "trend micro", "gdata", "malwarebytes", "ssl inspection", "deep packet",
+    "content filter", "proxy", "web filter", "surfshark", "nordvpn",
+)
+
+
+def _cert_cn(cert_dict: dict[str, Any], field: str) -> str:
+    parts = cert_dict.get(field, ())
+    for rdn in parts:
+        for key, value in rdn:
+            if key == "commonName":
+                return value
+    return ""
+
+
+def diagnose_ssl(host: str, port: int) -> dict[str, Any]:
+    """Connect without verifying and inspect the certificate actually received.
+
+    Distinguishes a local TLS-interception proxy/antivirus (self-signed cert
+    issued by a recognizable security-product CA) from a genuine server-side
+    chain problem (missing intermediate, foreign root CA, etc.).
+    """
+    import socket
+
+    result: dict[str, Any] = {
+        "host": host,
+        "port": port,
+        "connected": False,
+        "verify_error": "",
+        "subject_cn": "",
+        "issuer_cn": "",
+        "self_signed": False,
+        "likely_cause": "DESCONOCIDO",
+    }
+
+    try:
+        default_ctx = ssl.create_default_context()
+        with socket.create_connection((host, port), timeout=10) as sock:
+            with default_ctx.wrap_socket(sock, server_hostname=host):
+                result["connected"] = True
+                result["verify_error"] = ""
+    except ssl.SSLCertVerificationError as exc:
+        result["verify_error"] = str(exc)
+    except Exception as exc:
+        result["verify_error"] = f"{type(exc).__name__}: {exc}"
+
+    try:
+        insecure_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        insecure_ctx.check_hostname = False
+        insecure_ctx.verify_mode = ssl.CERT_NONE
+        with socket.create_connection((host, port), timeout=10) as sock:
+            with insecure_ctx.wrap_socket(sock, server_hostname=host) as tls_sock:
+                der = tls_sock.getpeercert(binary_form=True)
+        if der:
+            pem = ssl.DER_cert_to_PEM_cert(der)
+            try:
+                cert_dict = ssl._ssl._test_decode_cert(_write_temp_pem(pem))  # type: ignore[attr-defined]
+                result["subject_cn"] = _cert_cn(cert_dict, "subject")
+                result["issuer_cn"] = _cert_cn(cert_dict, "issuer")
+                result["self_signed"] = (
+                    bool(result["subject_cn"])
+                    and result["subject_cn"] == result["issuer_cn"]
+                )
+            except Exception as exc:
+                logger.warning("No se pudo decodificar el certificado: %s", exc)
+    except Exception as exc:
+        logger.warning("Fallo obteniendo certificado sin verificar: %s: %s", type(exc).__name__, exc)
+
+    issuer_lower = result["issuer_cn"].lower()
+    if any(kw in issuer_lower for kw in _AV_PROXY_KEYWORDS):
+        result["likely_cause"] = "INTERCEPTACION_LOCAL"
+    elif result["self_signed"] or "self-signed" in result["verify_error"].lower():
+        result["likely_cause"] = "CADENA_AUTOFIRMADA_DESCONOCIDA"
+    elif "unable to get local issuer" in result["verify_error"].lower():
+        result["likely_cause"] = "CADENA_INCOMPLETA_SERVIDOR"
+    elif result["connected"]:
+        result["likely_cause"] = "OK"
+
+    logger.info(
+        "Diagnostico SSL %s:%s — subject=%s issuer=%s self_signed=%s causa=%s error=%s",
+        host, port, result["subject_cn"], result["issuer_cn"],
+        result["self_signed"], result["likely_cause"], result["verify_error"],
+    )
+    return result
+
+
+def _write_temp_pem(pem: str) -> str:
+    fd, path = tempfile.mkstemp(suffix=".pem")
+    with os.fdopen(fd, "w", encoding="ascii") as f:
+        f.write(pem)
+    return path
 
 
 # ---------------------------------------------------------------------------
@@ -1133,6 +1233,54 @@ def submenu_ver_informe() -> None:
     _pause()
 
 
+_CAUSE_MESSAGES = {
+    "INTERCEPTACION_LOCAL": (
+        "El certificado que recibe esta maquina esta firmado por un antivirus/proxy "
+        "local (inspeccion de trafico HTTPS), no por la Registraduria. Hay que "
+        "desactivar la inspeccion SSL/HTTPS de ese antivirus o proxy para este sitio, "
+        "o agregar una excepcion para defunciones.registraduria.gov.co."
+    ),
+    "CADENA_AUTOFIRMADA_DESCONOCIDA": (
+        "El servidor (o algo en el camino) esta presentando un certificado "
+        "autofirmado que no coincide con antivirus conocidos. Puede ser un proxy "
+        "corporativo no identificado, o un problema de configuracion del servidor."
+    ),
+    "CADENA_INCOMPLETA_SERVIDOR": (
+        "El servidor no esta enviando la cadena completa de certificados "
+        "(falta la CA intermedia). Es un problema del lado de la Registraduria, "
+        "no de esta maquina."
+    ),
+    "OK": "La verificacion SSL funciona correctamente en esta maquina.",
+    "DESCONOCIDO": "No se pudo determinar la causa exacta. Revisa el log completo.",
+}
+
+
+def _print_diag_ssl_report() -> None:
+    parsed = urllib.parse.urlsplit(API_URL)
+    host = parsed.hostname or ""
+    port = parsed.port or 443
+    print(f"\n  Conectando a {host}:{port} para inspeccionar el certificado...")
+    result = diagnose_ssl(host, port)
+
+    print()
+    print(f"  Conexion verificada (SSL valido): {'si' if result['connected'] else 'no'}")
+    if result["verify_error"]:
+        print(f"  Error de verificacion: {result['verify_error']}")
+    print(f"  Certificado recibido — subject: {result['subject_cn'] or '(desconocido)'}")
+    print(f"  Certificado recibido — issuer:  {result['issuer_cn'] or '(desconocido)'}")
+    print(f"  Autofirmado: {'si' if result['self_signed'] else 'no'}")
+    print()
+    print(f"  DIAGNOSTICO: {result['likely_cause']}")
+    print(f"  {_CAUSE_MESSAGES.get(result['likely_cause'], '')}")
+    print()
+    print("  Detalle guardado en reportes/consulta.log — comparte ese archivo si necesitas ayuda.")
+
+
+def submenu_diag_ssl() -> None:
+    _print_diag_ssl_report()
+    _pause()
+
+
 def menu_loop(config: BatchConfig) -> None:
     show_logo()
     while True:
@@ -1145,6 +1293,7 @@ def menu_loop(config: BatchConfig) -> None:
         print(f"  │  [3] Reanudar consulta pendiente ({ckpt}){' ' * 10}"[:52] + "│")
         print("  │  [4] Configuracion                               │")
         print("  │  [5] Ver ultimo informe                          │")
+        print("  │  [6] Diagnostico SSL (probar conexion)           │")
         print("  │  [0] Salir                                        │")
         print("  └──────────────────────────────────────────────────┘")
         print()
@@ -1169,6 +1318,9 @@ def menu_loop(config: BatchConfig) -> None:
         elif opcion == "5":
             submenu_ver_informe()
             show_logo()
+        elif opcion == "6":
+            submenu_diag_ssl()
+            show_logo()
         else:
             print("  Opcion no valida.\n")
 
@@ -1186,6 +1338,10 @@ def build_argparser() -> argparse.ArgumentParser:
     parser.add_argument("--ip", default=None, help="IP a enviar en el JSON (vacio si omitido)")
     parser.add_argument("--resume", action="store_true", help="Reanudar desde checkpoint")
     parser.add_argument("--no-menu", action="store_true", help="Omitir menu interactivo")
+    parser.add_argument(
+        "--diag-ssl", action="store_true",
+        help="Probar la conexion SSL contra la API y mostrar el certificado recibido",
+    )
     return parser
 
 
@@ -1194,6 +1350,10 @@ def main() -> None:
     config = load_config()
     parser = build_argparser()
     args = parser.parse_args()
+
+    if args.diag_ssl:
+        _print_diag_ssl_report()
+        return
 
     run_flags = any([
         args.file,
