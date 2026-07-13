@@ -1,7 +1,5 @@
 # PII — never commit real cédula lists or query results
 cedulas.txt
 cedulas.csv
-*.csv
-informe*.md
-.consulta_checkpoint.json
+reportes/
 .consulta_config.json

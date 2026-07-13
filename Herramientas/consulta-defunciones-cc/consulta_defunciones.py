@@ -65,6 +65,13 @@ RESULTADOS_FILENAME = "resultados.csv"
 FALLECIDOS_FILENAME = "fallecidos.csv"
 REPORT_FILENAME = "informe.md"
 DEFAULT_INPUT = "cedulas.txt"
+REPORTS_DIRNAME = "reportes"
+
+
+def reports_dir() -> Path:
+    path = SCRIPT_DIR / REPORTS_DIRNAME
+    path.mkdir(exist_ok=True)
+    return path
 
 NUIP_MIN_LEN = 6
 NUIP_MAX_LEN = 10
@@ -514,10 +521,10 @@ def write_informe(
 ) -> Path:
     now = datetime.now()
     ts = now.strftime("%Y-%m-%d_%H-%M")
-    report_path = SCRIPT_DIR / REPORT_FILENAME
-    timestamped_path = SCRIPT_DIR / f"informe_{ts}.md"
+    report_path = reports_dir() / REPORT_FILENAME
+    timestamped_path = reports_dir() / f"informe_{ts}.md"
 
-    resultados_path = SCRIPT_DIR / RESULTADOS_FILENAME
+    resultados_path = reports_dir() / RESULTADOS_FILENAME
     rows = read_results_csv(resultados_path)
     counts = _count_by_class(rows)
     total = len(rows)
@@ -639,7 +646,7 @@ def sha256_file(path: Path) -> str:
 
 
 def load_checkpoint(input_path: Path) -> dict[str, Any] | None:
-    path = SCRIPT_DIR / CHECKPOINT_FILENAME
+    path = reports_dir() / CHECKPOINT_FILENAME
     if not path.exists():
         return None
     try:
@@ -665,7 +672,8 @@ def save_checkpoint(
     invalid: set[str],
     total: int,
 ) -> None:
-    path = SCRIPT_DIR / CHECKPOINT_FILENAME
+    dir_path = reports_dir()
+    path = dir_path / CHECKPOINT_FILENAME
     data = {
         "version": 1,
         "input_path": str(input_path),
@@ -676,7 +684,7 @@ def save_checkpoint(
         "invalid": sorted(invalid),
         "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }
-    fd, tmp = tempfile.mkstemp(dir=SCRIPT_DIR, suffix=".tmp")
+    fd, tmp = tempfile.mkstemp(dir=dir_path, suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
@@ -690,13 +698,13 @@ def save_checkpoint(
 
 
 def delete_checkpoint() -> None:
-    path = SCRIPT_DIR / CHECKPOINT_FILENAME
+    path = reports_dir() / CHECKPOINT_FILENAME
     if path.exists():
         path.unlink()
 
 
 def checkpoint_exists() -> bool:
-    return (SCRIPT_DIR / CHECKPOINT_FILENAME).exists()
+    return (reports_dir() / CHECKPOINT_FILENAME).exists()
 
 
 # ---------------------------------------------------------------------------
@@ -772,8 +780,8 @@ def run_batch(
     save_config(config)
 
     valid_queue, invalid_results = parse_input(input_path)
-    resultados_path = SCRIPT_DIR / RESULTADOS_FILENAME
-    fallecidos_path = SCRIPT_DIR / FALLECIDOS_FILENAME
+    resultados_path = reports_dir() / RESULTADOS_FILENAME
+    fallecidos_path = reports_dir() / FALLECIDOS_FILENAME
 
     ok_set: set[str] = set()
     err_set: set[str] = set()
@@ -997,7 +1005,7 @@ def submenu_resume(config: BatchConfig) -> None:
         _pause()
         return
     try:
-        data = json.loads((SCRIPT_DIR / CHECKPOINT_FILENAME).read_text(encoding="utf-8"))
+        data = json.loads((reports_dir() / CHECKPOINT_FILENAME).read_text(encoding="utf-8"))
         input_path = Path(data.get("input_path", DEFAULT_INPUT))
         if not input_path.is_absolute():
             input_path = SCRIPT_DIR / input_path
@@ -1077,7 +1085,7 @@ def submenu_config(config: BatchConfig) -> None:
 
 
 def submenu_ver_informe() -> None:
-    report = SCRIPT_DIR / REPORT_FILENAME
+    report = reports_dir() / REPORT_FILENAME
     if not report.exists():
         print("\n  No hay informe generado aun.")
         _pause()

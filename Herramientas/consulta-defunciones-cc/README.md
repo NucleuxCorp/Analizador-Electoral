@@ -18,7 +18,7 @@ Lee una lista de números de cédula y consulta el endpoint **VigenciaCédula** 
 | **ERROR** | Fallo de red o HTTP |
 | **DESCONOCIDO** | Respuesta no reconocida |
 
-Al finalizar genera:
+Al finalizar genera, dentro de `reportes/`:
 
 - `resultados.csv` — todas las consultas
 - `fallecidos.csv` — solo filas con clasificación **FALLECIDO**
@@ -104,7 +104,12 @@ consulta-defunciones-cc/
 ├── README.md                  <- Este archivo
 ├── requirements.txt           <- tqdm
 ├── cedulas.txt.example        <- Ejemplo de entrada
-└── cedulas.txt                <- Tu lista (no incluir en git)
+├── cedulas.txt                <- Tu lista (no incluir en git)
+└── reportes/                  <- Salidas generadas (no incluir en git)
+    ├── resultados.csv
+    ├── fallecidos.csv
+    ├── informe.md
+    └── .consulta_checkpoint.json
 ```
 
 ---
