@@ -23,6 +23,7 @@ Al finalizar genera, dentro de `reportes/`:
 - `resultados.csv` — todas las consultas
 - `fallecidos.csv` — solo filas con clasificación **FALLECIDO**
 - `informe.md` + `informe_YYYY-MM-DD_HH-mm.md`
+- `consulta.log` — registro técnico de la ejecución (ver [Diagnóstico de errores](#diagnóstico-de-errores))
 
 ---
 
@@ -109,6 +110,7 @@ consulta-defunciones-cc/
     ├── resultados.csv
     ├── fallecidos.csv
     ├── informe.md
+    ├── consulta.log
     └── .consulta_checkpoint.json
 ```
 
@@ -129,6 +131,20 @@ Tras 3 fallos consecutivos de red, la herramienta pausa 60 segundos (cooldown).
 ## Checkpoint y reanudación
 
 Si interrumpes con Ctrl+C o quedan errores pendientes, se guarda `.consulta_checkpoint.json`. Usa `[3] Reanudar` para continuar sin duplicar filas en el CSV.
+
+---
+
+## Diagnóstico de errores
+
+Cada ejecución escribe `reportes/consulta.log` con:
+
+- Versión de la herramienta, versión de Python y sistema operativo al iniciar.
+- Cada fallo de red/SSL/HTTP durante las consultas (tipo de excepción y mensaje).
+- El traceback completo si la herramienta se cae de forma inesperada.
+
+**El log nunca incluye números de cédula** — solo información técnica de la conexión, para que se pueda compartir sin riesgo de exponer datos personales.
+
+Si algo falla, comparte `reportes/consulta.log` para que se pueda diagnosticar.
 
 ---
 

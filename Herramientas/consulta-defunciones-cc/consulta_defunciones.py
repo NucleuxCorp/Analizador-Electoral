@@ -16,13 +16,16 @@ import argparse
 import csv
 import hashlib
 import json
+import logging
 import os
+import platform
 import signal
 import ssl
 import sys
 import tempfile
 import threading
 import time
+import traceback
 import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -66,12 +69,35 @@ FALLECIDOS_FILENAME = "fallecidos.csv"
 REPORT_FILENAME = "informe.md"
 DEFAULT_INPUT = "cedulas.txt"
 REPORTS_DIRNAME = "reportes"
+LOG_FILENAME = "consulta.log"
+
+logger = logging.getLogger("consulta_defunciones")
 
 
 def reports_dir() -> Path:
     path = SCRIPT_DIR / REPORTS_DIRNAME
     path.mkdir(exist_ok=True)
     return path
+
+
+def setup_logging() -> Path:
+    """Log to reportes/consulta.log so failures can be diagnosed from a shareable file.
+
+    Intentionally excludes NUIPs from log messages (only exception types/messages
+    and HTTP/network metadata) since this file is meant to be shared for support.
+    """
+    log_path = reports_dir() / LOG_FILENAME
+    handler = logging.FileHandler(log_path, encoding="utf-8")
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    logger.setLevel(logging.DEBUG)
+    logger.addHandler(handler)
+    logger.info(
+        "Inicio de sesion — version=%s python=%s so=%s",
+        VERSION,
+        sys.version.split()[0],
+        platform.platform(),
+    )
+    return log_path
 
 NUIP_MIN_LEN = 6
 NUIP_MAX_LEN = 10
@@ -392,12 +418,18 @@ def consult_nuip(nuip: str, ip_value: str) -> tuple[dict[str, Any] | None, int, 
             body = exc.read().decode("utf-8", errors="replace")[:200]
         except Exception:
             pass
+        logger.warning("HTTP_%s en consulta a la API%s", exc.code, f": {body}" if body else "")
         return None, exc.code, f"HTTP_{exc.code}" + (f": {body}" if body else "")
     except urllib.error.URLError as exc:
+        logger.warning(
+            "Fallo de red/SSL: %s: %s", type(exc.reason).__name__, exc.reason
+        )
         return None, 0, f"NETWORK: {exc.reason}"
     except TimeoutError:
+        logger.warning("Timeout consultando la API (%ss)", HTTP_TIMEOUT)
         return None, 0, "TIMEOUT"
     except Exception as exc:
+        logger.warning("Error inesperado consultando la API: %s: %s", type(exc).__name__, exc)
         return None, 0, f"ERROR: {exc}"
 
 
@@ -1158,6 +1190,7 @@ def build_argparser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    setup_logging()
     config = load_config()
     parser = build_argparser()
     args = parser.parse_args()
@@ -1196,4 +1229,16 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        raise
+    except Exception:
+        logger.error("Fallo no controlado:\n%s", traceback.format_exc())
+        log_path = reports_dir() / LOG_FILENAME
+        print(
+            f"\n  ERROR INESPERADO. Se guardo el detalle en: {log_path}\n"
+            "  Comparti ese archivo para poder diagnosticar el problema.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
