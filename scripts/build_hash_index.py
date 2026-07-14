@@ -32,6 +32,15 @@ except ImportError:
     sys.exit(1)
 
 # ---------------------------------------------------------------------------
+# Canonical dept/mpio/zona/puesto + URL derivation (folder as source of
+# truth — see openspec/changes/e14c-url-builder-folder-source-of-truth).
+# ---------------------------------------------------------------------------
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+from src.modules.analyzer.e14c_paths import build_e14c_url, parse_e14c_location
+
+# ---------------------------------------------------------------------------
 # Server base URL — same as verify_e14c.py
 # ---------------------------------------------------------------------------
 BASE = "https://escrutinios2vueltapresidente2026.registraduria.gov.co"
@@ -40,21 +49,6 @@ BASE = "https://escrutinios2vueltapresidente2026.registraduria.gov.co"
 # Rate limiting — copied verbatim from verify_e14c.py
 # ---------------------------------------------------------------------------
 _RATE = {"delay": 1.0, "cooldown": 60, "consecutive_fails": 0}
-
-
-# ---------------------------------------------------------------------------
-# URL reconstruction — adapted from verify_e14c.py::build_url()
-# Accepts a bare filename string instead of a Path object.
-# ---------------------------------------------------------------------------
-def build_url(filename: str) -> str | None:
-    """Reconstruct the Registraduria CDN URL from a bare PDF filename."""
-    stem = Path(filename).stem
-    parts = stem.split("_", 5)
-    if len(parts) > 5 and parts[4] == "E14":
-        dept, mpio, zona, puesto = parts[0], parts[1], parts[2], parts[3]
-        url_fn = "_".join(parts[4:]) + ".pdf"
-        return f"{BASE}/docs/E14/{dept}/{mpio}/{zona}/{puesto}/{url_fn}"
-    return None
 
 
 # ---------------------------------------------------------------------------
@@ -177,6 +171,7 @@ def load_build_progress(progress_path: Path) -> dict:
     return {
         "by_hash": {},
         "by_filename": {},
+        "by_location": {},
         "known_dif": {},
         "processed_ok": [],
         "processed_dif": [],
@@ -194,16 +189,27 @@ def save_build_progress(progress_path: Path, progress: dict) -> None:
 # ---------------------------------------------------------------------------
 # Worker callable for ThreadPoolExecutor
 # ---------------------------------------------------------------------------
-def _download_one(filename: str) -> tuple[str, str | None, int]:
-    """Returns (filename, sha256_hex_or_None, size)."""
-    url = build_url(filename)
+def _download_one(path_str: str) -> tuple[str, str | None, int, str | None]:
+    """Returns (filename, sha256_hex_or_None, size, location_or_None).
+
+    `path_str` is the FULL checkpoint path (not a bare filename) — the
+    only place in this script where the folder structure
+    (`{DEPT}/{MPIO}/zona_XX/puesto_XX/`) is available. `location` is
+    `"dept/mpio/zona/puesto"` derived via `parse_e14c_location` (folder
+    as source of truth), or `None` when the path lacks that structure.
+    """
+    pdf_path = Path(path_str)
+    filename = pdf_path.name
+    url = build_e14c_url(BASE, pdf_path)
+    location = parse_e14c_location(pdf_path)
+    location_str = "/".join(location) if location else None
     if not url:
-        return filename, None, 0
+        return filename, None, 0, location_str
     result = hash_remote(url)
     if result is None:
-        return filename, None, 0
+        return filename, None, 0, location_str
     sha256, size = result
-    return filename, sha256, size
+    return filename, sha256, size, location_str
 
 
 # ---------------------------------------------------------------------------
@@ -251,15 +257,17 @@ def main() -> None:
 
     by_hash: dict[str, str] = progress["by_hash"]
     by_filename: dict[str, str] = progress["by_filename"]
+    by_location: dict[str, str] = progress.setdefault("by_location", {})
     known_dif: dict[str, dict] = progress["known_dif"]
     errors: list[dict] = progress["errors"]
 
-    # --- Build list of filenames to process ------------------------------------
+    # --- Build list of paths to process (full paths, not bare filenames — ----
+    # --- folders are the only source of truth for zona/puesto) -----------------
     pending_ok: list[str] = []
     for p in ok_paths:
         fn = Path(p).name
         if fn not in already_processed:
-            pending_ok.append(fn)
+            pending_ok.append(p)
 
     print(
         f"Pending downloads: {len(pending_ok)} "
@@ -272,14 +280,16 @@ def main() -> None:
     completed_count = 0
 
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
-        futures = {pool.submit(_download_one, fn): fn for fn in pending_ok}
+        futures = {pool.submit(_download_one, p): p for p in pending_ok}
         with tqdm(total=len(pending_ok), desc="Downloading & hashing", unit="PDF") as pbar:
             for future in as_completed(futures):
-                filename, sha256, _size = future.result()
+                filename, sha256, _size, location_str = future.result()
                 if sha256 is not None:
                     by_hash[sha256] = filename
                     by_filename[filename] = sha256
                     progress["processed_ok"].append(filename)
+                    if location_str:
+                        by_location[filename] = location_str
                 else:
                     errors.append({"filename": filename, "error": "download_failed"})
                     print(f"\n  WARN: failed to hash {filename}", flush=True)
@@ -290,44 +300,52 @@ def main() -> None:
                 if completed_count % save_every == 0:
                     progress["by_hash"] = by_hash
                     progress["by_filename"] = by_filename
+                    progress["by_location"] = by_location
                     progress["errors"] = errors
                     save_build_progress(progress_path, progress)
 
     # Save after OK phase
     progress["by_hash"] = by_hash
     progress["by_filename"] = by_filename
+    progress["by_location"] = by_location
     progress["errors"] = errors
     save_build_progress(progress_path, progress)
 
     # --- DIF processing --------------------------------------------------------
     print(f"\nProcessing {len(dif_paths)} known DIF files...", flush=True)
     for dif_path_str in dif_paths:
-        dif_path = Path(dif_path_str)
-        filename = dif_path.name
+        # Full checkpoint path — the folder-derived source of truth for
+        # zona/puesto and for URL construction (ADR-2).
+        checkpoint_path = Path(dif_path_str)
+        filename = checkpoint_path.name
 
         if filename in already_dif:
             print(f"  SKIP (already done): {filename}", flush=True)
             continue
 
-        # Override base dir if requested
-        if args.dif_dir:
-            dif_path = Path(args.dif_dir) / filename
+        # Local disk path may be overridden by --dif-dir; the checkpoint
+        # path (folder structure) is still used for URL/location.
+        local_path = Path(args.dif_dir) / filename if args.dif_dir else checkpoint_path
 
-        if not dif_path.exists():
+        if not local_path.exists():
             print(
-                f"ERROR: Local DIF file not found: {dif_path}\n"
+                f"ERROR: Local DIF file not found: {local_path}\n"
                 f"  The 30 DIF files must be accessible at build time.\n"
                 f"  Mount the drive or use --dif-dir to point to their location.",
                 file=sys.stderr,
             )
             sys.exit(1)
 
-        local_sha = hash_local(dif_path)
+        local_sha = hash_local(local_path)
 
-        url = build_url(filename)
+        url = build_e14c_url(BASE, checkpoint_path)
         if not url:
             print(f"  WARN: Could not build URL for DIF file {filename}", flush=True)
             continue
+
+        location = parse_e14c_location(checkpoint_path)
+        if location:
+            by_location[filename] = "/".join(location)
 
         result = hash_remote(url)
         if result is None:
@@ -342,6 +360,7 @@ def main() -> None:
             "note": "Acta con contenido modificado confirmado por comparacion visual",
         }
         progress["known_dif"] = known_dif
+        progress["by_location"] = by_location
         progress["processed_dif"].append(filename)
         save_build_progress(progress_path, progress)
         print(
@@ -361,6 +380,7 @@ def main() -> None:
         ),
         "by_hash": by_hash,
         "by_filename": by_filename,
+        "by_location": by_location,
         "known_dif": known_dif,
     }
 
@@ -374,6 +394,7 @@ def main() -> None:
     print(f"\nIndex written: {output_path}")
     print(f"  Entries: {index['entries_count']}")
     print(f"  Known DIF: {index['known_dif_count']}")
+    print(f"  by_location entries: {len(by_location)}")
     print(f"  Errors:  {len(errors)}")
 
     if errors:
