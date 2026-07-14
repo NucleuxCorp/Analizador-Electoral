@@ -1,0 +1,35 @@
+﻿# Cursor — exclude from indexing and SCM noise (mirrors .gitignore + large trees)
+# Reload window after editing: Ctrl+Shift+P → Developer: Reload Window
+
+node_modules/
+debug_sv/
+debug/
+openspec/
+specs/
+Herramientas/
+Laboratorio/
+PDFs-V2/
+Segunda Vuelta/
+crops/
+agent-tools/
+mcps/
+terminals/
+sdd/
+.atl/
+data/
+models/
+docs/*
+!docs/metodologia.md
+!docs/hallazgos_analiticos.md
+Docs/*
+!Docs/metodologia.md
+!Docs/hallazgos_analiticos.md
+.venv/
+venv/
+__pycache__/
+.pytest_cache/
+*.log
+debug_*.py
+debug_*.png
+extract_sv_*.py
+download_*.py
