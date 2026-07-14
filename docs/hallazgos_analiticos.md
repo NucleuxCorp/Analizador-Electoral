@@ -5,6 +5,10 @@ Cada entrada es un hallazgo emergido en sesión de análisis, capturado en el mo
 
 > Este archivo es complementario a `docs/metodologia.md`. La metodología documenta
 > el proceso; este log documenta lo que el proceso encuentra.
+>
+> **Sincronización (2026-07-14):** El estado canónico de distribución de mesas
+> ([6]) se refleja en `docs/metodologia.md` §4.4 y §8. Las tablas completas viven
+> aquí; la metodología enlaza [1]–[6] sin duplicarlas.
 
 ---
 
@@ -28,13 +32,41 @@ Cada entrada es un hallazgo emergido en sesión de análisis, capturado en el mo
 
 **Preguntas abiertas:** Pipeline de re-OCR con EasyOCR sobre celda conflictiva para reducir el volumen de `needs_review_large_delta`. Análisis geográfico de la tasa por departamento para detectar concentraciones anómalas.
 
+> **Supersedido por [6]** (2026-07-11) — dataset parcial pre-repair. La metodología §4.4 ya no replica esta tabla; ver [6] como canónico.
+
 ---
 
-### [2] Resultados en mesas limpias (E14C, sin revisión humana) — 2026-07-05
+### [2] Resultados en mesas limpias (E14C, sin revisión humana) — 2026-07-05 / actualizado 2026-07-14
 
-**Qué:** Votos de C1 y C2 en las 10,579 mesas que pasaron todos los filtros del pipeline.
+**Qué (canónico post-repair):** Agregación de votos E14C sobre mesas `clean` con **lectura completa y aritmética verificada** — subconjunto estricto de las 9,424 mesas exportadas a `data/clean_mesas.csv` (re-export 2026-07-14).
 
-| Campo | Votos | % sobre votos válidos |
+| Capa | Mesas | % universo (122,019) |
+|---|---|---|
+| `clean` (`compute_overall_status`) | 9,424 | 7.7% |
+| + E14C `aritmetica.delta == 0` | 1,371 | 1.1% |
+| + todos los campos de voto legibles + `suma == URNA` | **803** | **0.66%** |
+
+| Campo | Votos (803 mesas) | % sobre total suma |
+|---|---|---|
+| C1 Cepeda | 89,257 | 50.41% |
+| C2 Abelardo | 82,803 | 46.77% |
+| Blanco | 3,030 | 1.71% |
+| Nulos | 1,693 | 0.96% |
+| No marcados | 263 | 0.15% |
+| **Total suma** | **177,046** | — |
+| VOTANTES (E14C) | 178,805 | — |
+| URNA (E14C) | 177,046 | — |
+
+**Contexto:** `scripts/export_clean_mesas.py` (2026-07-14) + agregación manual sobre `data/cross_mesa_validation_*.jsonl`. Fuente E14C, `sources.e14c.fields` vía `derive_scalar()`. Filtro estricto: solo mesas donde los 5 campos de voto y URNA son enteros y la suma recalculada iguala URNA.
+
+**Interpretación:** La muestra **no es representativa** del universo electoral. Tras el repair [6], solo **803 de 9,424** mesas `clean` tienen lectura E14C completa con aritmética verificada — el resto queda `clean` por ausencia de flags (sin `cross_discrepancy`, sin deltas computables), no por OCR perfecto. En este subconjunto estricto C1 supera a C2 (50.4% vs 46.8%), distinto del snapshot pre-repair (ver histórico abajo). Sirve como línea base de comparación, no como proyección electoral.
+
+**Nota:** 14 mesas en el subconjunto estricto tienen URNA > VOTANTES (exceso agregado neto: VOTANTES supera URNA en 1,759 votos a nivel nacional en estas 803 mesas). El umbral `FRAUD_MAX_DIFF=30` opera por mesa individual, no por agregado.
+
+<details>
+<summary>Histórico pre-repair (2026-07-05, 10,579 mesas `clean` — metodología menos explícita)</summary>
+
+| Campo | Votos | % |
 |---|---|---|
 | C1 Cepeda | 170,116 | 44.81% |
 | C2 Abelardo | 198,973 | 52.41% |
@@ -42,16 +74,11 @@ Cada entrada es un hallazgo emergido en sesión de análisis, capturado en el mo
 | Nulos | 3,003 | 0.79% |
 | No marcados | 338 | 0.09% |
 | **Total suma** | **379,679** | — |
-| Votantes habilitados | 375,072 | — |
-| Total urna | 379,679 | — |
 
-**Contexto:** Fuente E14C, `sources.e14c.fields`. Universo total: 26.34 millones de votantes. Esta muestra representa **1.44%** del total nacional.
+Dataset parcial pre-repair [1]. C2 lideraba en ese snapshot; el subconjunto estricto post-repair no reproduce ese orden.
+</details>
 
-**Interpretación:** La muestra NO es representativa del universo electoral — es un subconjunto sesgado hacia mesas donde el OCR funcionó perfectamente y las tres fuentes coincidieron. Cualquier irregularidad empuja una mesa fuera de `clean`, por lo que este subconjunto está sesgado hacia resultados no manipulados. Sirve como línea base de comparación, no como proyección electoral.
-
-**Nota:** Total urna (379,679) supera votantes habilitados (375,072) en 4,607. Mesas con exceso ≤ 30 pasan el filtro como `clean` — el check `VOTOS_EXCEDEN_VOTANTES` solo escala a `needs_review_large_delta` cuando el exceso > 30.
-
-**Preguntas abiertas:** Comparar porcentajes de esta muestra limpia contra los resultados de las 115,691 mesas totales para detectar si el sesgo de selección introduce diferencias significativas.
+**Preguntas abiertas:** Comparar porcentajes del subconjunto estricto (803) contra agregado nacional en las 122,019 mesas. ¿Cuántas de las 8,621 mesas `clean` sin delta E14C computable se reclasificarían con re-OCR?
 
 ---
 
@@ -128,5 +155,26 @@ Desglose por combinación (mesas con C1+C2 > 0 — omisión real del jurado):
 **Interpretación:** E14C tiene 22% de mesas con al menos un campo de totales vacío vs 5-6% en E14D y E14T (brecha 3.5-4×). La copia oficial es paradójicamente la más incompleta. SUMA_TOTAL es el más omitido en las tres fuentes — el jurado lo considera redundante. "Los 3 en 0" es 29× más frecuente en E14C que en E14D. No implica fraude — refleja comportamiento diferencial del jurado al llenar la copia oficial vs. las copias de delegados y testigos.
 
 **Preguntas abiertas:** ¿El patrón varía por departamento? ¿Las mesas con campos vacíos en E14C coinciden con mesas en `needs_review_large_delta`? ¿La omisión de SUMA_TOTAL afecta la validación aritmética cross-fuente?
+
+---
+
+### [6] Distribución post-repair — 122,019 mesas, dataset completo — 2026-07-11
+
+**Qué:** Estado de cross-validación sobre el universo completo de 122,019 mesas tras reparar 60,427 bloques `aritmetica.e14c` corruptos (49.5% del dataset). Upload confirmado a Supabase: processed=122,019, upserted=122,019, errors=0.
+
+| Estado | Pre-repair | Post-repair | Δ |
+|---|---|---|---|
+| `needs_review_large_delta` | 89,003 | **74,963** | −14,040 (−15.8%) |
+| `discrepancy` | 22,044 | **32,602** | +10,558 (+47.9%) |
+| `clean` | 6,991 | **9,424** | +2,433 (+34.8%) |
+| `warning` | 1,873 | **2,648** | +775 (+41.4%) |
+| `known_anomaly` | 2,108 | **2,382** | +274 (+13.0%) |
+| **Total** | **122,019** | **122,019** | — |
+
+**Contexto:** `debug_sv/repair_stale_aritmetica.py` sobre `data/cross_mesa_validation_*.jsonl` (34 archivos). El bug: `scripts/reanalyze_e14c_blanks.py` actualizó los digit arrays en `sources.e14c.fields` pero no recomputó `aritmetica.e14c`, dejando valores pre-fix en 60,427 mesas. Reparación: recomputar `check_arithmetic()` con los scalars correctos usando gate `isinstance(scalar, int)`.
+
+**Interpretación:** El movimiento más significativo es la caída de `needs_review_large_delta` (−14,040) y el aumento de `discrepancy` (+10,558). Mesas que el pipeline marcaba como "delta grande" cuando en realidad tenían campos parcialmente ilegibles ahora se reclasifican correctamente como `discrepancy` (campos ilegibles sin aritmética computable). Las 9,424 mesas `clean` representan **7.7% del universo** — línea base confiable para análisis electorales.
+
+**Nota:** Hallazgo [1] (2026-07-05) reportó 115,691 mesas con distribución diferente — era un dataset parcial pre-repair. Este hallazgo [6] es el **estado canónico** — reflejado en `docs/metodologia.md` §4.4 y §8 (sincronizado 2026-07-14).
 
 ---
