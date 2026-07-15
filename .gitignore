@@ -2,15 +2,53 @@
 .env
 .env.*
 
-# Local-only directories
+# ---------------------------------------------------------------------------
+# Local-only directories (whole trees)
+# ---------------------------------------------------------------------------
 debug_sv/
 debug/
-docs/
 openspec/
 specs/
 Herramientas/
+Laboratorio/
+PDFs-V2/
+Segunda Vuelta/
+crops/
+agent-tools/
+mcps/
+terminals/
+sdd/
+skills/
+node_modules/
 
-# Local-only scripts (root)
+# Misc local notes
+CONTEXTO_HANDOFF.md
+--single
+
+# Docs — local only on production (portal does not need them at runtime)
+docs/
+
+# ---------------------------------------------------------------------------
+# Data — generated pipeline outputs (allowlist: small indexes only)
+# ---------------------------------------------------------------------------
+data/**
+!data/.gitkeep
+!data/departamentos.json
+!data/divipole.json
+!data/e14c_index.json
+!data/urls/
+data/urls/**
+!data/urls/.gitkeep
+
+# ---------------------------------------------------------------------------
+# Models (large binary weights + training artifacts)
+# ---------------------------------------------------------------------------
+models/**
+!models/.gitkeep
+
+# ---------------------------------------------------------------------------
+# Local-only / scratch scripts (repo root)
+# ---------------------------------------------------------------------------
 analyze_all_depts.py
 compare_models.py
 diagnostic_roles.py
@@ -23,13 +61,56 @@ split_dataset.py
 summarize_suspicious.py
 train_digit_classifier.py
 train_dual_finetune.py
+build_url_index.py
+
+debug_*.py
+debug_*.png
+extract_sv_*.py
+extract_e14c_sv.py
+download_*.py
+download_*.log
+download_*.js
+explore_all_depts.py
+merge_*.py
+descargar_nuevos_e14c.py
+fetch_dif_server_copies.py
+fix_atlantico_paths.py
+generar_hash_index.py
+playwright_capture_pdf.py
+restaurar_desde_servidor.py
+run_fetch_*.py
+show_*.py
+test_calib.py
+test_fail.py
+test_pdf_url.py
+test_transmission.py
+validar_recuperados.py
+verify_e14c.py
+version_2.py
+patch_concordancias.py
+final_marks.py
+fb_auto_join.js
+gen-pdf-simple.mjs
+oval_fix_diff.txt
+
+# Logs / progress at repo root
+*.log
+hash_index_build_progress.json
+network_log.json
+
+# Node (portal experiments)
+package.json
+package-lock.json
 
 # Local monitor/util scripts
 monitor-*.ps1
 validate-*.ps1
 *.ps1
 
-# Local-only scripts (scripts/)
+# ---------------------------------------------------------------------------
+# Scripts — local-only / lab / upload prep (not Railway runtime)
+# ---------------------------------------------------------------------------
+scripts/archive/
 scripts/archive_primera_vuelta.py
 scripts/audit_cloud_to_local.py
 scripts/backfill_*.py
@@ -41,33 +122,29 @@ scripts/migrate_to_supabase.py
 scripts/upload_full_cells.py
 scripts/verify_full_cells_uploaded.py
 scripts/add_reports_tables.sql
+scripts/analizar_e14d_500.py
+scripts/scan_e14d_500.py
+scripts/spike_e14t_compat.py
+scripts/build_visual_lab.py
+scripts/calibrar_e14d.py
+scripts/analyze_blank_fields.py
+scripts/analyze_pending_depts.py
+scripts/build_gallery.py
+scripts/build_gallery_compatible.py
+scripts/gallery_alert_compat.py
+scripts/lab_e14_conflictivas.py
+scripts/prepare_gallery.py
+scripts/package_transversal_mesas.py
+scripts/upload_transversal_mesas.py
+scripts/download_resoluciones_jurados.py
 
-# Data — PDFs, crops, raw data (too large / private)
-data/pdfs/
-data/labels/
-data/labels_v2/
-data/analysis_segunda_vuelta/
-data/e14c_urls.jsonl
-data/e14c_sv_urls.jsonl
-data/e14c_failed.jsonl
-data/e14c_progress.json
-data/*_cnn.jsonl
-data/suspicious_summary.jsonl
-data/review_summary.jsonl
-data/fraud_report.json
-data/revalidation.jsonl
-data/urls/checkpoint.db
-data/urls/e14_urls.jsonl
+# Source backups
+src/**/*.bak_*
+src/**/*.bak
 
-# Keep data dir tracked but not contents
-!data/.gitkeep
-!data/urls/.gitkeep
-
-# Models (large binary weights)
-models/*.pth
-models/training_report.json
-
+# ---------------------------------------------------------------------------
 # Python
+# ---------------------------------------------------------------------------
 __pycache__/
 *.py[cod]
 *.pyo
@@ -87,10 +164,6 @@ build/
 # OS
 .DS_Store
 Thumbs.db
-
-# Debug / calibration images
-data/*.png
-data/*.bak
 
 # Internal tool cache
 .atl/
