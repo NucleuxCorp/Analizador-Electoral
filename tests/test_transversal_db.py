@@ -47,6 +47,7 @@ class TestUpsertTransversalDecision:
     def test_upsert_round_trip_shape(self):
         from src.modules.labeler import db
 
+        window_chain = _make_chain([])
         upsert_chain = _make_chain([])
         select_chain = _make_chain([
             {
@@ -57,7 +58,7 @@ class TestUpsertTransversalDecision:
             },
         ])
         client = MagicMock()
-        client.table.side_effect = [upsert_chain, select_chain]
+        client.table.side_effect = [window_chain, upsert_chain, select_chain]
 
         with patch("src.modules.labeler.db._client", return_value=client):
             ok = db.upsert_transversal_decision(
@@ -76,6 +77,51 @@ class TestUpsertTransversalDecision:
                 "mk", "INVALID", "e14c", "accepted", "uid",
             ) is False
             mock_client.assert_not_called()
+
+
+class TestTransversalDecisionEditWindow:
+    def test_edit_window_open_without_decisions(self):
+        from src.modules.labeler import db
+
+        chain = _make_chain([])
+        with patch("src.modules.labeler.db._client", return_value=_make_client(chain)):
+            window = db.get_transversal_decision_edit_window("01_001_026_08_011")
+        assert window["editable"] is True
+        assert window["decision_count"] == 0
+        assert window["first_decision_at"] is None
+
+    def test_reopen_blocked_after_window(self):
+        from datetime import datetime, timedelta, timezone
+        from src.modules.labeler import db
+
+        old = (datetime.now(timezone.utc) - timedelta(hours=4)).isoformat()
+        chain = _make_chain([{"created_at": old}])
+        client = MagicMock()
+        client.table.return_value = chain
+        with patch("src.modules.labeler.db._client", return_value=client):
+            window = db.get_transversal_decision_edit_window("01_001_026_08_011")
+            ok, err = db.reopen_transversal_decisions("01_001_026_08_011")
+        assert window["editable"] is False
+        assert ok is False
+        assert err == "edit_window_expired"
+
+    def test_reopen_deletes_within_window(self):
+        from datetime import datetime, timedelta, timezone
+        from src.modules.labeler import db
+
+        recent = (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat()
+        select_chain = _make_chain([{"created_at": recent}])
+        delete_chain = MagicMock()
+        delete_chain.delete.return_value = delete_chain
+        delete_chain.eq.return_value = delete_chain
+        delete_chain.execute.return_value = MagicMock(data=[])
+        client = MagicMock()
+        client.table.side_effect = [select_chain, delete_chain]
+        with patch("src.modules.labeler.db._client", return_value=client):
+            ok, err = db.reopen_transversal_decisions("01_001_026_08_011")
+        assert ok is True
+        assert err is None
+        delete_chain.delete.assert_called_once()
 
 
 class TestExportTransversalDecisions:

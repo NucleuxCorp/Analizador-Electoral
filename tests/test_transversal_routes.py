@@ -102,3 +102,28 @@ class TestTransversalRoutesAuth:
         assert resp.status_code == 200
         assert resp.get_json()["ok"] is True
         mock_upsert.assert_called_once()
+
+    def test_moderator_reopen_decisions(self, client):
+        with patch("src.modules.labeler.auth.decode_jwt", return_value={"sub": "mod-user"}), \
+             patch("src.modules.labeler.auth._get_user_role", return_value="moderator"), \
+             patch("src.modules.labeler.db.reopen_transversal_decisions", return_value=(True, None)) as mock_reopen:
+            resp = client.post(
+                "/api/transversal/decisions/reopen",
+                data=json.dumps({"mesa_key": "01_001_026_08_011"}),
+                content_type="application/json",
+            )
+        assert resp.status_code == 200
+        assert resp.get_json()["ok"] is True
+        mock_reopen.assert_called_once_with("01_001_026_08_011")
+
+    def test_reopen_expired_returns_403(self, client):
+        with patch("src.modules.labeler.auth.decode_jwt", return_value={"sub": "mod-user"}), \
+             patch("src.modules.labeler.auth._get_user_role", return_value="moderator"), \
+             patch("src.modules.labeler.db.reopen_transversal_decisions", return_value=(False, "edit_window_expired")):
+            resp = client.post(
+                "/api/transversal/decisions/reopen",
+                data=json.dumps({"mesa_key": "01_001_026_08_011"}),
+                content_type="application/json",
+            )
+        assert resp.status_code == 403
+        assert resp.get_json()["error"] == "edit_window_expired"

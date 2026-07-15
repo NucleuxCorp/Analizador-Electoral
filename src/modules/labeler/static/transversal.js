@@ -216,11 +216,30 @@ function renderMesaMain() {
   document.getElementById('main').scrollTop = 0;
 }
 
+function decisionEditMeta() {
+  return (mesaDetail && mesaDetail.decision_edit) || {
+    editable: true,
+    editable_until: null,
+    first_decision_at: null,
+    decision_count: 0,
+  };
+}
+
+function formatEditDeadline(iso) {
+  if (!iso) return '';
+  try {
+    return new Date(iso).toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' });
+  } catch (_e) {
+    return iso;
+  }
+}
+
 function renderAlerts(mesaKey) {
   const pkg = (mesaKey && mesaDetail && mesaDetail.alerts) || { human: [], auto: [] };
   const human = pkg.human || [];
   const auto = pkg.auto || [];
   const mesaDecisions = (mesaDetail && mesaDetail.decisions) || {};
+  const editMeta = decisionEditMeta();
 
   function isPending(h) {
     const fd = mesaDecisions[h.field] || {};
@@ -253,7 +272,7 @@ function renderAlerts(mesaKey) {
     return;
   }
 
-  if (pending === 0) {
+  if (pending === 0 && human.length) {
     html += human.map((h) => {
       const fd = mesaDecisions[h.field] || {};
       return (h.sources || []).map((s) => {
@@ -267,11 +286,22 @@ function renderAlerts(mesaKey) {
         </div>`;
       }).join('');
     }).join('');
+    if (editMeta.decision_count > 0 && editMeta.editable) {
+      html += `<button type="button" class="btn-reopen" onclick="reopenMesa('${mesaKey}')">Reabrir (editar de nuevo)</button>`;
+      html += `<div class="edit-locked">Editable hasta ${formatEditDeadline(editMeta.editable_until)}</div>`;
+    } else if (editMeta.decision_count > 0) {
+      html += '<div class="edit-locked">Cerrado — pasaron más de 3 h desde la primera decisión.</div>';
+    }
     body.innerHTML = html;
     return;
   }
 
   html += `<div class="alert-section-label human">Revisión humana (${human.length} campo(s))</div>`;
+  if (!editMeta.editable && editMeta.decision_count > 0) {
+    html += '<div class="edit-locked">Ventana de edición cerrada (3 h). No puedes guardar más cambios.</div>';
+  } else if (editMeta.editable_until) {
+    html += `<div class="edit-locked">Editable hasta ${formatEditDeadline(editMeta.editable_until)}</div>`;
+  }
   html += human.map((h) => {
     const fd = mesaDecisions[h.field] || {};
     const srcRows = (h.sources || []).map((s) => {
@@ -280,11 +310,12 @@ function renderAlerts(mesaKey) {
         const color = dec === 'accepted' ? '#16a34a' : '#dc2626';
         return `<div class="decided-inline" style="color:${color}">${s.label}: ${dec === 'accepted' ? 'Aceptado' : 'Rechazado'}</div>`;
       }
+      const disabled = (!editMeta.editable && editMeta.decision_count > 0) ? ' disabled' : '';
       return `<div class="alert-actions">
         <span class="alert-src-dot" style="background:${s.color}"></span>
         <span class="src-name">${s.label}</span>
-        <button type="button" class="btn-accept" onclick="saveDecision('${mesaKey}','${h.field}','${s.src}','accepted')">✓</button>
-        <button type="button" class="btn-reject" onclick="saveDecision('${mesaKey}','${h.field}','${s.src}','rejected')">✗</button>
+        <button type="button" class="btn-accept"${disabled} onclick="saveDecision('${mesaKey}','${h.field}','${s.src}','accepted')">✓</button>
+        <button type="button" class="btn-reject"${disabled} onclick="saveDecision('${mesaKey}','${h.field}','${s.src}','rejected')">✗</button>
       </div>`;
     }).join('');
     return `<div class="alert-item">
@@ -300,23 +331,77 @@ function renderAlerts(mesaKey) {
 }
 
 async function saveDecision(mesaKey, field, src, decision) {
+  const editMeta = decisionEditMeta();
+  if (!editMeta.editable && editMeta.decision_count > 0) {
+    alert('Ventana de edición cerrada (3 h desde la primera decisión).');
+    return;
+  }
   const resp = await fetch('/api/transversal/decisions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ mesa_key: mesaKey, field, source: src, decision }),
   });
   if (!resp.ok) {
-    alert('Error al guardar decisión');
+    const err = await resp.json().catch(() => ({}));
+    if (err.error === 'edit_window_expired') {
+      alert('Ventana de edición cerrada (3 h desde la primera decisión).');
+    } else {
+      alert('Error al guardar decisión');
+    }
     return;
   }
-  if (!mesaDetail.decisions) mesaDetail.decisions = {};
-  if (!mesaDetail.decisions[field]) mesaDetail.decisions[field] = {};
-  mesaDetail.decisions[field][src] = decision;
+  const refresh = await fetch(`/api/transversal/mesa/${encodeURIComponent(mesaKey)}`);
+  if (refresh.ok) {
+    const data = await refresh.json();
+    mesaDetail.decisions = data.decisions || {};
+    mesaDetail.decision_edit = data.decision_edit || decisionEditMeta();
+  } else {
+    if (!mesaDetail.decisions) mesaDetail.decisions = {};
+    if (!mesaDetail.decisions[field]) mesaDetail.decisions[field] = {};
+    mesaDetail.decisions[field][src] = decision;
+  }
 
   const item = queueItems.find((i) => i.mesa_key === mesaKey);
   if (item && mesaDetail.alerts) {
     item.decision_progress = computeProgress(mesaDetail.alerts, mesaDetail.decisions);
     item.pending_human_count = countPending(mesaDetail.alerts, mesaDetail.decisions);
+  }
+  renderAlerts(mesaKey);
+  updateStatsBar();
+  renderSidebar();
+  updateActiveNav();
+}
+
+async function reopenMesa(mesaKey) {
+  const editMeta = decisionEditMeta();
+  if (!editMeta.editable) {
+    alert('Ya no puedes reabrir esta mesa (pasaron más de 3 h).');
+    return;
+  }
+  if (!confirm('¿Borrar tus decisiones en esta mesa y volver a revisar?')) return;
+  const resp = await fetch('/api/transversal/decisions/reopen', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mesa_key: mesaKey }),
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    alert(err.error === 'edit_window_expired'
+      ? 'Ventana de edición cerrada (3 h).'
+      : 'No se pudo reabrir la mesa.');
+    return;
+  }
+  mesaDetail.decisions = {};
+  mesaDetail.decision_edit = {
+    editable: true,
+    editable_until: null,
+    first_decision_at: null,
+    decision_count: 0,
+  };
+  const item = queueItems.find((i) => i.mesa_key === mesaKey);
+  if (item && mesaDetail.alerts) {
+    item.decision_progress = computeProgress(mesaDetail.alerts, {});
+    item.pending_human_count = countPending(mesaDetail.alerts, {});
   }
   renderAlerts(mesaKey);
   updateStatsBar();
@@ -371,6 +456,7 @@ window.selectMesa = selectMesa;
 window.goPrev = goPrev;
 window.goNext = goNext;
 window.saveDecision = saveDecision;
+window.reopenMesa = reopenMesa;
 window.toggleSidebar = toggleSidebar;
 window.toggleAlertPanel = toggleAlertPanel;
 window.exportDecisions = exportDecisions;

@@ -1705,6 +1705,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 if _review_images.source_available(mesa_key, src)
             }
             decisions = _db.get_transversal_decisions(mesa_key).get(mesa_key, {})
+            edit_window = _db.get_transversal_decision_edit_window(mesa_key)
             storage_base = _review_images.storage_public_base()
             return jsonify({
                 "mesa_key": mesa_key,
@@ -1718,6 +1719,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 "alerts": alerts,
                 "pages": pages,
                 "decisions": decisions,
+                "decision_edit": edit_window,
                 "storage_base": storage_base,
                 "image_formats": list(_review_images.GALLERY_EXTS),
             })
@@ -1757,7 +1759,24 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 mesa_key, field, source, decision, g.user_id, notes=notes
             )
             if not ok:
+                window = _db.get_transversal_decision_edit_window(mesa_key)
+                if window["decision_count"] > 0 and not window["editable"]:
+                    return jsonify({"ok": False, "error": "edit_window_expired"}), 403
                 return jsonify({"ok": False, "error": "invalid_or_failed"}), 400
+            return jsonify({"ok": True})
+
+        @app.route("/api/transversal/decisions/reopen", methods=["POST"])
+        @require_auth
+        @require_role(ROLE_ADMIN, ROLE_MODERATOR)
+        def api_transversal_decisions_reopen() -> Response:
+            body = request.get_json(force=True, silent=True) or {}
+            mesa_key = body.get("mesa_key")
+            if not mesa_key:
+                return jsonify({"ok": False, "error": "missing_fields"}), 400
+            ok, err = _db.reopen_transversal_decisions(mesa_key)
+            if not ok:
+                code = 403 if err == "edit_window_expired" else 400
+                return jsonify({"ok": False, "error": err or "failed"}), code
             return jsonify({"ok": True})
 
         @app.route("/api/transversal/decisions/export")

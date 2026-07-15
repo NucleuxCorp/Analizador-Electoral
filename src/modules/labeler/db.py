@@ -1210,6 +1210,7 @@ def get_mesa_semaphore_stats(dept: str | None = None) -> dict:
 _TRANSVERSAL_FIELDS = frozenset({"VOTANTES", "URNA", "SUMA_TOTAL"})
 _TRANSVERSAL_SOURCES = frozenset({"e14c", "e14d", "e14t"})
 _TRANSVERSAL_DECISIONS = frozenset({"accepted", "rejected"})
+TRANSVERSAL_DECISION_EDIT_HOURS = 3
 
 
 def get_mesa_raw_data(mesa_key: str) -> dict | None:
@@ -1254,6 +1255,63 @@ def list_mesa_results_for_review(
         return []
 
 
+def _parse_utc_ts(value: str) -> datetime:
+    ts = value.replace("Z", "+00:00")
+    return datetime.fromisoformat(ts).astimezone(timezone.utc)
+
+
+def get_transversal_decision_edit_window(mesa_key: str) -> dict:
+    """Return edit window metadata for a mesa (3 h from first saved decision)."""
+    try:
+        rows = (
+            _client()
+            .table("transversal_review_decisions")
+            .select("created_at")
+            .eq("mesa_key", mesa_key)
+            .execute()
+            .data
+        ) or []
+    except Exception as exc:
+        logger.warning("get_transversal_decision_edit_window failed: %s", exc)
+        return {
+            "editable": True,
+            "editable_until": None,
+            "first_decision_at": None,
+            "decision_count": 0,
+        }
+    if not rows:
+        return {
+            "editable": True,
+            "editable_until": None,
+            "first_decision_at": None,
+            "decision_count": 0,
+        }
+    first = min(_parse_utc_ts(row["created_at"]) for row in rows if row.get("created_at"))
+    until = first + timedelta(hours=TRANSVERSAL_DECISION_EDIT_HOURS)
+    now = datetime.now(timezone.utc)
+    return {
+        "editable": now < until,
+        "editable_until": until.isoformat(),
+        "first_decision_at": first.isoformat(),
+        "decision_count": len(rows),
+    }
+
+
+def reopen_transversal_decisions(mesa_key: str) -> tuple[bool, str | None]:
+    """Delete all decisions for a mesa so the reviewer can decide again (within edit window)."""
+    window = get_transversal_decision_edit_window(mesa_key)
+    if window["decision_count"] == 0:
+        return False, "no_decisions"
+    if not window["editable"]:
+        return False, "edit_window_expired"
+    try:
+        _client().table("transversal_review_decisions").delete().eq("mesa_key", mesa_key).execute()
+        return True, None
+    except Exception as exc:
+        logger.warning("reopen_transversal_decisions failed: %s", exc)
+        return False, "db_error"
+
+
 def upsert_transversal_decision(
     mesa_key: str,
     field: str,
@@ -1268,6 +1326,9 @@ def upsert_transversal_decision(
     if source not in _TRANSVERSAL_SOURCES:
         return False
     if decision not in _TRANSVERSAL_DECISIONS:
+        return False
+    window = get_transversal_decision_edit_window(mesa_key)
+    if window["decision_count"] > 0 and not window["editable"]:
         return False
     try:
         row = {
