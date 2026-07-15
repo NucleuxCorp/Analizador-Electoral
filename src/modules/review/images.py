@@ -6,6 +6,8 @@ import logging
 import os
 from pathlib import Path
 
+from src.modules.review.datasets import lab_mesas_path, storage_object_prefix
+
 logger = logging.getLogger("review.images")
 
 _SOURCES = ("e14c", "e14d", "e14t")
@@ -15,6 +17,56 @@ _CROSS_INDEX_PATH = _DEFAULT_DATA_DIR / "cross_mesa_index.jsonl"
 _RENDER_DPI = 150
 
 _cross_index: dict[str, dict] | None = None
+_storage_counts_cache: dict[str, dict[str, int]] = {}
+
+
+def storage_bucket() -> str | None:
+    bucket = os.environ.get("TRANSVERSAL_STORAGE_BUCKET", "").strip()
+    return bucket or None
+
+
+def storage_public_base() -> str | None:
+    """Public CDN base including dataset prefix (E14C|D|T_conflictivas)."""
+    base_url = os.environ.get("SUPABASE_URL", "").strip().rstrip("/")
+    bucket = storage_bucket()
+    if not base_url or not bucket:
+        return None
+    prefix = storage_object_prefix()
+    return f"{base_url}/storage/v1/object/public/{bucket}/{prefix}"
+
+
+def storage_public_url(mesa_key: str, source: str, page: int) -> str | None:
+    base = storage_public_base()
+    if not base or source not in _SOURCES or page < 1:
+        return None
+    return f"{base}/{mesa_key}/{source}_p{page:02d}.jpg"
+
+
+def _storage_list_path(mesa_key: str) -> str:
+    return f"{storage_object_prefix()}/{mesa_key}"
+
+
+def _storage_page_counts(mesa_key: str) -> dict[str, int]:
+    if mesa_key in _storage_counts_cache:
+        return _storage_counts_cache[mesa_key]
+    bucket = storage_bucket()
+    if not bucket:
+        return {}
+    try:
+        from src.modules.labeler.db import _client
+
+        items = _client().storage.from_(bucket).list(_storage_list_path(mesa_key)) or []
+        counts = {src: 0 for src in _SOURCES}
+        for item in items:
+            name = item.get("name") or ""
+            for src in _SOURCES:
+                if name.startswith(f"{src}_p") and name.endswith(".jpg"):
+                    counts[src] += 1
+        _storage_counts_cache[mesa_key] = counts
+        return counts
+    except Exception as exc:
+        logger.warning("storage list failed %s: %s", mesa_key, exc)
+        return {}
 
 
 def cache_dir() -> Path:
@@ -25,7 +77,7 @@ def lab_mesas_dir() -> Path | None:
     env = os.environ.get("TRANSVERSAL_LAB_MESAS_DIR", "").strip()
     if env:
         return Path(env)
-    default = _ROOT / "Laboratorio/analisis_transversal/E14C_conflictivas_pendientes/mesas"
+    default = lab_mesas_path()
     return default if default.is_dir() else None
 
 
@@ -90,6 +142,8 @@ def source_available(mesa_key: str, source: str, *, data_dir: Path | None = None
     if lab and (lab / mesa_key).is_dir():
         if any((lab / mesa_key).glob(f"{source}_p*.jpg")):
             return True
+    if storage_bucket():
+        return _storage_page_counts(mesa_key).get(source, 0) > 0
     pdf = resolve_pdf_path(mesa_key, source, data_dir=data_dir)
     return pdf is not None
 
@@ -102,6 +156,8 @@ def get_page_count(mesa_key: str, source: str, *, data_dir: Path | None = None) 
             n = len(list(mesa_dir.glob(f"{source}_p*.jpg")))
             if n:
                 return n
+    if storage_bucket():
+        return _storage_page_counts(mesa_key).get(source, 0)
     pdf = resolve_pdf_path(mesa_key, source, data_dir=data_dir)
     if not pdf:
         return 0

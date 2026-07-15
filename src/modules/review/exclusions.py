@@ -5,6 +5,8 @@ import json
 import os
 from pathlib import Path
 
+from src.modules.review.field_audit import resolve_primary_source
+
 TOTAL_FIELDS = ("VOTANTES", "URNA", "SUMA_TOTAL")
 
 DECISIONS_FILENAMES = (
@@ -56,16 +58,18 @@ def load_excluded_keys(
     mode: str = "confirmed",
     *,
     decisions_dir: Path | None = None,
+    source: str | None = None,
 ) -> set[str]:
     """Return mesa_keys to exclude from queue.
 
     mode:
-      confirmed — human marked E14C suspicious (lab build-index default)
+      confirmed — human marked primary-source suspicious (lab build-index default)
       all       — any key present in merged decisiones
     """
+    src = resolve_primary_source(source)
     decisions = merge_decisions(decisions_dir)
     if not decisions:
         return set()
     if mode == "all":
         return set(decisions)
-    return {k for k, v in decisions.items() if _source_confirmed(v)}
+    return {k for k, v in decisions.items() if _source_confirmed(v, src)}

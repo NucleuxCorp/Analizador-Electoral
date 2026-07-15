@@ -5,6 +5,7 @@ from src.modules.review.field_audit import (
     build_index_row,
     candidate_votes,
     field_audit,
+    is_conflictiva,
     is_e14c_conflictiva,
 )
 
@@ -87,3 +88,43 @@ class TestBuildIndexRow:
         row = _base_row()
         row["sources"]["e14c"]["fields"]["SUMA_TOTAL"] = ["1", "3", "6"]
         assert build_index_row(row) is None
+
+
+def _scalar_row(**overrides) -> dict:
+    row = {
+        "dept": "01",
+        "mpio": "001",
+        "zona": "001",
+        "puesto": "01",
+        "mesa": "002",
+        "sources": {
+            "e14d": {
+                "status": "ok",
+                "fields": {
+                    "C1_CEPEDA": 100,
+                    "C2_ABELARDO": 50,
+                    "VOTANTES": 171,
+                    "URNA": 141,
+                    "SUMA_TOTAL": 0,
+                },
+            }
+        },
+    }
+    row.update(overrides)
+    return row
+
+
+class TestE14dConflictiva:
+    def test_scalar_blank_detected(self):
+        audit = field_audit(_scalar_row()["sources"]["e14d"]["fields"], "e14d")
+        assert audit["fields"]["SUMA_TOTAL"]["class"] == "confirmed_blank"
+        assert "SUMA_TOTAL" in audit["blank_fields"]
+
+    def test_is_conflictiva_e14d(self):
+        assert is_conflictiva(_scalar_row(), "e14d") is True
+
+    def test_build_index_row_e14d(self):
+        row = build_index_row(_scalar_row(), "e14d")
+        assert row is not None
+        assert row["primary_source"] == "e14d"
+        assert row["candidate_votes"] == 150

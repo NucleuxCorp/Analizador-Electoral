@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Revisión transversal — E14C conflictivas</title>
+  <title>Revisión transversal — {{ dataset_label }}</title>
   <style>
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
     html,body{height:100%;overflow:hidden}
@@ -94,7 +94,7 @@
 <div class="topbar">
   <button type="button" class="btn-sidebar-toggle" onclick="toggleSidebar()">☰ Mesas</button>
   <a href="/admin/conflicts">← Admin</a>
-  <h1>Revisión transversal</h1>
+  <h1>Revisión transversal — {{ dataset_label }}</h1>
   <select id="dept-filter" onchange="onFilterChange()">
     <option value="">Todos los depts.</option>
     <option value="01">ANTIOQUIA</option><option value="03">ATLANTICO</option>
@@ -122,7 +122,7 @@
     <span><strong id="stat-pending">—</strong> pend. humano</span>
     <span><strong id="stat-decided">—</strong>% decidido</span>
   </div>
-  <span class="legend">Alertas basadas en E14C; compare visual E14D/T</span>
+  <span class="legend">Cola {{ dataset_key }} — compare visual E14C / E14D / E14T</span>
   <button type="button" class="btn-export" onclick="exportDecisions()">Exportar JSON</button>
 </div>
 

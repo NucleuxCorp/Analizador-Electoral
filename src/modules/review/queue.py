@@ -1,4 +1,4 @@
-"""Queue builder for E14C conflictivas (compute-on-read, no reprocess)."""
+"""Queue builder for transversal conflictivas (compute-on-read, no reprocess)."""
 from __future__ import annotations
 
 import json
@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from src.modules.review.alerts import build_mesa_alert_package
-from src.modules.review.field_audit import build_index_row, mesa_key as _mesa_key
+from src.modules.review.field_audit import build_index_row, mesa_key as _mesa_key, resolve_primary_source
 
 _CROSS_FILE_RE = re.compile(r"^cross_mesa_validation_\d{2}\.jsonl$")
 _DEFAULT_DATA_DIR = Path(__file__).resolve().parents[3] / "data"
@@ -26,14 +26,16 @@ def iter_conflictivas_jsonl(
     data_dir: Path | None = None,
     *,
     excluded: set[str] | None = None,
+    source: str | None = None,
 ) -> Iterator[dict]:
-    """Yield slim index rows for E14C conflictivas from local JSONL (dev fallback)."""
+    """Yield slim index rows for the active dataset's conflictivas from local JSONL."""
     skip = excluded or set()
+    src = resolve_primary_source(source)
     for row in iter_cross_rows(data_dir):
         mk = _mesa_key(row)
         if mk in skip:
             continue
-        idx = build_index_row(row)
+        idx = build_index_row(row, src)
         if idx is not None:
             yield idx
 

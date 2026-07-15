@@ -4,7 +4,9 @@ from __future__ import annotations
 import time
 from typing import Any
 
-DEFAULT_DATASET = "transversal_review_E14C_conflictivas"
+from src.modules.review.datasets import export_slug
+
+DEFAULT_DATASET = export_slug()
 
 
 def build_export_envelope(

@@ -1606,13 +1606,18 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
         from src.modules.review.alerts import SOURCES as _TRANSVERSAL_SOURCES
         from src.modules.review.alerts import build_mesa_alert_package
         from src.modules.review.exclusions import load_excluded_keys
-        from src.modules.review.field_audit import build_index_row
+        from src.modules.review.datasets import dataset_config
+        from src.modules.review.field_audit import build_index_row, resolve_primary_source
         from src.modules.review.queue import build_queue_page, iter_conflictivas_jsonl
+
+        def _transversal_dataset() -> dict:
+            return dataset_config()
 
         def _transversal_load_index_rows() -> list[dict]:
             """JSONL fallback when mesa_results scan is not used."""
-            excluded = load_excluded_keys("confirmed")
-            return list(iter_conflictivas_jsonl(excluded=excluded))
+            src = resolve_primary_source()
+            excluded = load_excluded_keys("confirmed", source=src)
+            return list(iter_conflictivas_jsonl(excluded=excluded, source=src))
 
         def _transversal_raw_for_mesa(mesa_key: str) -> dict | None:
             raw = _db.get_mesa_raw_data(mesa_key)
@@ -1629,7 +1634,12 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
         @require_auth
         @require_role(ROLE_ADMIN, ROLE_MODERATOR)
         def admin_transversal_view() -> Response:
-            return render_template("transversal.html")
+            cfg = _transversal_dataset()
+            return render_template(
+                "transversal.html",
+                dataset_key=cfg["key"],
+                dataset_label=cfg["label"],
+            )
 
         @app.route("/api/transversal/queue")
         @require_auth
@@ -1647,8 +1657,9 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
             pending_only = request.args.get("pending_only", "").lower() in ("1", "true", "yes")
             q = request.args.get("q") or None
 
+            cfg = _transversal_dataset()
             rows = _transversal_load_index_rows()
-            exclusions = load_excluded_keys("confirmed")
+            exclusions = load_excluded_keys("confirmed", source=cfg["primary_source"])
             decisions = _db.get_transversal_decisions()
             result = build_queue_page(
                 rows,
@@ -1661,6 +1672,11 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 decisions=decisions,
                 source_available=_review_images.source_available,
             )
+            result["dataset"] = {
+                "key": cfg["key"],
+                "label": cfg["label"],
+                "primary_source": cfg["primary_source"],
+            }
             return jsonify(result)
 
         @app.route("/api/transversal/mesa/<mesa_key>")
@@ -1670,7 +1686,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
             raw = _transversal_raw_for_mesa(mesa_key)
             if not raw:
                 return jsonify({"error": "mesa_not_found"}), 404
-            index_row = build_index_row(raw)
+            index_row = build_index_row(raw, resolve_primary_source())
             if not index_row:
                 return jsonify({"error": "not_conflictiva"}), 404
             alerts = build_mesa_alert_package(
@@ -1684,6 +1700,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 if _review_images.source_available(mesa_key, src)
             }
             decisions = _db.get_transversal_decisions(mesa_key).get(mesa_key, {})
+            storage_base = _review_images.storage_public_base()
             return jsonify({
                 "mesa_key": mesa_key,
                 "dept": index_row.get("dept"),
@@ -1696,6 +1713,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 "alerts": alerts,
                 "pages": pages,
                 "decisions": decisions,
+                "storage_base": storage_base,
             })
 
         @app.route("/api/transversal/mesa/<mesa_key>/page/<source>/<int:page>")
@@ -1704,6 +1722,9 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
         def api_transversal_page(mesa_key: str, source: str, page: int) -> Response:
             if source not in _TRANSVERSAL_SOURCES:
                 return jsonify({"error": "invalid_source"}), 400
+            cdn_url = _review_images.storage_public_url(mesa_key, source, page)
+            if cdn_url:
+                return redirect(cdn_url, code=302)
             jpeg = _review_images.render_page_to_cache(mesa_key, source, page)
             if not jpeg or not jpeg.exists():
                 return jsonify({"error": "page_not_found"}), 404

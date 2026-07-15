@@ -150,6 +150,14 @@ async function selectMesa(idx) {
   renderAlerts(currentMesaKey);
 }
 
+function pageImageUrl(mesaKey, src, pageNum) {
+  if (mesaDetail && mesaDetail.storage_base) {
+    const p = String(pageNum).padStart(2, '0');
+    return `${mesaDetail.storage_base}/${mesaKey}/${src}_p${p}.jpg`;
+  }
+  return `/api/transversal/mesa/${encodeURIComponent(mesaKey)}/page/${src}/${pageNum}`;
+}
+
 function renderMesaMain() {
   const d = mesaDetail;
   const deptName = DEPT_NAMES[d.dept] || d.dept;
@@ -163,7 +171,7 @@ function renderMesaMain() {
       const label = SOURCE_LABELS[src];
       const count = pages[src] || 0;
       if (p <= count) {
-        const url = `/api/transversal/mesa/${encodeURIComponent(d.mesa_key)}/page/${src}/${p}`;
+        const url = pageImageUrl(d.mesa_key, src, p);
         return `<div class="cell"><div class="src-label" style="background:${color}">${label}</div>
           <img src="${url}" loading="lazy" alt="${label} p${p}"></div>`;
       }
