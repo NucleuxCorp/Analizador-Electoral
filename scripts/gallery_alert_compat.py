@@ -1,0 +1,125 @@
+"""
+gallery_alert_compat.py
+
+Compatible alert model for transversal visual review (SDD prototype).
+
+Data source: stored cross_mesa / index.jsonl — NO reprocess required.
+
+Rules:
+  - confirmed_blank (all subcells None / no ink): auto-resolved, informational only
+  - partial | unreadable | missing: human review, grouped by total field (3 max)
+  - each human alert exposes E14C / E14D / E14T sub-slots when acta JPEG exists
+"""
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any
+
+TOTAL_FIELDS = ("VOTANTES", "URNA", "SUMA_TOTAL")
+FIELD_LABELS = {
+    "VOTANTES": "Total votantes",
+    "URNA": "Total urna",
+    "SUMA_TOTAL": "Suma total votos",
+}
+HUMAN_CLASSES = frozenset({"partial", "unreadable", "missing"})
+AUTO_CLASS = "confirmed_blank"
+SOURCES = ("e14c", "e14d", "e14t")
+SOURCE_LABELS = {"e14t": "E14T", "e14d": "E14D", "e14c": "E14C"}
+SOURCE_COLORS = {"e14t": "#2563eb", "e14d": "#dc2626", "e14c": "#16a34a"}
+
+CLASS_MSG = {
+    "confirmed_blank": "Sin tinta detectada (blanco confirmado) — no requiere confirmación humana.",
+    "partial": "Celda parcial (mezcla de tinta, ? o vacío) — requiere criterio humano.",
+    "unreadable": "Tinta presente pero ilegible (?) — requiere criterio humano.",
+    "missing": "Sin dato extraído — requiere criterio humano.",
+    "has_digits": "Dígitos leídos — no es alerta de vacío.",
+}
+
+
+def _mesa_folder(entry: dict) -> str:
+    return "_".join(
+        (entry["dept"], entry["mpio"], entry["zona"], entry["puesto"], entry["mesa"])
+    )
+
+
+def _has_source_pages(mesa_dir: Path, src: str) -> bool:
+    if not mesa_dir.exists():
+        return False
+    return any(mesa_dir.glob(f"{src}_p*.jpg"))
+
+
+def build_mesa_alert_package(
+    index_row: dict,
+    mesa_dir: Path | None = None,
+) -> dict[str, Any]:
+    """Build auto + human alert package for one mesa from stored field_class."""
+    mesa_dir = mesa_dir or Path()
+    field_class = index_row.get("field_class") or {}
+    auto: list[dict] = []
+    human: list[dict] = []
+
+    for field in TOTAL_FIELDS:
+        cls = field_class.get(field, "missing")
+        base = {
+            "field": field,
+            "field_label": FIELD_LABELS[field],
+            "class": cls,
+            "msg": CLASS_MSG.get(cls, cls),
+            "stored": (index_row.get("stored_arrays") or {}).get(field),
+        }
+        if cls == AUTO_CLASS:
+            auto.append({**base, "tier": "auto"})
+            continue
+        if cls not in HUMAN_CLASSES:
+            continue
+        sources = []
+        for src in SOURCES:
+            if _has_source_pages(mesa_dir, src):
+                sources.append({
+                    "src": src,
+                    "label": SOURCE_LABELS[src],
+                    "color": SOURCE_COLORS[src],
+                })
+        human.append({
+            **base,
+            "tier": "human",
+            "sources": sources,
+            "decision_key": field,
+        })
+
+    return {
+        "mesa_key": index_row.get("mesa_key"),
+        "candidate_votes": index_row.get("candidate_votes"),
+        "blank_fields": index_row.get("blank_fields") or [],
+        "auto": auto,
+        "human": human,
+        "pending_human_count": len(human),
+    }
+
+
+def build_alert_index(
+    index_rows: list[dict],
+    mesas_dir: Path,
+) -> tuple[dict[str, dict], dict[str, int]]:
+    """Return (alert_index by mesa_key, aggregate stats)."""
+    index: dict[str, dict] = {}
+    stats = {
+        "mesas": len(index_rows),
+        "mesas_human_review": 0,
+        "mesas_auto_only": 0,
+        "human_alerts_by_field": {f: 0 for f in TOTAL_FIELDS},
+        "auto_fields_total": 0,
+    }
+    for row in index_rows:
+        mk = row["mesa_key"]
+        folder = mk
+        pkg = build_mesa_alert_package(row, mesas_dir / folder)
+        index[mk] = pkg
+        if pkg["human"]:
+            stats["mesas_human_review"] += 1
+            for h in pkg["human"]:
+                stats["human_alerts_by_field"][h["field"]] += 1
+        else:
+            stats["mesas_auto_only"] += 1
+        stats["auto_fields_total"] += len(pkg["auto"])
+    return index, stats

@@ -14,9 +14,8 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-MESAS_DIR = ROOT / "Laboratorio/analisis_transversal/analisis_visual/E14D_3_totales_blancos/mesas"
-MANIFEST = ROOT / "Laboratorio/analisis_transversal/analisis_visual/E14D_3_totales_blancos/manifest.json"
-OUT_HTML = ROOT / "Laboratorio/analisis_transversal/analisis_visual/E14D_3_totales_blancos/galeria.html"
+SHARED_MESAS_DIR = ROOT / "Laboratorio/analisis_transversal/mesas_compartidas"
+DEFAULT_LAB = ROOT / "Laboratorio/analisis_transversal/E14C_conflictivas_pendientes"
 
 SOURCES = ("e14t", "e14d", "e14c")
 SOURCE_LABELS = {"e14t": "E14T (Testigo)", "e14d": "E14D (Delegado)", "e14c": "E14C (Oficial)"}
@@ -27,8 +26,15 @@ def get_pages(mesa_dir: Path, src: str) -> list[Path]:
     return sorted(mesa_dir.glob(f"{src}_p*.jpg"))
 
 
-def rel(path: Path) -> str:
-    return "mesas/" + path.parent.name + "/" + path.name
+def rel(path: Path, prefix: str) -> str:
+    """Build a gallery-relative URL to a page image using the given prefix."""
+    return f"{prefix}/{path.parent.name}/{path.name}"
+
+
+def _mesas_url_prefix(mesas_dir: Path, html_dir: Path) -> str:
+    """Relative URL path from html_dir to mesas_dir (forward slashes for browser)."""
+    import os
+    return os.path.relpath(mesas_dir, html_dir).replace("\\", "/")
 
 
 def mesa_header(key: tuple, manifest_entry: dict) -> str:
@@ -43,7 +49,20 @@ DEPT_NAMES = {
 }
 
 
-def build_html(manifest: list[dict]) -> str:
+def build_html(
+    manifest: list[dict],
+    *,
+    mesas_dir: Path,
+    mesas_url_prefix: str = "mesas",
+    dept_names: dict | None = None,
+    title: str = "Galería — E14D Mesas Sospechosas",
+    project_id: str = "E14D_3_totales_blancos",
+    decisions_filename: str = "decisiones_e14d.json",
+    alerts_per_mesa: dict | None = None,
+) -> str:
+    # Resolve department names: passed map takes precedence, fall back to DEPT_NAMES
+    dept_lookup = dept_names if dept_names is not None else DEPT_NAMES
+
     # Build sidebar items and sections
     sidebar_items = []
     mesa_sections = []
@@ -52,7 +71,7 @@ def build_html(manifest: list[dict]) -> str:
     for idx, entry in enumerate(manifest):
         key = (entry["dept"], entry["mpio"], entry["zona"], entry["puesto"], entry["mesa"])
         folder = "_".join(key)
-        mesa_dir = MESAS_DIR / folder
+        mesa_dir = mesas_dir / folder
         dept = entry["dept"]
 
         if not mesa_dir.exists():
@@ -63,7 +82,7 @@ def build_html(manifest: list[dict]) -> str:
         if max_pages == 0:
             continue
 
-        dept_name = DEPT_NAMES.get(dept, dept)
+        dept_name = dept_lookup.get(dept, dept)
         anchor = f"mesa-{folder}"
         short = f"{dept_name} / z{key[2]} p{key[3]} m{key[4]}"
 
@@ -88,7 +107,7 @@ def build_html(manifest: list[dict]) -> str:
                     cells.append(
                         f'<div class="cell">'
                         f'<div class="src-label" style="background:{color}">{label}</div>'
-                        f'<img src="{rel(img_path)}" loading="lazy" alt="{label} p{p}"></div>'
+                        f'<img src="{rel(img_path, mesas_url_prefix)}" loading="lazy" alt="{label} p{p}"></div>'
                     )
                 else:
                     cells.append(
@@ -118,7 +137,7 @@ def build_html(manifest: list[dict]) -> str:
         )
 
     dept_options = "".join(
-        f'<option value="{d}">{DEPT_NAMES.get(d, d)}</option>'
+        f'<option value="{d}">{dept_lookup.get(d, d)}</option>'
         for d in depts_seen
     )
 
@@ -127,23 +146,24 @@ def build_html(manifest: list[dict]) -> str:
         for e in manifest
     ) + "]"
 
-    # Build alert data per mesa: one alert per available source
-    alerts_per_mesa = {}
-    for entry in manifest:
-        key = (entry["dept"], entry["mpio"], entry["zona"], entry["puesto"], entry["mesa"])
-        folder = "_".join(key)
-        mesa_dir = MESAS_DIR / folder
-        mesa_alerts = []
-        for src in SOURCES:
-            pages = get_pages(mesa_dir, src) if mesa_dir.exists() else []
-            if pages:
-                mesa_alerts.append({
-                    "src": src,
-                    "label": SOURCE_LABELS[src],
-                    "color": SOURCE_COLORS[src],
-                    "msg": "3 campos de totales sin rellenar: VOTANTES, URNA, SUMA_TOTAL (con C1+C2 > 0)"
-                })
-        alerts_per_mesa[folder] = mesa_alerts
+    # Build alert data per mesa when not provided by the caller
+    if alerts_per_mesa is None:
+        alerts_per_mesa = {}
+        for entry in manifest:
+            key = (entry["dept"], entry["mpio"], entry["zona"], entry["puesto"], entry["mesa"])
+            folder = "_".join(key)
+            mesa_dir = mesas_dir / folder
+            mesa_alerts = []
+            for src in SOURCES:
+                pages = get_pages(mesa_dir, src) if mesa_dir.exists() else []
+                if pages:
+                    mesa_alerts.append({
+                        "src": src,
+                        "label": SOURCE_LABELS[src],
+                        "color": SOURCE_COLORS[src],
+                        "msg": "3 campos de totales sin rellenar: VOTANTES, URNA, SUMA_TOTAL (con C1+C2 > 0)"
+                    })
+            alerts_per_mesa[folder] = mesa_alerts
 
     import json as _json
     alerts_js = _json.dumps(alerts_per_mesa, ensure_ascii=False)
@@ -153,7 +173,7 @@ def build_html(manifest: list[dict]) -> str:
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Galería — E14D Mesas Sospechosas</title>
+<title>{title}</title>
 <style>
 *,*::before,*::after{{box-sizing:border-box;margin:0;padding:0}}
 html,body{{height:100%;overflow:hidden}}
@@ -282,7 +302,7 @@ body{{font-family:system-ui,sans-serif;background:#0f172a;color:#e2e8f0;display:
 
 <div class="topbar">
   <button class="btn-sidebar-toggle" onclick="toggleSidebar()">&#9776; Mesas</button>
-  <h1>E14D · Mesas Sospechosas</h1>
+  <h1>{title}</h1>
   <select id="dept-filter" onchange="filterDept(this.value)">
     <option value="">Todos los depts.</option>
     {dept_options}
@@ -411,7 +431,7 @@ function markSaved() {{
 function decisionsToJson() {{
   return JSON.stringify({{
     generated: new Date().toISOString(),
-    project: "E14D_3_totales_blancos",
+    project: "{project_id}",
     decisions
   }}, null, 2);
 }}
@@ -423,7 +443,7 @@ async function saveToFile() {{
     try {{
       if (!fileHandle) {{
         fileHandle = await window.showSaveFilePicker({{
-          suggestedName: 'decisiones_e14d.json',
+          suggestedName: '{decisions_filename}',
           types: [{{ description: 'JSON', accept: {{ 'application/json': ['.json'] }} }}]
         }});
       }}
@@ -437,7 +457,7 @@ async function saveToFile() {{
   // Fallback: download
   const a = document.createElement('a');
   a.href = 'data:application/json;charset=utf-8,' + encodeURIComponent(json);
-  a.download = 'decisiones_e14d.json';
+  a.download = '{decisions_filename}';
   a.click();
   markSaved();
 }}
@@ -548,11 +568,35 @@ goMesa(0);
 
 
 def main() -> None:
-    manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
-    html = build_html(manifest)
-    OUT_HTML.write_text(html, encoding="utf-8")
-    print(f"Generated: {OUT_HTML}")
-    print(f"Open in browser: file:///{OUT_HTML.as_posix()}")
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Build galeria.html from manifest.json")
+    parser.add_argument("--lab-dir", type=Path, default=DEFAULT_LAB,
+                        help="Dataset lab dir containing manifest.json")
+    parser.add_argument("--mesas-dir", type=Path, default=None,
+                        help="Shared mesas dir (default: SHARED_MESAS_DIR)")
+    args = parser.parse_args()
+
+    lab_dir = args.lab_dir if args.lab_dir.is_absolute() else ROOT / args.lab_dir
+    mesas_dir = args.mesas_dir
+    if mesas_dir is None:
+        mesas_dir = SHARED_MESAS_DIR
+    elif not mesas_dir.is_absolute():
+        mesas_dir = ROOT / mesas_dir
+
+    manifest_path = lab_dir / "manifest.json"
+    out_html = lab_dir / "galeria.html"
+
+    if not manifest_path.exists():
+        raise SystemExit(f"Missing manifest: {manifest_path}")
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    mesas_url_prefix = _mesas_url_prefix(mesas_dir, out_html.parent)
+    html = build_html(manifest, mesas_dir=mesas_dir, mesas_url_prefix=mesas_url_prefix)
+    out_html.write_text(html, encoding="utf-8")
+    print(f"Generated: {out_html}")
+    print(f"Mesas dir: {mesas_dir}")
+    print(f"Open in browser: file:///{out_html.as_posix()}")
 
 
 if __name__ == "__main__":

@@ -353,7 +353,7 @@ def run(set_name: str, dry_run: bool, workers: int) -> None:
     print(f"  Found {len(rows)} target mesas")
 
     if dry_run:
-        print("[prepare_gallery] DRY RUN — no files will be written")
+        print("[prepare_gallery] DRY RUN - no files will be written")
 
     # Process mesas
     if not dry_run:
@@ -386,7 +386,7 @@ def run(set_name: str, dry_run: bool, workers: int) -> None:
                     missing_count[src] += 1
             if i % 10 == 0 or dry_run:
                 status = " | ".join(f"{s}: {r['sources'].get(s, '?')}" for s in SOURCES)
-                print(f"  [{i:3d}/{len(rows)}] {r['key']} — {status}")
+                print(f"  [{i:3d}/{len(rows)}] {r['key']} - {status}")
 
     print(f"\n[prepare_gallery] Done. Missing PDFs: {missing_count}")
 
