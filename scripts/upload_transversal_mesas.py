@@ -163,6 +163,34 @@ def _upload_with_retries(
     return last_err
 
 
+def cmd_upload_index(args: argparse.Namespace) -> None:
+    """Upload lab index.jsonl so Railway can load the queue from Storage."""
+    dataset = _resolve_dataset(args)
+    _, _, bucket = _require_env()
+    lab_root = _mesas_dir(args).parent
+    index_path = lab_root / "index.jsonl"
+    if not index_path.is_file():
+        raise SystemExit(f"Missing index: {index_path} — run lab_e14_conflictivas.py build-index first.")
+
+    object_key = f"{storage_object_prefix(dataset)}/index.jsonl"
+    data = index_path.read_bytes()
+    print(f"[upload-index] local={index_path} ({len(data)/1024:.1f} KB)")
+    print(f"[upload-index] target=s3://{bucket}/{object_key}")
+
+    if args.dry_run:
+        return
+
+    client = _client()
+    client.storage.from_(bucket).upload(
+        path=object_key,
+        file=data,
+        # bunker-e14 bucket allows image/jpeg only — content is JSONL bytes
+        file_options={"content-type": "image/jpeg", "upsert": "true"},
+    )
+    base = os.environ["SUPABASE_URL"].rstrip("/")
+    print(f"[upload-index] OK → {base}/storage/v1/object/public/{bucket}/{object_key}")
+
+
 def cmd_upload(args: argparse.Namespace) -> None:
     dataset = _resolve_dataset(args)
     _, _, bucket = _require_env()
@@ -263,6 +291,11 @@ def main() -> None:
     p_up.add_argument("--upsert", action="store_true", help="Overwrite existing objects")
     p_up.add_argument("--reset-checkpoint", action="store_true")
     p_up.set_defaults(func=cmd_upload)
+
+    p_idx = sub.add_parser("upload-index", help="Upload index.jsonl for Railway queue")
+    _add_dataset_args(p_idx)
+    p_idx.add_argument("--dry-run", action="store_true")
+    p_idx.set_defaults(func=cmd_upload_index)
 
     args = parser.parse_args()
     args.func(args)

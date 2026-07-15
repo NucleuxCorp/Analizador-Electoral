@@ -1608,16 +1608,19 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
         from src.modules.review.exclusions import load_excluded_keys
         from src.modules.review.datasets import dataset_config
         from src.modules.review.field_audit import build_index_row, resolve_primary_source
-        from src.modules.review.queue import build_queue_page, iter_conflictivas_jsonl
+        from src.modules.review.queue import (
+            build_queue_page,
+            get_transversal_index_row,
+            load_transversal_index_rows,
+        )
 
         def _transversal_dataset() -> dict:
             return dataset_config()
 
         def _transversal_load_index_rows() -> list[dict]:
-            """JSONL fallback when mesa_results scan is not used."""
             src = resolve_primary_source()
             excluded = load_excluded_keys("confirmed", source=src)
-            return list(iter_conflictivas_jsonl(excluded=excluded, source=src))
+            return load_transversal_index_rows(excluded=excluded, source=src)
 
         def _transversal_raw_for_mesa(mesa_key: str) -> dict | None:
             raw = _db.get_mesa_raw_data(mesa_key)
@@ -1683,12 +1686,14 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
         @require_auth
         @require_role(ROLE_ADMIN, ROLE_MODERATOR)
         def api_transversal_mesa(mesa_key: str) -> Response:
-            raw = _transversal_raw_for_mesa(mesa_key)
-            if not raw:
-                return jsonify({"error": "mesa_not_found"}), 404
-            index_row = build_index_row(raw, resolve_primary_source())
+            index_row = get_transversal_index_row(mesa_key, source=resolve_primary_source())
             if not index_row:
-                return jsonify({"error": "not_conflictiva"}), 404
+                raw = _transversal_raw_for_mesa(mesa_key)
+                if not raw:
+                    return jsonify({"error": "mesa_not_found"}), 404
+                index_row = build_index_row(raw, resolve_primary_source())
+                if not index_row:
+                    return jsonify({"error": "not_conflictiva"}), 404
             alerts = build_mesa_alert_package(
                 index_row,
                 mesa_key,

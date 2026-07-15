@@ -2,15 +2,26 @@
 from __future__ import annotations
 
 import json
+import logging
+import os
 import re
+import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Any, Iterator
 
 from src.modules.review.alerts import build_mesa_alert_package
+from src.modules.review.datasets import lab_mesas_path
 from src.modules.review.field_audit import build_index_row, mesa_key as _mesa_key, resolve_primary_source
+from src.modules.review.images import storage_public_base
+
+logger = logging.getLogger("review.queue")
 
 _CROSS_FILE_RE = re.compile(r"^cross_mesa_validation_\d{2}\.jsonl$")
 _DEFAULT_DATA_DIR = Path(__file__).resolve().parents[3] / "data"
+_INDEX_CACHE: dict[str, tuple[float, list[dict]]] = {}
+_INDEX_CACHE_TTL = 300.0
 
 
 def iter_cross_rows(data_dir: Path | None = None) -> Iterator[dict]:
@@ -20,6 +31,97 @@ def iter_cross_rows(data_dir: Path | None = None) -> Iterator[dict]:
             for line in fp:
                 if line.strip():
                     yield json.loads(line)
+
+
+def _read_index_jsonl(path: Path) -> list[dict]:
+    rows: list[dict] = []
+    with open(path, encoding="utf-8") as fp:
+        for line in fp:
+            if line.strip():
+                rows.append(json.loads(line))
+    return rows
+
+
+def _fetch_index_from_storage(dataset: str) -> list[dict]:
+    base = storage_public_base()
+    if not base:
+        return []
+    url = f"{base}/index.jsonl"
+    try:
+        with urllib.request.urlopen(url, timeout=60) as resp:
+            text = resp.read().decode("utf-8")
+    except urllib.error.HTTPError as exc:
+        logger.warning("transversal index not in storage (%s): %s", url, exc.code)
+        return []
+    except Exception as exc:
+        logger.warning("transversal index fetch failed (%s): %s", url, exc)
+        return []
+    rows: list[dict] = []
+    for line in text.splitlines():
+        if line.strip():
+            rows.append(json.loads(line))
+    logger.info("loaded transversal index from storage: %s rows dataset=%s", len(rows), dataset)
+    return rows
+
+
+def _resolve_index_path(source: str | None = None) -> Path | None:
+    env = os.environ.get("TRANSVERSAL_INDEX_JSONL", "").strip()
+    if env:
+        path = Path(env)
+        return path if path.is_file() else None
+    lab_index = lab_mesas_path(source).parent / "index.jsonl"
+    return lab_index if lab_index.is_file() else None
+
+
+def load_transversal_index_rows(
+    *,
+    excluded: set[str] | None = None,
+    source: str | None = None,
+    force_reload: bool = False,
+) -> list[dict]:
+    """Load pre-built index for production (Storage/lab) or compute from cross JSONL (dev)."""
+    src = resolve_primary_source(source)
+    dataset = os.environ.get("TRANSVERSAL_DATASET", "E14C_conflictivas").strip()
+    cache_key = f"{dataset}:{src}"
+    now = time.time()
+    if not force_reload and cache_key in _INDEX_CACHE:
+        ts, cached = _INDEX_CACHE[cache_key]
+        if now - ts < _INDEX_CACHE_TTL:
+            rows = cached
+        else:
+            rows = []
+    else:
+        rows = []
+
+    if not rows:
+        path = _resolve_index_path(src)
+        if path:
+            rows = _read_index_jsonl(path)
+            logger.info("loaded transversal index from file: %s (%s rows)", path, len(rows))
+        if not rows:
+            rows = _fetch_index_from_storage(dataset)
+        if not rows and _DEFAULT_DATA_DIR.is_dir() and any(
+            _CROSS_FILE_RE.match(p.name) for p in _DEFAULT_DATA_DIR.iterdir()
+        ):
+            rows = list(iter_conflictivas_jsonl(excluded=set(), source=src))
+            logger.info("computed transversal index from cross JSONL (%s rows)", len(rows))
+        _INDEX_CACHE[cache_key] = (now, rows)
+
+    skip = excluded or set()
+    if skip:
+        return [r for r in rows if r.get("mesa_key") not in skip]
+    return rows
+
+
+def get_transversal_index_row(mesa_key: str, *, source: str | None = None) -> dict | None:
+    for row in load_transversal_index_rows(source=source):
+        if row.get("mesa_key") == mesa_key:
+            return row
+    return None
+
+
+def clear_transversal_index_cache() -> None:
+    _INDEX_CACHE.clear()
 
 
 def iter_conflictivas_jsonl(
