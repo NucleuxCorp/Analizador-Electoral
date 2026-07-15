@@ -40,14 +40,43 @@ class TestBuildQueuePage:
         assert result["total"] == 4117
         assert result["stats"]["mesas"] == 4117
 
-    def test_pending_only_filter(self):
+    def test_pending_only_real_blank_mode(self):
         rows = _load_lab_index()
         all_q = build_queue_page(rows, set(), source_available=_all_sources)
         pending_q = build_queue_page(
             rows, set(), pending_only=True, source_available=_all_sources,
         )
-        assert pending_q["total"] < all_q["total"]
-        assert pending_q["total"] > 0
+        # Real-blank-only mode: no human partials; all conflictivas have ≥1 real blank.
+        assert pending_q["total"] == all_q["total"]
+        assert all(item.get("real_blank_count", 0) > 0 for item in pending_q["items"])
+
+    def test_queue_skips_rows_without_real_blank(self):
+        rows = [
+            {
+                "mesa_key": "01_001_005_08_005",
+                "dept": "01", "mpio": "001", "zona": "005", "puesto": "08", "mesa": "005",
+                "blank_fields": [],
+                "field_class": {
+                    "VOTANTES": "partial",
+                    "URNA": "has_digits",
+                    "SUMA_TOTAL": "has_digits",
+                },
+            },
+            {
+                "mesa_key": "01_001_001_01_001",
+                "dept": "01", "mpio": "001", "zona": "001", "puesto": "01", "mesa": "001",
+                "blank_fields": ["SUMA_TOTAL"],
+                "field_class": {
+                    "VOTANTES": "has_digits",
+                    "URNA": "has_digits",
+                    "SUMA_TOTAL": "confirmed_blank",
+                },
+            },
+        ]
+        result = build_queue_page(rows, set(), source_available=_all_sources)
+        assert result["total"] == 1
+        assert result["items"][0]["mesa_key"] == "01_001_001_01_001"
+        assert result["items"][0]["real_blank_count"] == 1
 
     def test_dept_filter(self):
         rows = _load_lab_index()

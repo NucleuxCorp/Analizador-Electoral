@@ -84,7 +84,7 @@ async function fetchQueueAll() {
 
 function updateStatsBar() {
   const total = queueItems.length;
-  const pending = queueItems.filter((i) => i.pending_human_count > 0).length;
+  const pending = queueItems.filter((i) => (i.real_blank_count || 0) > 0).length;
   const avgProgress = total
     ? queueItems.reduce((s, i) => s + (i.decision_progress || 0), 0) / total
     : 0;
@@ -99,8 +99,9 @@ function renderSidebar() {
   nav.innerHTML = queueItems.map((item, idx) => {
     const deptName = DEPT_NAMES[item.dept] || item.dept;
     const short = `${deptName} / z${item.zona} p${item.puesto} m${item.mesa}`;
-    const badge = item.pending_human_count > 0
-      ? ' <span class="pending-dot" title="Pendiente"></span>'
+    const blanks = item.real_blank_count || 0;
+    const badge = blanks > 0
+      ? ` <span class="pending-dot" title="${blanks} blanco(s) real(es)"></span>`
       : '';
     return `<a href="#" class="nav-item" data-idx="${idx}" data-dept="${item.dept}" onclick="selectMesa(${idx});return false;">
       <span class="nav-num">${String(idx + 1).padStart(2, '0')}</span>
@@ -247,20 +248,21 @@ function renderAlerts(mesaKey) {
   }
 
   const pending = human.filter(isPending).length;
+  const realBlanks = pkg.real_blank_count != null ? pkg.real_blank_count : auto.length;
   const badge = document.getElementById('alert-count');
-  badge.textContent = String(pending);
-  badge.style.background = pending === 0 ? '#16a34a' : '#ef4444';
+  badge.textContent = String(realBlanks);
+  badge.style.background = realBlanks === 0 ? '#64748b' : '#f59e0b';
 
   const body = document.getElementById('alert-body');
   let html = '';
 
   if (auto.length) {
-    html += '<div class="alert-section-label">Auto-resueltas (sin tinta)</div>';
+    html += '<div class="alert-section-label">Blancos reales (campos críticos)</div>';
     html += auto.map((a) => `
       <div class="alert-item alert-auto">
         <div class="alert-item-header">
           <span class="alert-src-name">${a.field_label}</span>
-          <span class="alert-auto-badge">AUTO</span>
+          <span class="alert-auto-badge">BLANCO</span>
         </div>
         <div class="alert-msg">${a.msg}</div>
       </div>`).join('');

@@ -184,8 +184,11 @@ def build_queue_page(
             continue
 
         pkg = build_mesa_alert_package(row, mk, source_available=source_available)
+        real_blanks = pkg.get("real_blank_count", len(pkg.get("auto") or []))
+        if real_blanks == 0:
+            continue
         pending = pkg["pending_human_count"]
-        if pending_only and pending == 0:
+        if pending_only and pending == 0 and real_blanks == 0:
             continue
 
         mesa_dec = decisions.get(mk) or {}
@@ -193,6 +196,7 @@ def build_queue_page(
             **{k: row[k] for k in ("mesa_key", "dept", "mpio", "zona", "puesto", "mesa")},
             "candidate_votes": row.get("candidate_votes"),
             "blank_fields": row.get("blank_fields") or [],
+            "real_blank_count": real_blanks,
             "pending_human_count": pending,
             "decision_progress": _decision_progress(pkg, mesa_dec),
         })

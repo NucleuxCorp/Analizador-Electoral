@@ -12,12 +12,17 @@ FIELD_LABELS = {
 }
 HUMAN_CLASSES = frozenset({"partial", "unreadable", "missing"})
 AUTO_CLASS = "confirmed_blank"
+REAL_BLANK_CLASS = AUTO_CLASS
+
+# Temporary: transversal panel shows only real blanks on critical totals (no partial).
+TRANSVERSAL_REAL_BLANK_ONLY = True
+
 SOURCES = ("e14c", "e14d", "e14t")
 SOURCE_LABELS = {"e14t": "E14T", "e14d": "E14D", "e14c": "E14C"}
 SOURCE_COLORS = {"e14t": "#2563eb", "e14d": "#dc2626", "e14c": "#16a34a"}
 
 CLASS_MSG = {
-    "confirmed_blank": "Sin tinta detectada (blanco confirmado) — no requiere confirmación humana.",
+    "confirmed_blank": "Blanco real en campo crítico (sin tinta detectada en E14C).",
     "partial": "Celda parcial (mezcla de tinta, ? o vacío) — requiere criterio humano.",
     "unreadable": "Tinta presente pero ilegible (?) — requiere criterio humano.",
     "missing": "Sin dato extraído — requiere criterio humano.",
@@ -31,54 +36,75 @@ def _default_source_available(_mesa_key: str, _src: str) -> bool:
     return False
 
 
+def real_blank_fields(field_class: dict) -> list[str]:
+    """Critical total fields classified as confirmed blank (real blank on E14C)."""
+    return [f for f in TOTAL_FIELDS if field_class.get(f) == REAL_BLANK_CLASS]
+
+
 def build_mesa_alert_package(
     index_row: dict,
     mesa_key: str | None = None,
     *,
     source_available: SourceAvailableFn | None = None,
 ) -> dict[str, Any]:
-    """Build auto + human alert package for one mesa from stored field_class."""
+    """Build alert package for one mesa from stored field_class."""
     avail = source_available or _default_source_available
     mk = mesa_key or index_row.get("mesa_key", "")
     field_class = index_row.get("field_class") or {}
     auto: list[dict] = []
     human: list[dict] = []
 
-    for field in TOTAL_FIELDS:
-        cls = field_class.get(field, "missing")
-        base = {
-            "field": field,
-            "field_label": FIELD_LABELS[field],
-            "class": cls,
-            "msg": CLASS_MSG.get(cls, cls),
-            "stored": (index_row.get("stored_arrays") or {}).get(field),
-        }
-        if cls == AUTO_CLASS:
-            auto.append({**base, "tier": "auto"})
-            continue
-        if cls not in HUMAN_CLASSES:
-            continue
-        sources = []
-        for src in SOURCES:
-            if avail(mk, src):
-                sources.append({
-                    "src": src,
-                    "label": SOURCE_LABELS[src],
-                    "color": SOURCE_COLORS[src],
-                })
-        human.append({
-            **base,
-            "tier": "human",
-            "sources": sources,
-            "decision_key": field,
-        })
+    if TRANSVERSAL_REAL_BLANK_ONLY:
+        for field in TOTAL_FIELDS:
+            cls = field_class.get(field, "missing")
+            if cls != REAL_BLANK_CLASS:
+                continue
+            auto.append({
+                "field": field,
+                "field_label": FIELD_LABELS[field],
+                "class": cls,
+                "msg": CLASS_MSG.get(cls, cls),
+                "stored": (index_row.get("stored_arrays") or {}).get(field),
+                "tier": "real_blank",
+            })
+    else:
+        for field in TOTAL_FIELDS:
+            cls = field_class.get(field, "missing")
+            base = {
+                "field": field,
+                "field_label": FIELD_LABELS[field],
+                "class": cls,
+                "msg": CLASS_MSG.get(cls, cls),
+                "stored": (index_row.get("stored_arrays") or {}).get(field),
+            }
+            if cls == AUTO_CLASS:
+                auto.append({**base, "tier": "auto"})
+                continue
+            if cls not in HUMAN_CLASSES:
+                continue
+            sources = []
+            for src in SOURCES:
+                if avail(mk, src):
+                    sources.append({
+                        "src": src,
+                        "label": SOURCE_LABELS[src],
+                        "color": SOURCE_COLORS[src],
+                    })
+            human.append({
+                **base,
+                "tier": "human",
+                "sources": sources,
+                "decision_key": field,
+            })
 
+    real_blank_count = len(auto)
     return {
         "mesa_key": mk,
         "candidate_votes": index_row.get("candidate_votes"),
         "blank_fields": index_row.get("blank_fields") or [],
         "auto": auto,
         "human": human,
+        "real_blank_count": real_blank_count,
         "pending_human_count": len(human),
     }
 
