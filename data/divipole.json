@@ -113355,6 +113355,483 @@
         }
       },
       "nombre": "VICHADA"
+    },
+    "88": {
+      "listaCorporaciones": [
+        "001"
+      ],
+      "municipios": {
+        "115": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_115",
+          "zonas": {}
+        },
+        "120": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_120",
+          "zonas": {}
+        },
+        "130": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_130",
+          "zonas": {}
+        },
+        "135": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_135",
+          "zonas": {}
+        },
+        "140": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_140",
+          "zonas": {}
+        },
+        "155": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_155",
+          "zonas": {}
+        },
+        "160": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_160",
+          "zonas": {}
+        },
+        "165": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_165",
+          "zonas": {}
+        },
+        "170": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_170",
+          "zonas": {}
+        },
+        "190": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_190",
+          "zonas": {}
+        },
+        "215": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_215",
+          "zonas": {}
+        },
+        "220": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_220",
+          "zonas": {}
+        },
+        "250": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_250",
+          "zonas": {}
+        },
+        "275": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_275",
+          "zonas": {}
+        },
+        "285": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_285",
+          "zonas": {}
+        },
+        "290": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_290",
+          "zonas": {}
+        },
+        "305": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_305",
+          "zonas": {}
+        },
+        "315": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_315",
+          "zonas": {}
+        },
+        "325": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_325",
+          "zonas": {}
+        },
+        "330": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_330",
+          "zonas": {}
+        },
+        "335": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_335",
+          "zonas": {}
+        },
+        "340": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_340",
+          "zonas": {}
+        },
+        "350": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_350",
+          "zonas": {}
+        },
+        "355": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_355",
+          "zonas": {}
+        },
+        "360": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_360",
+          "zonas": {}
+        },
+        "370": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_370",
+          "zonas": {}
+        },
+        "375": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_375",
+          "zonas": {}
+        },
+        "380": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_380",
+          "zonas": {}
+        },
+        "410": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_410",
+          "zonas": {}
+        },
+        "430": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_430",
+          "zonas": {}
+        },
+        "435": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_435",
+          "zonas": {}
+        },
+        "440": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_440",
+          "zonas": {}
+        },
+        "445": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_445",
+          "zonas": {}
+        },
+        "455": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_455",
+          "zonas": {}
+        },
+        "460": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_460",
+          "zonas": {}
+        },
+        "465": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_465",
+          "zonas": {}
+        },
+        "470": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_470",
+          "zonas": {}
+        },
+        "490": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_490",
+          "zonas": {}
+        },
+        "495": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_495",
+          "zonas": {}
+        },
+        "500": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_500",
+          "zonas": {}
+        },
+        "505": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_505",
+          "zonas": {}
+        },
+        "515": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_515",
+          "zonas": {}
+        },
+        "535": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_535",
+          "zonas": {}
+        },
+        "560": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_560",
+          "zonas": {}
+        },
+        "580": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_580",
+          "zonas": {}
+        },
+        "590": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_590",
+          "zonas": {}
+        },
+        "620": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_620",
+          "zonas": {}
+        },
+        "625": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_625",
+          "zonas": {}
+        },
+        "635": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_635",
+          "zonas": {}
+        },
+        "655": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_655",
+          "zonas": {}
+        },
+        "665": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_665",
+          "zonas": {}
+        },
+        "670": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_670",
+          "zonas": {}
+        },
+        "675": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_675",
+          "zonas": {}
+        },
+        "680": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_680",
+          "zonas": {}
+        },
+        "683": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_683",
+          "zonas": {}
+        },
+        "685": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_685",
+          "zonas": {}
+        },
+        "688": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_688",
+          "zonas": {}
+        },
+        "690": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_690",
+          "zonas": {}
+        },
+        "700": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_700",
+          "zonas": {}
+        },
+        "745": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_745",
+          "zonas": {}
+        },
+        "755": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_755",
+          "zonas": {}
+        },
+        "760": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_760",
+          "zonas": {}
+        },
+        "765": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_765",
+          "zonas": {}
+        },
+        "770": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_770",
+          "zonas": {}
+        },
+        "785": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_785",
+          "zonas": {}
+        },
+        "805": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_805",
+          "zonas": {}
+        },
+        "815": {
+          "listaCorporaciones": [
+            "001"
+          ],
+          "nombre": "MPIO_815",
+          "zonas": {}
+        }
+      },
+      "nombre": "CONSULADOS"
     }
   }
 }
