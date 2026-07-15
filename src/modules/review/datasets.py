@@ -5,7 +5,18 @@ import os
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[3]
-_LAB_ROOT = _ROOT / "Laboratorio/analisis_transversal"
+_DEFAULT_LAB_ROOT = _ROOT / "Laboratorio/analisis_transversal"
+
+
+def lab_root() -> Path:
+    """Lab output root. Override with TRANSVERSAL_LAB_ROOT (e.g. E: external disk)."""
+    env = os.environ.get("TRANSVERSAL_LAB_ROOT", "").strip()
+    return Path(env) if env else _DEFAULT_LAB_ROOT
+
+
+def lab_dataset_dir(name: str | None = None) -> Path:
+    cfg = dataset_config(name)
+    return lab_root() / cfg["lab_subdir"]
 
 # Canonical dataset keys (also TRANSVERSAL_DATASET env value).
 DATASETS: dict[str, dict[str, str]] = {
@@ -38,7 +49,7 @@ DEFAULT_DATASET = "E14C_conflictivas"
 _EXPORT_SLUG_TO_DATASET = {v["export_slug"]: k for k, v in DATASETS.items()}
 
 
-def normalize_dataset(name: str | None) -> str:
+def normalize_dataset(name: str | None = None) -> str:
     """Resolve env/CLI value to canonical dataset key."""
     raw = (name or os.environ.get("TRANSVERSAL_DATASET") or DEFAULT_DATASET).strip()
     if raw in DATASETS:
@@ -55,8 +66,7 @@ def dataset_config(name: str | None = None) -> dict[str, str]:
 
 
 def lab_mesas_path(name: str | None = None) -> Path:
-    cfg = dataset_config(name)
-    return _LAB_ROOT / cfg["lab_subdir"] / "mesas"
+    return lab_dataset_dir(name) / "mesas"
 
 
 def storage_object_prefix(name: str | None = None) -> str:

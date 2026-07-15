@@ -7,8 +7,8 @@ from pathlib import Path
 from src.modules.review.exclusions import load_excluded_keys
 from src.modules.review.queue import build_queue_page, iter_conflictivas_jsonl
 
-LAB_DIR = Path(__file__).resolve().parents[2] / (
-    "Laboratorio/analisis_transversal/E14C_conflictivas_pendientes"
+LAB_DIR = Path(
+    r"E:\Nucleux\tools\Analizador de Elecciones\Laboratorio\analisis_transversal\E14C_conflictivas_pendientes"
 )
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 

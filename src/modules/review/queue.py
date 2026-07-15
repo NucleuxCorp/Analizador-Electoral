@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from src.modules.review.alerts import build_mesa_alert_package
-from src.modules.review.datasets import lab_mesas_path
+from src.modules.review.datasets import lab_dataset_dir, lab_mesas_path, normalize_dataset
 from src.modules.review.field_audit import build_index_row, mesa_key as _mesa_key, resolve_primary_source
 from src.modules.review.images import storage_public_base
 
@@ -64,12 +64,12 @@ def _fetch_index_from_storage(dataset: str) -> list[dict]:
     return rows
 
 
-def _resolve_index_path(source: str | None = None) -> Path | None:
+def _resolve_index_path() -> Path | None:
     env = os.environ.get("TRANSVERSAL_INDEX_JSONL", "").strip()
     if env:
         path = Path(env)
         return path if path.is_file() else None
-    lab_index = lab_mesas_path(source).parent / "index.jsonl"
+    lab_index = lab_dataset_dir(normalize_dataset()) / "index.jsonl"
     return lab_index if lab_index.is_file() else None
 
 
@@ -81,7 +81,7 @@ def load_transversal_index_rows(
 ) -> list[dict]:
     """Load pre-built index for production (Storage/lab) or compute from cross JSONL (dev)."""
     src = resolve_primary_source(source)
-    dataset = os.environ.get("TRANSVERSAL_DATASET", "E14C_conflictivas").strip()
+    dataset = normalize_dataset()
     cache_key = f"{dataset}:{src}"
     now = time.time()
     if not force_reload and cache_key in _INDEX_CACHE:
@@ -94,7 +94,7 @@ def load_transversal_index_rows(
         rows = []
 
     if not rows:
-        path = _resolve_index_path(src)
+        path = _resolve_index_path()
         if path:
             rows = _read_index_jsonl(path)
             logger.info("loaded transversal index from file: %s (%s rows)", path, len(rows))

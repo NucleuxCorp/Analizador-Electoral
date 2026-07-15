@@ -148,6 +148,13 @@ def source_available(mesa_key: str, source: str, *, data_dir: Path | None = None
     return pdf is not None
 
 
+def queue_source_available(mesa_key: str, source: str, *, data_dir: Path | None = None) -> bool:
+    """Fast path for queue API — avoid thousands of Storage list() calls on CDN deploy."""
+    if storage_bucket():
+        return source in _SOURCES
+    return source_available(mesa_key, source, data_dir=data_dir)
+
+
 def get_page_count(mesa_key: str, source: str, *, data_dir: Path | None = None) -> int:
     lab = lab_mesas_dir()
     if lab:

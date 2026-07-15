@@ -1673,7 +1673,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 pending_only=pending_only,
                 q=q,
                 decisions=decisions,
-                source_available=_review_images.source_available,
+                source_available=_review_images.queue_source_available,
             )
             result["dataset"] = {
                 "key": cfg["key"],

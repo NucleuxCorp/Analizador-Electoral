@@ -70,7 +70,10 @@ async function fetchQueueAll() {
     if (pendingOnly) params.set('pending_only', '1');
 
     const resp = await fetch(`/api/transversal/queue?${params}`);
-    if (!resp.ok) throw new Error(`queue ${resp.status}`);
+    if (!resp.ok) {
+      const detail = await resp.text().catch(() => '');
+      throw new Error(`queue ${resp.status}${detail ? `: ${detail.slice(0, 120)}` : ''}`);
+    }
     const data = await resp.json();
     items.push(...(data.items || []));
     if (items.length >= data.total || !(data.items || []).length) break;
