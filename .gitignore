@@ -38,6 +38,8 @@ data/**
 !data/departamentos.json
 !data/divipole.json
 !data/e14c_index.json
+!data/index_e14c_segunda.json
+!data/index_e14c_segunda_2026-07-14.json
 !data/urls/
 data/urls/**
 !data/urls/.gitkeep

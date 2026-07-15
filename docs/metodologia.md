@@ -226,7 +226,9 @@ El índice registra 949 puestos pero los endpoints devuelven la página Angular 
 
 ---
 
-## 2.4 Observación: variabilidad en los datos de la plataforma de transmisión
+## 2.4 Observación: variabilidad en los índices de la Registraduría
+
+### 2.4.1 Plataforma de transmisión
 
 Durante el proceso de recolección se realizaron dos consultas al mismo endpoint de la plataforma de transmisión en fechas distintas. Los resultados obtenidos difieren de manera significativa:
 
@@ -247,6 +249,28 @@ La plataforma no dispone de mecanismos de versionado, registro de cambios ni tra
 3. Las 23 actas que figuraban como `status3` (pendientes de subir) al 21 de junio no aparecen en la consulta del 30 de junio, sin que exista constancia del momento o la forma en que fueron procesadas.
 
 Por lo anterior, las capturas realizadas en este proyecto constituyen el único registro disponible del estado histórico de la plataforma en esas fechas.
+
+### 2.4.2 Índice E14C (escrutinio oficial)
+
+El mismo patrón de mutabilidad silenciosa se confirmó también en el índice de escrutinio oficial (`data/index.json` del dominio de segunda vuelta, ver sección 2.1). Se compararon dos capturas del índice: la original del **2026-06-21** (`data/index_e14c_segunda.json`) y una nueva descarga del **2026-07-14** (`data/index_e14c_segunda_2026-07-14.json`).
+
+| Métrica | 2026-06-21 | 2026-07-14 |
+|---|---|---|
+| Total keys | 22,876 | 22,876 |
+| Puestos (`/mesas/`) | 13,489 | 13,489 |
+| Tamaño del archivo | 2,668,746 B | 2,668,746 B |
+| SHA256 | `83b5591d...` | `051e549d...` (distinto) |
+
+**El universo es idéntico** — 0 puestos agregados, 0 eliminados, mismo tamaño de archivo — pero el contenido **no es byte-idéntico**. Comparando entrada por entrada: **6,068 de 13,489 puestos (45.0%)** tienen un nombre de archivo de mesas (con su timestamp embebido) **distinto** entre ambas capturas — evidencia de que la Registraduría re-subió o actualizó esas mesas en algún momento entre el 21 de junio y el 14 de julio, sin ningún registro público que indique cuándo, cuántas veces, o por qué.
+
+Ejemplo real (mismo puesto, timestamp distinto):
+```
+data/esc/v1/actas-documentos/001/25/022/99/11/mesas/
+  2026-06-21: actas_documentos_001_25_022_99_11_mesas_20260609_095602_771.json
+  2026-07-14: actas_documentos_001_25_022_99_11_mesas_20260621_213317_360.json
+```
+
+Ambas capturas se conservan en el repositorio (`data/index_e14c_segunda.json` y `data/index_e14c_segunda_2026-07-14.json`) como registro y trazabilidad — son el único historial disponible de este índice en esas dos fechas, por la misma razón documentada en 2.4.1.
 
 ---
 
