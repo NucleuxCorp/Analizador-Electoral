@@ -1719,6 +1719,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 "pages": pages,
                 "decisions": decisions,
                 "storage_base": storage_base,
+                "image_formats": list(_review_images.GALLERY_EXTS),
             })
 
         @app.route("/api/transversal/mesa/<mesa_key>/page/<source>/<int:page>")
@@ -1727,13 +1728,17 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
         def api_transversal_page(mesa_key: str, source: str, page: int) -> Response:
             if source not in _TRANSVERSAL_SOURCES:
                 return jsonify({"error": "invalid_source"}), 400
-            cdn_url = _review_images.storage_public_url(mesa_key, source, page)
-            if cdn_url:
+            fmt = (request.args.get("fmt") or _review_images.GALLERY_EXT_PRIMARY).lower()
+            if fmt not in _review_images.GALLERY_EXTS:
+                fmt = _review_images.GALLERY_EXT_PRIMARY
+            cdn_url = _review_images.storage_public_url(mesa_key, source, page, ext=fmt)
+            if cdn_url and _review_images.storage_bucket():
                 return redirect(cdn_url, code=302)
-            jpeg = _review_images.render_page_to_cache(mesa_key, source, page)
-            if not jpeg or not jpeg.exists():
+            rendered = _review_images.render_page_to_cache(mesa_key, source, page)
+            if not rendered:
                 return jsonify({"error": "page_not_found"}), 404
-            return send_file(jpeg, mimetype="image/jpeg")
+            path, mimetype = rendered
+            return send_file(path, mimetype=mimetype)
 
         @app.route("/api/transversal/decisions", methods=["POST"])
         @require_auth

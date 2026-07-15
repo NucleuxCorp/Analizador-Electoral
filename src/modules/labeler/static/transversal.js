@@ -153,12 +153,20 @@ async function selectMesa(idx) {
   renderAlerts(currentMesaKey);
 }
 
-function pageImageUrl(mesaKey, src, pageNum) {
+function pageImageUrl(mesaKey, src, pageNum, ext) {
+  const p = String(pageNum).padStart(2, '0');
   if (mesaDetail && mesaDetail.storage_base) {
-    const p = String(pageNum).padStart(2, '0');
-    return `${mesaDetail.storage_base}/${mesaKey}/${src}_p${p}.jpg`;
+    return `${mesaDetail.storage_base}/${mesaKey}/${src}_p${p}.${ext}`;
   }
-  return `/api/transversal/mesa/${encodeURIComponent(mesaKey)}/page/${src}/${pageNum}`;
+  return `/api/transversal/mesa/${encodeURIComponent(mesaKey)}/page/${src}/${pageNum}?fmt=${ext}`;
+}
+
+function pageImageHtml(mesaKey, src, pageNum, label) {
+  const webp = pageImageUrl(mesaKey, src, pageNum, 'webp');
+  const jpg = pageImageUrl(mesaKey, src, pageNum, 'jpg');
+  const alt = `${label} p${pageNum}`;
+  return `<img src="${webp}" data-fallback="${jpg}" loading="lazy" alt="${alt}"
+    onerror="if(this.src!==this.dataset.fallback){this.src=this.dataset.fallback}">`;
 }
 
 function renderMesaMain() {
@@ -174,9 +182,8 @@ function renderMesaMain() {
       const label = SOURCE_LABELS[src];
       const count = pages[src] || 0;
       if (p <= count) {
-        const url = pageImageUrl(d.mesa_key, src, p);
         return `<div class="cell"><div class="src-label" style="background:${color}">${label}</div>
-          <img src="${url}" loading="lazy" alt="${label} p${p}"></div>`;
+          ${pageImageHtml(d.mesa_key, src, p, label)}</div>`;
       }
       if (p === 1 && !count) {
         return `<div class="cell missing"><div class="src-label" style="background:${color}">${label}</div>

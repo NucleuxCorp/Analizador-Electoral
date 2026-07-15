@@ -70,7 +70,7 @@ def lab_mesas_path(name: str | None = None) -> Path:
 
 
 def storage_object_prefix(name: str | None = None) -> str:
-    """Folder inside bucket: e.g. E14C_conflictivas/01_001_.../e14c_p01.jpg"""
+    """Folder inside bucket: e.g. E14C_conflictivas/01_001_.../e14c_p01.webp (jpg legacy supported)."""
     return dataset_config(name)["storage_prefix"]
 
 

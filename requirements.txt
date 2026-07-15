@@ -8,3 +8,5 @@ supabase>=2.0
 gunicorn>=21
 PyJWT[crypto]>=2.8
 sentry-sdk[flask]>=2.18
+Pillow>=10.0
+PyMuPDF>=1.24
