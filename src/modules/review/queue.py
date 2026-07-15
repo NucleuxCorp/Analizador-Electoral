@@ -142,6 +142,19 @@ def iter_conflictivas_jsonl(
             yield idx
 
 
+def _pending_field_count(
+    pkg: dict,
+    mesa_decisions: dict[str, dict[str, str]],
+) -> int:
+    """Human alert fields with at least one undecided source slot."""
+    pending = 0
+    for h in pkg.get("human") or []:
+        field_dec = mesa_decisions.get(h["field"]) or {}
+        if any(not field_dec.get(s["src"]) for s in (h.get("sources") or [])):
+            pending += 1
+    return pending
+
+
 def _decision_progress(
     pkg: dict,
     mesa_decisions: dict[str, dict[str, str]],
@@ -187,11 +200,11 @@ def build_queue_page(
         real_blanks = pkg.get("real_blank_count", len(pkg.get("auto") or []))
         if real_blanks == 0:
             continue
-        pending = pkg["pending_human_count"]
-        if pending_only and pending == 0 and real_blanks == 0:
+        mesa_dec = decisions.get(mk) or {}
+        pending = _pending_field_count(pkg, mesa_dec)
+        if pending_only and pending == 0:
             continue
 
-        mesa_dec = decisions.get(mk) or {}
         items.append({
             **{k: row[k] for k in ("mesa_key", "dept", "mpio", "zona", "puesto", "mesa")},
             "candidate_votes": row.get("candidate_votes"),

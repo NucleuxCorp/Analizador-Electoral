@@ -29,6 +29,7 @@ let currentIdx = 0;
 let currentMesaKey = null;
 let mesaDetail = null;
 let searchTimer = null;
+let sidebarFilter = 'all';
 
 function countPending(alerts, decisions) {
   const human = (alerts && alerts.human) || [];
@@ -52,13 +53,26 @@ function computeProgress(alerts, decisions) {
   return total ? decided / total : 1;
 }
 
+function getMesaStatus(item) {
+  if (!item) return 'pending';
+  if ((item.pending_human_count || 0) > 0) return 'pending';
+  if ((item.decision_progress || 0) >= 1) return 'done';
+  return 'pending';
+}
+
+function getVisibleIndices() {
+  return queueItems
+    .map((item, idx) => ({ idx, status: getMesaStatus(item) }))
+    .filter((x) => sidebarFilter === 'all' || x.status === sidebarFilter)
+    .map((x) => x.idx);
+}
+
 async function fetchQueueAll() {
   const items = [];
   let page = 1;
   const pageSize = 200;
   const dept = document.getElementById('dept-filter').value;
   const q = document.getElementById('search').value.trim();
-  const pendingOnly = document.getElementById('pending-only').checked;
 
   while (true) {
     const params = new URLSearchParams({
@@ -67,7 +81,6 @@ async function fetchQueueAll() {
     });
     if (dept) params.set('dept', dept);
     if (q) params.set('q', q);
-    if (pendingOnly) params.set('pending_only', '1');
 
     const resp = await fetch(`/api/transversal/queue?${params}`);
     if (!resp.ok) {
@@ -84,30 +97,79 @@ async function fetchQueueAll() {
 
 function updateStatsBar() {
   const total = queueItems.length;
-  const pending = queueItems.filter((i) => (i.real_blank_count || 0) > 0).length;
-  const avgProgress = total
-    ? queueItems.reduce((s, i) => s + (i.decision_progress || 0), 0) / total
-    : 0;
+  const pending = queueItems.filter((i) => getMesaStatus(i) === 'pending').length;
+  const done = queueItems.filter((i) => getMesaStatus(i) === 'done').length;
 
   document.getElementById('stat-total').textContent = String(total);
   document.getElementById('stat-pending').textContent = String(pending);
-  document.getElementById('stat-decided').textContent = String(Math.round(avgProgress * 100));
+  document.getElementById('stat-done').textContent = String(done);
+
+  const allN = document.getElementById('sf-all-n');
+  const pendingN = document.getElementById('sf-pending-n');
+  const doneN = document.getElementById('sf-done-n');
+  if (allN) allN.textContent = String(total);
+  if (pendingN) pendingN.textContent = String(pending);
+  if (doneN) doneN.textContent = String(done);
+}
+
+function updateFilterButtons() {
+  ['all', 'pending', 'done'].forEach((f) => {
+    const btn = document.getElementById(`sf-${f}`);
+    if (btn) btn.classList.toggle('active', f === sidebarFilter);
+  });
+}
+
+function applySidebarFilter() {
+  document.querySelectorAll('.nav-item').forEach((a) => {
+    const idx = Number(a.dataset.idx);
+    const status = getMesaStatus(queueItems[idx]);
+    const hidden = sidebarFilter !== 'all' && status !== sidebarFilter;
+    a.classList.toggle('nav-hidden', hidden);
+  });
+  const vis = getVisibleIndices();
+  if (vis.length && !vis.includes(currentIdx)) {
+    selectMesa(vis[0]);
+  } else if (!vis.length) {
+    document.getElementById('main').innerHTML = '<p class="empty-msg">Sin mesas en este filtro.</p>';
+  }
+  updateNavCounter();
+}
+
+function setSidebarFilter(filter) {
+  sidebarFilter = filter;
+  updateFilterButtons();
+  applySidebarFilter();
+}
+
+function updateNavCounter() {
+  const el = document.getElementById('nav-counter');
+  if (!el) return;
+  const vis = getVisibleIndices();
+  const pos = vis.indexOf(currentIdx);
+  el.textContent = vis.length
+    ? `${pos >= 0 ? pos + 1 : 0} / ${vis.length}`
+    : '0 / 0';
 }
 
 function renderSidebar() {
-  const nav = document.getElementById('sidebar');
-  nav.innerHTML = queueItems.map((item, idx) => {
+  const list = document.getElementById('sidebar-list');
+  if (!list) return;
+  if (!queueItems.length) {
+    list.innerHTML = '<p class="empty-msg">Sin mesas en cola.</p>';
+    return;
+  }
+  list.innerHTML = queueItems.map((item, idx) => {
     const deptName = DEPT_NAMES[item.dept] || item.dept;
     const short = `${deptName} / z${item.zona} p${item.puesto} m${item.mesa}`;
-    const blanks = item.real_blank_count || 0;
-    const badge = blanks > 0
-      ? ` <span class="pending-dot" title="${blanks} blanco(s) real(es)"></span>`
-      : '';
-    return `<a href="#" class="nav-item" data-idx="${idx}" data-dept="${item.dept}" onclick="selectMesa(${idx});return false;">
+    const status = getMesaStatus(item);
+    return `<a href="#" class="nav-item" data-idx="${idx}" data-mesa-key="${item.mesa_key}" data-dept="${item.dept}" onclick="selectMesa(${idx});return false;">
       <span class="nav-num">${String(idx + 1).padStart(2, '0')}</span>
-      <span class="nav-label">${short}${badge}</span>
+      <span class="nav-label">${short}</span>
+      <span class="nav-status ${status}" title="${status === 'done' ? 'Revisada' : 'Pendiente'}"></span>
     </a>`;
   }).join('');
+  updateFilterButtons();
+  applySidebarFilter();
 }
 
 function updateActiveNav() {
@@ -120,7 +182,8 @@ function updateActiveNav() {
 }
 
 async function refreshQueue() {
-  document.getElementById('sidebar').innerHTML = '<p class="sidebar-loading">Cargando cola…</p>';
+  const list = document.getElementById('sidebar-list');
+  if (list) list.innerHTML = '<p class="sidebar-loading">Cargando cola…</p>';
   queueItems = await fetchQueueAll();
   renderSidebar();
   updateStatsBar();
@@ -208,13 +271,14 @@ function renderMesaMain() {
         </div>
         <div class="mesa-nav">
           <button type="button" onclick="goPrev()">← Anterior</button>
-          <span id="nav-counter">${currentIdx + 1} / ${queueItems.length}</span>
+          <span id="nav-counter">—</span>
           <button type="button" onclick="goNext()">Siguiente →</button>
         </div>
       </div>
       ${rows.join('') || '<p class="empty-msg">Sin páginas disponibles.</p>'}
     </section>`;
   document.getElementById('main').scrollTop = 0;
+  updateNavCounter();
 }
 
 function decisionEditMeta() {
@@ -248,21 +312,20 @@ function renderAlerts(mesaKey) {
   }
 
   const pending = human.filter(isPending).length;
-  const realBlanks = pkg.real_blank_count != null ? pkg.real_blank_count : auto.length;
   const badge = document.getElementById('alert-count');
-  badge.textContent = String(realBlanks);
-  badge.style.background = realBlanks === 0 ? '#64748b' : '#f59e0b';
+  badge.textContent = String(pending);
+  badge.style.background = pending === 0 ? '#16a34a' : '#f59e0b';
 
   const body = document.getElementById('alert-body');
   let html = '';
 
   if (auto.length) {
-    html += '<div class="alert-section-label">Blancos reales (campos críticos)</div>';
+    html += '<div class="alert-section-label">Auto-resueltas (sin tinta)</div>';
     html += auto.map((a) => `
       <div class="alert-item alert-auto">
         <div class="alert-item-header">
           <span class="alert-src-name">${a.field_label}</span>
-          <span class="alert-auto-badge">BLANCO</span>
+          <span class="alert-auto-badge">AUTO</span>
         </div>
         <div class="alert-msg">${a.msg}</div>
       </div>`).join('');
@@ -298,7 +361,11 @@ function renderAlerts(mesaKey) {
     return;
   }
 
-  html += `<div class="alert-section-label human">Revisión humana (${human.length} campo(s))</div>`;
+  const blankConfirm = human.every((h) => h.tier === 'blank_confirm' || h.class === 'confirmed_blank');
+  const sectionLabel = blankConfirm
+    ? `Blancos reales — confirmar (${pending} pendiente(s))`
+    : `Revisión humana (${human.length} campo(s))`;
+  html += `<div class="alert-section-label human">${sectionLabel}</div>`;
   if (!editMeta.editable && editMeta.decision_count > 0) {
     html += '<div class="edit-locked">Ventana de edición cerrada (3 h). No puedes guardar más cambios.</div>';
   } else if (editMeta.editable_until) {
@@ -320,10 +387,13 @@ function renderAlerts(mesaKey) {
         <button type="button" class="btn-reject"${disabled} onclick="saveDecision('${mesaKey}','${h.field}','${s.src}','rejected')">✗</button>
       </div>`;
     }).join('');
+    const tierBadge = h.tier === 'blank_confirm'
+      ? '<span class="alert-auto-badge">BLANCO</span>'
+      : `<span class="alert-class">${h.class}</span>`;
     return `<div class="alert-item">
       <div class="alert-item-header human">
         <span class="alert-src-name">${h.field_label}</span>
-        <span class="alert-class">${h.class}</span>
+        ${tierBadge}
       </div>
       <div class="alert-msg">${h.msg}</div>
       ${srcRows}
@@ -370,8 +440,22 @@ async function saveDecision(mesaKey, field, src, decision) {
   }
   renderAlerts(mesaKey);
   updateStatsBar();
-  renderSidebar();
+  updateNavStatus();
   updateActiveNav();
+}
+
+function updateNavStatus() {
+  document.querySelectorAll('.nav-item').forEach((a) => {
+    const idx = Number(a.dataset.idx);
+    const item = queueItems[idx];
+    const dot = a.querySelector('.nav-status');
+    if (!dot || !item) return;
+    const status = getMesaStatus(item);
+    dot.className = `nav-status ${status}`;
+    dot.title = status === 'done' ? 'Revisada' : 'Pendiente';
+  });
+  updateStatsBar();
+  applySidebarFilter();
 }
 
 async function reopenMesa(mesaKey) {
@@ -406,17 +490,20 @@ async function reopenMesa(mesaKey) {
     item.pending_human_count = countPending(mesaDetail.alerts, {});
   }
   renderAlerts(mesaKey);
-  updateStatsBar();
-  renderSidebar();
+  updateNavStatus();
   updateActiveNav();
 }
 
 function goPrev() {
-  if (currentIdx > 0) selectMesa(currentIdx - 1);
+  const vis = getVisibleIndices();
+  const pos = vis.indexOf(currentIdx);
+  if (pos > 0) selectMesa(vis[pos - 1]);
 }
 
 function goNext() {
-  if (currentIdx < queueItems.length - 1) selectMesa(currentIdx + 1);
+  const vis = getVisibleIndices();
+  const pos = vis.indexOf(currentIdx);
+  if (pos >= 0 && pos < vis.length - 1) selectMesa(vis[pos + 1]);
 }
 
 function toggleSidebar() {
@@ -449,7 +536,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     document.getElementById('dept-filter').value = '';
     document.getElementById('search').value = '';
-    document.getElementById('pending-only').checked = false;
+    sidebarFilter = 'all';
     onFilterChange();
   }
 });
@@ -464,10 +551,12 @@ window.toggleAlertPanel = toggleAlertPanel;
 window.exportDecisions = exportDecisions;
 window.onFilterChange = onFilterChange;
 window.onSearchInput = onSearchInput;
+window.setSidebarFilter = setSidebarFilter;
 
 document.addEventListener('DOMContentLoaded', () => {
   refreshQueue().catch((err) => {
     console.error(err);
-    document.getElementById('sidebar').innerHTML = '<p class="empty-msg">Error cargando cola.</p>';
+    const list = document.getElementById('sidebar-list');
+    if (list) list.innerHTML = '<p class="empty-msg">Error cargando cola.</p>';
   });
 });

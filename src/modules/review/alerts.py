@@ -22,7 +22,7 @@ SOURCE_LABELS = {"e14t": "E14T", "e14d": "E14D", "e14c": "E14C"}
 SOURCE_COLORS = {"e14t": "#2563eb", "e14d": "#dc2626", "e14c": "#16a34a"}
 
 CLASS_MSG = {
-    "confirmed_blank": "Blanco real en campo crítico (sin tinta detectada en E14C).",
+    "confirmed_blank": "Blanco real en campo crítico (sin tinta en E14C) — confirma visualmente.",
     "partial": "Celda parcial (mezcla de tinta, ? o vacío) — requiere criterio humano.",
     "unreadable": "Tinta presente pero ilegible (?) — requiere criterio humano.",
     "missing": "Sin dato extraído — requiere criterio humano.",
@@ -59,13 +59,23 @@ def build_mesa_alert_package(
             cls = field_class.get(field, "missing")
             if cls != REAL_BLANK_CLASS:
                 continue
-            auto.append({
+            sources = []
+            for src in SOURCES:
+                if avail(mk, src):
+                    sources.append({
+                        "src": src,
+                        "label": SOURCE_LABELS[src],
+                        "color": SOURCE_COLORS[src],
+                    })
+            human.append({
                 "field": field,
                 "field_label": FIELD_LABELS[field],
                 "class": cls,
                 "msg": CLASS_MSG.get(cls, cls),
                 "stored": (index_row.get("stored_arrays") or {}).get(field),
-                "tier": "real_blank",
+                "tier": "blank_confirm",
+                "sources": sources,
+                "decision_key": field,
             })
     else:
         for field in TOTAL_FIELDS:
@@ -97,7 +107,7 @@ def build_mesa_alert_package(
                 "decision_key": field,
             })
 
-    real_blank_count = len(auto)
+    real_blank_count = len(human) if TRANSVERSAL_REAL_BLANK_ONLY else len(auto)
     return {
         "mesa_key": mk,
         "candidate_votes": index_row.get("candidate_votes"),

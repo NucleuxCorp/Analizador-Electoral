@@ -41,7 +41,9 @@ class TestTransversalUI:
         html = resp.get_data(as_text=True)
         assert "transversal.js" in html
         assert "stat-total" in html
-        assert "Alertas basadas en E14C" in html
+        assert "stat-done" in html
+        assert "sf-pending" in html
+        assert "Revisadas" in html
         assert "/admin/conflicts" in html
 
     def test_static_transversal_js_exists(self):
@@ -49,6 +51,8 @@ class TestTransversalUI:
         assert js_path.exists()
         content = js_path.read_text(encoding="utf-8")
         assert "renderAlerts" in content
+        assert "setSidebarFilter" in content
+        assert "getMesaStatus" in content
         assert "/api/transversal/decisions/export" in content
         assert "showSaveFilePicker" not in content
 

@@ -31,19 +31,25 @@ def main() -> int:
         f"got={page['total']} lab_meta={meta['count']}",
     ))
 
-    auto_mk = "01_001_001_01_001"
+    from src.modules.review.alerts import build_mesa_alert_package
+
+    blank_mk = "01_001_001_01_001"
+    blank_row = next(r for r in rows if r["mesa_key"] == blank_mk)
+    blank_pkg = build_mesa_alert_package(blank_row, source_available=lambda _mk, _s: True)
     checks.append((
-        "auto_mesa_pending_zero",
-        alert_index[auto_mk]["pending_human_count"] == 0,
-        f"mesa={auto_mk} pending={alert_index[auto_mk]['pending_human_count']}",
+        "real_blank_mesa_needs_confirm",
+        blank_pkg["pending_human_count"] > 0,
+        f"mesa={blank_mk} pending={blank_pkg['pending_human_count']}",
     ))
 
-    for mk in ("01_001_005_08_005", "01_001_009_05_002"):
-        p = alert_index[mk]["pending_human_count"]
+    partial_mk = "01_001_005_08_005"
+    partial_row = next((r for r in rows if r["mesa_key"] == partial_mk), None)
+    if partial_row:
+        partial_pkg = build_mesa_alert_package(partial_row, source_available=lambda _mk, _s: True)
         checks.append((
-            f"partial_mesa_pending_gt0:{mk}",
-            p > 0,
-            f"pending={p}",
+            "partial_votantes_suppressed",
+            len(partial_pkg["human"]) == 1 and partial_pkg["human"][0]["field"] == "SUMA_TOTAL",
+            f"human_fields={[h['field'] for h in partial_pkg['human']]}",
         ))
 
     export = build_export_envelope({

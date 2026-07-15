@@ -5,7 +5,8 @@ import json
 from pathlib import Path
 
 from src.modules.review.exclusions import load_excluded_keys
-from src.modules.review.queue import build_queue_page, iter_conflictivas_jsonl
+from src.modules.review.queue import _pending_field_count, build_queue_page, iter_conflictivas_jsonl
+from src.modules.review.alerts import build_mesa_alert_package
 
 LAB_DIR = Path(
     r"E:\Nucleux\tools\Analizador de Elecciones\Laboratorio\analisis_transversal\E14C_conflictivas_pendientes"
@@ -27,6 +28,21 @@ def _all_sources(_mk: str, _src: str) -> bool:
 
 
 class TestBuildQueuePage:
+    def test_pending_count_respects_decisions(self):
+        row = {
+            "mesa_key": "01_001_001_01_001",
+            "dept": "01", "mpio": "001", "zona": "001", "puesto": "01", "mesa": "001",
+            "blank_fields": ["SUMA_TOTAL"],
+            "field_class": {
+                "VOTANTES": "has_digits",
+                "URNA": "has_digits",
+                "SUMA_TOTAL": "confirmed_blank",
+            },
+        }
+        pkg = build_mesa_alert_package(row, source_available=_all_sources)
+        assert _pending_field_count(pkg, {}) == 1
+        assert _pending_field_count(pkg, {"SUMA_TOTAL": {"e14c": "accepted", "e14d": "accepted", "e14t": "accepted"}}) == 0
+
     def test_lab_index_count_4117(self):
         rows = _load_lab_index()
         meta = json.loads((LAB_DIR / "index_meta.json").read_text(encoding="utf-8"))

@@ -30,12 +30,13 @@ class TestBuildMesaAlertPackage:
         }
         pkg = build_mesa_alert_package(row, source_available=_all_sources_available)
         assert TRANSVERSAL_REAL_BLANK_ONLY is True
-        assert pkg["pending_human_count"] == 0
+        assert pkg["pending_human_count"] == 1
         assert pkg["real_blank_count"] == 1
-        assert len(pkg["auto"]) == 1
-        assert pkg["auto"][0]["field"] == "SUMA_TOTAL"
-        assert pkg["auto"][0]["tier"] == "real_blank"
-        assert pkg["human"] == []
+        assert pkg["auto"] == []
+        assert len(pkg["human"]) == 1
+        assert pkg["human"][0]["field"] == "SUMA_TOTAL"
+        assert pkg["human"][0]["tier"] == "blank_confirm"
+        assert len(pkg["human"][0]["sources"]) == 3
 
     def test_partial_suppressed_only_real_blanks_shown(self):
         row = {
@@ -53,10 +54,11 @@ class TestBuildMesaAlertPackage:
             },
         }
         pkg = build_mesa_alert_package(row, source_available=_all_sources_available)
-        assert pkg["human"] == []
-        assert pkg["pending_human_count"] == 0
+        assert len(pkg["human"]) == 1
+        assert pkg["pending_human_count"] == 1
         assert pkg["real_blank_count"] == 1
-        assert pkg["auto"][0]["field"] == "SUMA_TOTAL"
+        assert pkg["human"][0]["field"] == "SUMA_TOTAL"
+        assert pkg["auto"] == []
 
     def test_three_real_blanks(self):
         row = {
@@ -69,9 +71,10 @@ class TestBuildMesaAlertPackage:
             },
             "stored_arrays": {},
         }
-        pkg = build_mesa_alert_package(row)
+        pkg = build_mesa_alert_package(row, source_available=_all_sources_available)
         assert pkg["real_blank_count"] == 3
-        assert len(pkg["auto"]) == 3
+        assert len(pkg["human"]) == 3
+        assert pkg["auto"] == []
 
     def test_real_blank_fields_helper(self):
         fc = {"VOTANTES": "partial", "URNA": "confirmed_blank", "SUMA_TOTAL": "has_digits"}
