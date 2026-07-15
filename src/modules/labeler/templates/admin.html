@@ -1,6 +1,14 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
+  <!-- Google Tag Manager -->
+  <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+  new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+  j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+  'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+  })(window,document,'script','dataLayer','GTM-PFNL422');</script>
+  <!-- End Google Tag Manager -->
+
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Admin — Analizador E-14</title>
@@ -169,6 +177,10 @@
   </style>
 </head>
 <body>
+  <!-- Google Tag Manager (noscript) -->
+  <noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-PFNL422"
+  height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+  <!-- End Google Tag Manager (noscript) -->
 
 <div class="topbar">
   <h1>⚙ Panel de administración</h1>
@@ -277,7 +289,13 @@
           <td class="muted" style="font-size:.68rem;white-space:nowrap;">{{ m.marked_at or '—' }}</td>
           <td class="muted mono" style="font-size:.68rem;">{{ m.annotator or '—' }}</td>
           <td class="reason">{{ m.reason or '—' }}</td>
-          <td class="mono muted" style="font-size:.65rem;">{{ (m.pdf_path or '—') | replace('\\','/') | truncate(50, True, '…') }}</td>
+          <td>
+            {% if m.crop_id %}
+            <a class="pdf-link" href="/pdf?v={{ m.crop_id }}" target="_blank">Ver acta</a>
+            {% else %}
+            <span class="mono muted" style="font-size:.65rem;">{{ (m.pdf_path or '—') | replace('\\','/') | truncate(50, True, '…') }}</span>
+            {% endif %}
+          </td>
           <td><button class="btn-hide" onclick="hideRecord('fraud_marks', {{ m.id }}, 'fraud-row-{{ m.id }}')">Ocultar</button></td>
         </tr>
         {% endfor %}
@@ -338,14 +356,19 @@
     <div class="mesa-report-list">
       {% for m in mesa_reports %}
       {% set parts = m.mesa_key.split('_') %}
+      {% if parts | length >= 6 %}
+        {% set mk_dept, mk_mpio, mk_zona, mk_puesto, mk_mesa = parts[0], parts[1], parts[2], parts[4], parts[5] %}
+      {% else %}
+        {% set mk_dept, mk_mpio, mk_zona, mk_puesto, mk_mesa = parts[0], parts[1], parts[2], parts[3], parts[4] %}
+      {% endif %}
       <div class="mesa-report-card" id="mrcard-{{ loop.index }}">
         <div class="mesa-report-header" onclick="toggleMesaCard({{ loop.index }})">
           <span class="mk-inline">
-            <span style="color:#fbbf24;font-weight:bold">{{ DEPT_NAMES.get(parts[0], parts[0]) }}</span>
-            <span class="mk-sep">·</span> Mpio <b>{{ parts[1] | int }}</b>
-            <span class="mk-sep">·</span> Zona <b>{{ parts[2] | int }}</b>
-            <span class="mk-sep">·</span> Puesto <b>{{ parts[4] | int }}</b>
-            <span class="mk-sep">·</span> Mesa <b style="color:#7ec8e3">{{ parts[5] | int }}</b>
+            <span style="color:#fbbf24;font-weight:bold">{{ DEPT_NAMES.get(mk_dept, mk_dept) }}</span>
+            <span class="mk-sep">·</span> Mpio <b>{{ mk_mpio | int }}</b>
+            <span class="mk-sep">·</span> Zona <b>{{ mk_zona | int }}</b>
+            <span class="mk-sep">·</span> Puesto <b>{{ mk_puesto | int }}</b>
+            <span class="mk-sep">·</span> Mesa <b style="color:#7ec8e3">{{ mk_mesa | int }}</b>
           </span>
           {% if m.first_crop_id %}
           <a class="pdf-link" href="/pdf?v={{ m.first_crop_id }}" target="_blank" onclick="event.stopPropagation()">Ver acta</a>
@@ -366,7 +389,7 @@
           </div>
           <table>
             <thead>
-              <tr><th>Fecha</th><th>Tipo</th><th>Original → Corregido</th><th>Dígito ref.</th><th>Notas</th><th>Crop</th><th></th></tr>
+              <tr><th>Fecha</th><th>Tipo</th><th>Original → Corregido</th><th>Dígito ref.</th><th>Notas</th><th>Crop</th><th>Acta</th><th></th></tr>
             </thead>
             <tbody>
               {% for r in type_reports %}
@@ -388,6 +411,11 @@
                   {% if r.crop_id %}
                   <img class="crop-thumb" src="/crop-image/{{ r.crop_id }}" alt="{{ r.crop_id }}" onerror="this.style.display='none'">
                   {% endif %}
+                </td>
+                <td>
+                  {% if r.crop_id %}
+                  <a class="pdf-link" href="/pdf?v={{ r.crop_id }}" target="_blank" onclick="event.stopPropagation()">Ver acta</a>
+                  {% else %}<span class="muted">—</span>{% endif %}
                 </td>
                 <td><button class="btn-hide" onclick="hideRecord('reports', {{ r.id }}, 'report-row-{{ r.id }}')">Ocultar</button></td>
               </tr>
