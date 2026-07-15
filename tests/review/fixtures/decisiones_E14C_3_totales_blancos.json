@@ -1,0 +1,495 @@
+{
+  "decisions": {
+    "31_028_002_05_004": {
+      "_reports": [
+        {
+          "type": "otro",
+          "source": "e14t",
+          "notes": "Se colocaron puntos . en Total URNAS Y SUMA VOTOS.",
+          "ts": "2026-07-14T19:04:36.898Z"
+        },
+        {
+          "type": "otro",
+          "source": "e14d",
+          "notes": "Se colocaron puntos . en Total URNAS Y SUMA VOTOS.",
+          "ts": "2026-07-14T19:04:36.898Z"
+        },
+        {
+          "type": "otro",
+          "source": "e14c",
+          "notes": "Se colocaron puntos . en Total URNAS Y SUMA VOTOS.",
+          "ts": "2026-07-14T19:04:36.898Z"
+        }
+      ],
+      "e14t": {},
+      "e14d": {},
+      "e14c": {}
+    },
+    "01_001_007_03_023": {
+      "e14t": {
+        "VOTANTES": true,
+        "URNA": true,
+        "SUMA_TOTAL": true
+      },
+      "e14d": {
+        "VOTANTES": true,
+        "URNA": true,
+        "SUMA_TOTAL": true
+      },
+      "e14c": {
+        "VOTANTES": true,
+        "URNA": true,
+        "SUMA_TOTAL": true
+      }
+    },
+    "05_001_007_01_029": {
+      "e14t": {
+        "VOTANTES": true,
+        "URNA": false,
+        "SUMA_TOTAL": false
+      },
+      "e14d": {
+        "VOTANTES": true,
+        "URNA": false,
+        "SUMA_TOTAL": false
+      },
+      "e14c": {
+        "VOTANTES": true,
+        "URNA": false,
+        "SUMA_TOTAL": false
+      }
+    },
+    "05_031_000_01_002": {
+      "e14t": {
+        "VOTANTES": true,
+        "URNA": true,
+        "SUMA_TOTAL": true
+      },
+      "e14d": {
+        "VOTANTES": true,
+        "URNA": true,
+        "SUMA_TOTAL": true
+      },
+      "e14c": {
+        "VOTANTES": true,
+        "URNA": true,
+        "SUMA_TOTAL": true
+      }
+    },
+    "17_082_099_09_004": {
+      "e14t": {
+        "VOTANTES": true,
+        "URNA": true,
+        "SUMA_TOTAL": true
+      },
+      "e14d": {
+        "VOTANTES": true,
+        "URNA": true,
+        "SUMA_TOTAL": true
+      },
+      "e14c": {
+        "VOTANTES": true,
+        "URNA": true,
+        "SUMA_TOTAL": true
+      }
+    },
+    "21_095_099_28_027": {
+      "e14t": {
+        "VOTANTES": false,
+        "URNA": false,
+        "SUMA_TOTAL": true
+      },
+      "e14d": {
+        "VOTANTES": true,
+        "URNA": true,
+        "SUMA_TOTAL": true
+      },
+      "e14c": {
+        "VOTANTES": true,
+        "URNA": true,
+        "SUMA_TOTAL": true
+      }
+    },
+    "23_139_001_03_003": {
+      "e14t": {
+        "VOTANTES": false,
+        "URNA": false,
+        "SUMA_TOTAL": true
+      },
+      "e14d": {
+        "VOTANTES": true,
+        "URNA": true,
+        "SUMA_TOTAL": true
+      },
+      "e14c": {
+        "VOTANTES": true,
+        "URNA": true,
+        "SUMA_TOTAL": true
+      }
+    },
+    "28_049_099_90_001": {
+      "e14t": {
+        "VOTANTES": false,
+        "URNA": false,
+        "SUMA_TOTAL": true
+      },
+      "e14d": {
+        "VOTANTES": true,
+        "URNA": true,
+        "SUMA_TOTAL": true
+      },
+      "e14c": {
+        "VOTANTES": false,
+        "URNA": false,
+        "SUMA_TOTAL": true
+      }
+    },
+    "48_016_002_01_037": {
+      "e14t": {
+        "VOTANTES": true,
+        "URNA": true,
+        "SUMA_TOTAL": true
+      },
+      "e14d": {
+        "VOTANTES": true,
+        "URNA": true,
+        "SUMA_TOTAL": true
+      },
+      "e14c": {
+        "VOTANTES": true,
+        "URNA": true,
+        "SUMA_TOTAL": true
+      }
+    },
+    "01_001_005_02_027": {
+      "e14t": {
+        "VOTANTES": false,
+        "URNA": false,
+        "SUMA_TOTAL": true
+      },
+      "e14d": {
+        "VOTANTES": false,
+        "URNA": false,
+        "SUMA_TOTAL": true
+      },
+      "e14c": {
+        "VOTANTES": false,
+        "URNA": false,
+        "SUMA_TOTAL": true
+      }
+    },
+    "01_049_002_01_038": {
+      "e14t": {
+        "VOTANTES": false,
+        "URNA": false,
+        "SUMA_TOTAL": true
+      },
+      "e14d": {
+        "VOTANTES": false,
+        "URNA": false,
+        "SUMA_TOTAL": true
+      },
+      "e14c": {
+        "VOTANTES": false,
+        "URNA": false,
+        "SUMA_TOTAL": true
+      }
+    },
+    "01_163_002_02_012": {
+      "e14t": {
+        "VOTANTES": false,
+        "URNA": false,
+        "SUMA_TOTAL": true
+      },
+      "e14d": {
+        "VOTANTES": false,
+        "URNA": false,
+        "SUMA_TOTAL": true
+      },
+      "e14c": {
+        "VOTANTES": false,
+        "URNA": false,
+        "SUMA_TOTAL": true
+      }
+    },
+    "05_028_099_01_005": {
+      "_reports": [
+        {
+          "type": "otro",
+          "notes": "Hace falta la pagina de la firma de los jurados en el E14T",
+          "ts": "2026-07-10T05:36:08.933Z"
+        }
+      ],
+      "e14t": {},
+      "e14d": {},
+      "e14c": {}
+    },
+    "05_040_099_09_001": {
+      "_reports": [
+        {
+          "type": "otro",
+          "notes": "La suma total de votos no esta correctamente rellenada.",
+          "ts": "2026-07-10T05:38:07.887Z"
+        }
+      ],
+      "e14t": {},
+      "e14d": {},
+      "e14c": {}
+    },
+    "11_076_090_01_011": {
+      "e14t": {
+        "VOTANTES": false,
+        "URNA": false,
+        "SUMA_TOTAL": true
+      },
+      "e14d": {
+        "VOTANTES": false,
+        "URNA": false,
+        "SUMA_TOTAL": true
+      },
+      "e14c": {
+        "VOTANTES": false,
+        "URNA": false,
+        "SUMA_TOTAL": true
+      }
+    },
+    "12_180_000_00_007": {
+      "e14t": {
+        "VOTANTES": false,
+        "URNA": false,
+        "SUMA_TOTAL": true
+      },
+      "e14d": {
+        "VOTANTES": false,
+        "URNA": false,
+        "SUMA_TOTAL": true
+      },
+      "e14c": {
+        "VOTANTES": false,
+        "URNA": false,
+        "SUMA_TOTAL": true
+      }
+    },
+    "12_200_001_01_019": {
+      "e14t": {
+        "VOTANTES": false,
+        "URNA": true,
+        "SUMA_TOTAL": true
+      },
+      "e14d": {
+        "VOTANTES": false,
+        "URNA": true,
+        "SUMA_TOTAL": true
+      },
+      "e14c": {
+        "VOTANTES": false,
+        "URNA": true,
+        "SUMA_TOTAL": true
+      }
+    },
+    "15_072_002_01_002": {
+      "_reports": [
+        {
+          "type": "enmienda",
+          "notes": "en varias celdas del bloque inferior",
+          "ts": "2026-07-10T05:45:26.411Z"
+        }
+      ],
+      "e14t": {},
+      "e14d": {},
+      "e14c": {}
+    },
+    "16_001_019_46_001": {
+      "e14t": {
+        "VOTANTES": true,
+        "URNA": false,
+        "SUMA_TOTAL": false
+      },
+      "_reports": [
+        {
+          "type": "otro",
+          "notes": "La suma total es inferior que el valor total de votantes,",
+          "ts": "2026-07-10T05:47:09.100Z"
+        }
+      ],
+      "e14d": {
+        "VOTANTES": true,
+        "URNA": false,
+        "SUMA_TOTAL": false
+      },
+      "e14c": {
+        "VOTANTES": true,
+        "URNA": false,
+        "SUMA_TOTAL": false
+      }
+    },
+    "19_001_002_02_022": {
+      "_reports": [
+        {
+          "type": "enmienda",
+          "notes": "Todos los E14 tienen una enmendadura en el valor Urnas, cambian un 2 por un 4",
+          "ts": "2026-07-10T05:50:17.118Z"
+        }
+      ],
+      "e14t": {},
+      "e14d": {},
+      "e14c": {}
+    },
+    "24_025_001_02_008": {
+      "e14t": {
+        "VOTANTES": false,
+        "URNA": false,
+        "SUMA_TOTAL": true
+      },
+      "e14d": {
+        "VOTANTES": false,
+        "URNA": false,
+        "SUMA_TOTAL": true
+      },
+      "e14c": {
+        "VOTANTES": false,
+        "URNA": false,
+        "SUMA_TOTAL": true
+      }
+    },
+    "24_046_001_01_002": {
+      "e14t": {
+        "VOTANTES": false,
+        "URNA": false,
+        "SUMA_TOTAL": true
+      },
+      "e14d": {
+        "VOTANTES": false,
+        "URNA": false,
+        "SUMA_TOTAL": true
+      },
+      "e14c": {
+        "VOTANTES": false,
+        "URNA": false,
+        "SUMA_TOTAL": true
+      }
+    },
+    "28_060_099_50_004": {
+      "e14t": {
+        "VOTANTES": false,
+        "URNA": false,
+        "SUMA_TOTAL": true
+      },
+      "e14d": {
+        "VOTANTES": false,
+        "URNA": false,
+        "SUMA_TOTAL": true
+      },
+      "e14c": {
+        "VOTANTES": false,
+        "URNA": false,
+        "SUMA_TOTAL": true
+      }
+    },
+    "31_001_017_01_022": {
+      "_reports": [
+        {
+          "type": "otro",
+          "source": "e14t",
+          "notes": "Suma total no es correcto.",
+          "ts": "2026-07-10T06:28:05.575Z"
+        },
+        {
+          "type": "otro",
+          "source": "e14d",
+          "notes": "Suma total no es correcto.",
+          "ts": "2026-07-10T06:28:05.575Z"
+        },
+        {
+          "type": "otro",
+          "source": "e14c",
+          "notes": "Suma total no es correcto.",
+          "ts": "2026-07-10T06:28:05.575Z"
+        }
+      ],
+      "e14t": {},
+      "e14d": {},
+      "e14c": {}
+    },
+    "31_028_001_01_002": {
+      "_reports": [
+        {
+          "type": "otro",
+          "source": "e14t",
+          "notes": "Suma total no estabien calculado.",
+          "ts": "2026-07-10T06:32:50.395Z"
+        },
+        {
+          "type": "otro",
+          "source": "e14d",
+          "notes": "Suma total no estabien calculado.",
+          "ts": "2026-07-10T06:32:50.395Z"
+        },
+        {
+          "type": "otro",
+          "source": "e14c",
+          "notes": "Suma total no estabien calculado.",
+          "ts": "2026-07-10T06:32:50.395Z"
+        }
+      ],
+      "e14t": {},
+      "e14d": {},
+      "e14c": {}
+    },
+    "31_082_099_10_001": {
+      "_reports": [
+        {
+          "type": "otro",
+          "source": "e14c",
+          "notes": "Suma total mal calculado o con error humano.",
+          "ts": "2026-07-10T06:34:09.299Z"
+        }
+      ],
+      "e14t": {},
+      "e14d": {},
+      "e14c": {}
+    },
+    "31_112_099_05_003": {
+      "_reports": [
+        {
+          "type": "otro",
+          "source": "e14t",
+          "notes": "Letras muy peque\u00f1as tanto como el circulo interno de la subcelda.",
+          "ts": "2026-07-10T06:35:41.900Z"
+        },
+        {
+          "type": "otro",
+          "source": "e14d",
+          "notes": "Letras muy peque\u00f1as tanto como el circulo interno de la subcelda.",
+          "ts": "2026-07-10T06:35:41.900Z"
+        },
+        {
+          "type": "otro",
+          "source": "e14c",
+          "notes": "Letras muy peque\u00f1as tanto como el circulo interno de la subcelda.",
+          "ts": "2026-07-10T06:35:41.900Z"
+        }
+      ],
+      "e14t": {},
+      "e14d": {},
+      "e14c": {}
+    },
+    "48_004_000_01_019": {
+      "e14t": {
+        "VOTANTES": false,
+        "URNA": false,
+        "SUMA_TOTAL": true
+      },
+      "e14d": {
+        "VOTANTES": false,
+        "URNA": false,
+        "SUMA_TOTAL": true
+      },
+      "e14c": {
+        "VOTANTES": false,
+        "URNA": false,
+        "SUMA_TOTAL": true
+      }
+    }
+  }
+}

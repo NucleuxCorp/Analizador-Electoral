@@ -115,6 +115,21 @@ Cada puesto tiene su **propio timestamp** en el filename — se actualiza cuando
 python main.py label  # arranca en localhost:5000 con _STATE singleton local
 ```
 
+## Panel transversal (moderator/admin)
+
+Ruta `/admin/transversal` — revisión visual E14C conflictivas (~4.117 mesas). Sin reproceso PDF; alertas desde `mesa_results.raw_data` o JSONL local.
+
+```bash
+# Verificación SDD (T12)
+pytest tests/review/ tests/test_transversal_*.py -q
+python scripts/verify_transversal_panel.py
+
+# Diagnóstico imagen on-demand
+python scripts/diagnostic_transversal_image.py --mesa-key 01_001_001_01_001 --source e14c
+```
+
+**Deploy Railway (opcional):** `TRANSVERSAL_CACHE_DIR` (default `data/cache/transversal_pages`), `TRANSVERSAL_DATASET` (slug export JSON), `TRANSVERSAL_DECISIONS_DIR` (exclusiones; default `Data/decisiones_E14*.json`). PDFs vía `data/cross_mesa_index.jsonl` en el host; shortcut lab: `TRANSVERSAL_LAB_MESAS_DIR`. SQL: `scripts/deploy/add_transversal_review_decisions.sql`.
+
 ## notes_extractor — coordenadas calibradas
 
 Las regiones de notas están configuradas para el template AMAZONAS/LETICIA a 300 DPI:

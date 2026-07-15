@@ -763,7 +763,12 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
     _production_mode = bool(_supabase_url)
 
     templates_dir = Path(__file__).parent / "templates"
-    app = Flask(__name__, template_folder=str(templates_dir))
+    static_dir = Path(__file__).parent / "static"
+    app = Flask(
+        __name__,
+        template_folder=str(templates_dir),
+        static_folder=str(static_dir),
+    )
 
     # ----------------------------------------------------------------
     # Custom Jinja filters
@@ -1591,6 +1596,150 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 amended_crops=amended_crops,
                 reports=reports,
                 mesa_reports=mesa_reports,
+            )
+
+        # ----------------------------------------------------------------
+        # Transversal review panel (moderator + admin)
+        # ----------------------------------------------------------------
+
+        from src.modules.review import images as _review_images
+        from src.modules.review.alerts import SOURCES as _TRANSVERSAL_SOURCES
+        from src.modules.review.alerts import build_mesa_alert_package
+        from src.modules.review.exclusions import load_excluded_keys
+        from src.modules.review.field_audit import build_index_row
+        from src.modules.review.queue import build_queue_page, iter_conflictivas_jsonl
+
+        def _transversal_load_index_rows() -> list[dict]:
+            """JSONL fallback when mesa_results scan is not used."""
+            excluded = load_excluded_keys("confirmed")
+            return list(iter_conflictivas_jsonl(excluded=excluded))
+
+        def _transversal_raw_for_mesa(mesa_key: str) -> dict | None:
+            raw = _db.get_mesa_raw_data(mesa_key)
+            if raw:
+                return raw
+            from src.modules.review.queue import iter_cross_rows
+            from src.modules.review.field_audit import mesa_key as _mk_fn
+            for row in iter_cross_rows():
+                if _mk_fn(row) == mesa_key:
+                    return row
+            return None
+
+        @app.route("/admin/transversal")
+        @require_auth
+        @require_role(ROLE_ADMIN, ROLE_MODERATOR)
+        def admin_transversal_view() -> Response:
+            return render_template("transversal.html")
+
+        @app.route("/api/transversal/queue")
+        @require_auth
+        @require_role(ROLE_ADMIN, ROLE_MODERATOR)
+        def api_transversal_queue() -> Response:
+            try:
+                page = max(1, int(request.args.get("page", 1)))
+            except (TypeError, ValueError):
+                page = 1
+            try:
+                page_size = min(200, max(1, int(request.args.get("page_size", 50))))
+            except (TypeError, ValueError):
+                page_size = 50
+            dept = request.args.get("dept") or None
+            pending_only = request.args.get("pending_only", "").lower() in ("1", "true", "yes")
+            q = request.args.get("q") or None
+
+            rows = _transversal_load_index_rows()
+            exclusions = load_excluded_keys("confirmed")
+            decisions = _db.get_transversal_decisions()
+            result = build_queue_page(
+                rows,
+                exclusions,
+                page=page,
+                page_size=page_size,
+                dept=dept,
+                pending_only=pending_only,
+                q=q,
+                decisions=decisions,
+                source_available=_review_images.source_available,
+            )
+            return jsonify(result)
+
+        @app.route("/api/transversal/mesa/<mesa_key>")
+        @require_auth
+        @require_role(ROLE_ADMIN, ROLE_MODERATOR)
+        def api_transversal_mesa(mesa_key: str) -> Response:
+            raw = _transversal_raw_for_mesa(mesa_key)
+            if not raw:
+                return jsonify({"error": "mesa_not_found"}), 404
+            index_row = build_index_row(raw)
+            if not index_row:
+                return jsonify({"error": "not_conflictiva"}), 404
+            alerts = build_mesa_alert_package(
+                index_row,
+                mesa_key,
+                source_available=_review_images.source_available,
+            )
+            pages = {
+                src: _review_images.get_page_count(mesa_key, src)
+                for src in _TRANSVERSAL_SOURCES
+                if _review_images.source_available(mesa_key, src)
+            }
+            decisions = _db.get_transversal_decisions(mesa_key).get(mesa_key, {})
+            return jsonify({
+                "mesa_key": mesa_key,
+                "dept": index_row.get("dept"),
+                "mpio": index_row.get("mpio"),
+                "zona": index_row.get("zona"),
+                "puesto": index_row.get("puesto"),
+                "mesa": index_row.get("mesa"),
+                "candidate_votes": index_row.get("candidate_votes"),
+                "blank_fields": index_row.get("blank_fields"),
+                "alerts": alerts,
+                "pages": pages,
+                "decisions": decisions,
+            })
+
+        @app.route("/api/transversal/mesa/<mesa_key>/page/<source>/<int:page>")
+        @require_auth
+        @require_role(ROLE_ADMIN, ROLE_MODERATOR)
+        def api_transversal_page(mesa_key: str, source: str, page: int) -> Response:
+            if source not in _TRANSVERSAL_SOURCES:
+                return jsonify({"error": "invalid_source"}), 400
+            jpeg = _review_images.render_page_to_cache(mesa_key, source, page)
+            if not jpeg or not jpeg.exists():
+                return jsonify({"error": "page_not_found"}), 404
+            return send_file(jpeg, mimetype="image/jpeg")
+
+        @app.route("/api/transversal/decisions", methods=["POST"])
+        @require_auth
+        @require_role(ROLE_ADMIN, ROLE_MODERATOR)
+        def api_transversal_decisions_post() -> Response:
+            from flask import g
+            body = request.get_json(force=True, silent=True) or {}
+            mesa_key = body.get("mesa_key")
+            field = body.get("field")
+            source = body.get("source")
+            decision = body.get("decision")
+            notes = body.get("notes")
+            if not mesa_key or not field or not source or not decision:
+                return jsonify({"ok": False, "error": "missing_fields"}), 400
+            ok = _db.upsert_transversal_decision(
+                mesa_key, field, source, decision, g.user_id, notes=notes
+            )
+            if not ok:
+                return jsonify({"ok": False, "error": "invalid_or_failed"}), 400
+            return jsonify({"ok": True})
+
+        @app.route("/api/transversal/decisions/export")
+        @require_auth
+        @require_role(ROLE_ADMIN, ROLE_MODERATOR)
+        def api_transversal_decisions_export() -> Response:
+            payload = _db.export_transversal_decisions()
+            dataset = payload.get("project", "transversal_review_E14C_conflictivas")
+            filename = f"decisiones_transversal_{dataset}.json"
+            return Response(
+                json.dumps(payload, ensure_ascii=False, indent=2),
+                mimetype="application/json",
+                headers={"Content-Disposition": f'attachment; filename="{filename}"'},
             )
 
         # ----------------------------------------------------------------

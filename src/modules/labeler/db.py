@@ -1201,3 +1201,126 @@ def get_mesa_semaphore_stats(dept: str | None = None) -> dict:
 
     _review_semaphore_cache[cache_key] = {"data": result, "ts": now}
     return result
+
+
+# ---------------------------------------------------------------------------
+# 3.14  transversal_review_decisions — visual review panel CRUD
+# ---------------------------------------------------------------------------
+
+_TRANSVERSAL_FIELDS = frozenset({"VOTANTES", "URNA", "SUMA_TOTAL"})
+_TRANSVERSAL_SOURCES = frozenset({"e14c", "e14d", "e14t"})
+_TRANSVERSAL_DECISIONS = frozenset({"accepted", "rejected"})
+
+
+def get_mesa_raw_data(mesa_key: str) -> dict | None:
+    """Return raw_data JSONB for one mesa_results row."""
+    try:
+        response = (
+            _client()
+            .table("mesa_results")
+            .select("raw_data")
+            .eq("mesa_key", mesa_key)
+            .limit(1)
+            .execute()
+        )
+        rows = response.data or []
+        if not rows:
+            return None
+        return rows[0].get("raw_data")
+    except Exception as exc:
+        logger.warning("get_mesa_raw_data failed for %s: %s", mesa_key, exc)
+        return None
+
+
+def list_mesa_results_for_review(
+    offset: int = 0,
+    limit: int = 50,
+    dept: str | None = None,
+) -> list[dict]:
+    """Paginated mesa_results rows with raw_data for transversal queue scan."""
+    try:
+        query = (
+            _client()
+            .table("mesa_results")
+            .select("mesa_key, dept, mpio, zona, puesto, mesa, raw_data")
+            .order("mesa_key")
+        )
+        if dept is not None:
+            query = query.eq("dept", dept)
+        response = query.range(offset, offset + limit - 1).execute()
+        return response.data or []
+    except Exception as exc:
+        logger.warning("list_mesa_results_for_review failed: %s", exc)
+        return []
+
+
+def upsert_transversal_decision(
+    mesa_key: str,
+    field: str,
+    source: str,
+    decision: str,
+    reviewer_id: str,
+    notes: str | None = None,
+) -> bool:
+    """Upsert one transversal review decision. Returns False on validation/DB error."""
+    if field not in _TRANSVERSAL_FIELDS:
+        return False
+    if source not in _TRANSVERSAL_SOURCES:
+        return False
+    if decision not in _TRANSVERSAL_DECISIONS:
+        return False
+    try:
+        row = {
+            "mesa_key": mesa_key,
+            "field": field,
+            "source": source,
+            "decision": decision,
+            "reviewer_id": reviewer_id,
+            "notes": notes,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        _client().table("transversal_review_decisions").upsert(
+            row,
+            on_conflict="mesa_key,field,source",
+        ).execute()
+        return True
+    except Exception as exc:
+        logger.warning("upsert_transversal_decision failed: %s", exc)
+        return False
+
+
+def _nest_transversal_rows(rows: list[dict]) -> dict:
+    nested: dict[str, dict] = {}
+    for row in rows:
+        mk = row["mesa_key"]
+        nested.setdefault(mk, {})
+        nested[mk].setdefault(row["field"], {})
+        nested[mk][row["field"]][row["source"]] = row["decision"]
+    return nested
+
+
+def get_transversal_decisions(mesa_key: str | None = None) -> dict:
+    """Return nested decisions: mesa → field → source → accepted|rejected."""
+    try:
+        query = _client().table("transversal_review_decisions").select(
+            "mesa_key, field, source, decision"
+        )
+        if mesa_key is not None:
+            query = query.eq("mesa_key", mesa_key)
+        rows = (query.execute().data) or []
+        return _nest_transversal_rows(rows)
+    except Exception as exc:
+        logger.warning("get_transversal_decisions failed: %s", exc)
+        return {}
+
+
+def export_transversal_decisions(dataset: str | None = None) -> dict:
+    """Full export envelope for download (spec §10)."""
+    from src.modules.review.export import build_export_envelope
+
+    nested = get_transversal_decisions()
+    slug = dataset or os.environ.get(
+        "TRANSVERSAL_DATASET",
+        "transversal_review_E14C_conflictivas",
+    )
+    return build_export_envelope(nested, dataset=slug)
