@@ -252,25 +252,25 @@ Por lo anterior, las capturas realizadas en este proyecto constituyen el único 
 
 ### 2.4.2 Índice E14C (escrutinio oficial)
 
-El mismo patrón de mutabilidad silenciosa se confirmó también en el índice de escrutinio oficial (`data/index.json` del dominio de segunda vuelta, ver sección 2.1). Se compararon dos capturas del índice: la original del **2026-06-21** (`data/index_e14c_segunda.json`) y una nueva descarga del **2026-07-14** (`data/index_e14c_segunda_2026-07-14.json`).
+El mismo patrón de mutabilidad silenciosa se confirmó también en el índice de escrutinio oficial (`data/index.json` del dominio de segunda vuelta, ver sección 2.1). Se compararon dos capturas del índice: la original del **2026-06-21** (`data/index_e14c_segunda.json`) y una nueva descarga del **2026-07-15** (`data/index_e14c_segunda_2026-07-15.json`).
 
-| Métrica | 2026-06-21 | 2026-07-14 |
+| Métrica | 2026-06-21 | 2026-07-15 |
 |---|---|---|
 | Total keys | 22,876 | 22,876 |
 | Puestos (`/mesas/`) | 13,489 | 13,489 |
 | Tamaño del archivo | 2,668,746 B | 2,668,746 B |
 | SHA256 | `83b5591d...` | `051e549d...` (distinto) |
 
-**El universo es idéntico** — 0 puestos agregados, 0 eliminados, mismo tamaño de archivo — pero el contenido **no es byte-idéntico**. Comparando entrada por entrada: **6,068 de 13,489 puestos (45.0%)** tienen un nombre de archivo de mesas (con su timestamp embebido) **distinto** entre ambas capturas — evidencia de que la Registraduría re-subió o actualizó esas mesas en algún momento entre el 21 de junio y el 14 de julio, sin ningún registro público que indique cuándo, cuántas veces, o por qué.
+**El universo es idéntico** — 0 puestos agregados, 0 eliminados, mismo tamaño de archivo — pero el contenido **no es byte-idéntico**. Comparando entrada por entrada: **6,068 de 13,489 puestos (45.0%)** tienen un nombre de archivo de mesas (con su timestamp embebido) **distinto** entre ambas capturas — evidencia de que la Registraduría re-subió o actualizó esas mesas en algún momento entre el 21 de junio y el 15 de julio, sin ningún registro público que indique cuándo, cuántas veces, o por qué.
 
 Ejemplo real (mismo puesto, timestamp distinto):
 ```
 data/esc/v1/actas-documentos/001/25/022/99/11/mesas/
   2026-06-21: actas_documentos_001_25_022_99_11_mesas_20260609_095602_771.json
-  2026-07-14: actas_documentos_001_25_022_99_11_mesas_20260621_213317_360.json
+  2026-07-15: actas_documentos_001_25_022_99_11_mesas_20260621_213317_360.json
 ```
 
-Ambas capturas se conservan en el repositorio (`data/index_e14c_segunda.json` y `data/index_e14c_segunda_2026-07-14.json`) como registro y trazabilidad — son el único historial disponible de este índice en esas dos fechas, por la misma razón documentada en 2.4.1.
+Ambas capturas se conservan en el repositorio (`data/index_e14c_segunda.json` y `data/index_e14c_segunda_2026-07-15.json`) como registro y trazabilidad — son el único historial disponible de este índice en esas dos fechas, por la misma razón documentada en 2.4.1.
 
 ---
 
