@@ -22,6 +22,8 @@ _CROSS_FILE_RE = re.compile(r"^cross_mesa_validation_\d{2}\.jsonl$")
 _DEFAULT_DATA_DIR = Path(__file__).resolve().parents[3] / "data"
 _INDEX_CACHE: dict[str, tuple[float, list[dict]]] = {}
 _INDEX_CACHE_TTL = 300.0
+_SKELETON_CACHE: dict[str, tuple[float, list[dict]]] = {}
+_SKELETON_CACHE_TTL = _INDEX_CACHE_TTL
 
 
 def iter_cross_rows(data_dir: Path | None = None) -> Iterator[dict]:
@@ -124,6 +126,10 @@ def clear_transversal_index_cache() -> None:
     _INDEX_CACHE.clear()
 
 
+def clear_queue_skeleton_cache() -> None:
+    _SKELETON_CACHE.clear()
+
+
 def iter_conflictivas_jsonl(
     data_dir: Path | None = None,
     *,
@@ -171,21 +177,28 @@ def _decision_progress(
     return decided / total_slots
 
 
-def build_queue_page(
+def _skeleton_cache_key(
     rows: list[dict],
     exclusions: set[str],
     *,
-    page: int = 1,
-    page_size: int = 50,
+    dept: str | None,
+    q: str | None,
+) -> str:
+    first = rows[0]["mesa_key"] if rows else ""
+    last = rows[-1]["mesa_key"] if rows else ""
+    return f"{len(rows)}:{first}:{last}:{len(exclusions)}:{dept}:{q}"
+
+
+def _build_queue_skeleton(
+    rows: list[dict],
+    exclusions: set[str],
+    *,
     dept: str | None = None,
-    pending_only: bool = False,
     q: str | None = None,
-    decisions: dict[str, dict] | None = None,
     source_available=None,
-) -> dict[str, Any]:
-    """Filter, sort, and paginate queue rows."""
-    decisions = decisions or {}
-    items: list[dict] = []
+) -> list[dict]:
+    """Decision-independent queue skeleton sorted by dept, mesa_key."""
+    skeleton: list[dict] = []
 
     for row in rows:
         mk = row["mesa_key"]
@@ -200,25 +213,110 @@ def build_queue_page(
         real_blanks = pkg.get("real_blank_count", len(pkg.get("auto") or []))
         if real_blanks == 0:
             continue
-        mesa_dec = decisions.get(mk) or {}
-        pending = _pending_field_count(pkg, mesa_dec)
-        if pending_only and pending == 0:
-            continue
 
-        items.append({
+        skeleton.append({
             **{k: row[k] for k in ("mesa_key", "dept", "mpio", "zona", "puesto", "mesa")},
             "candidate_votes": row.get("candidate_votes"),
             "blank_fields": row.get("blank_fields") or [],
             "real_blank_count": real_blanks,
-            "pending_human_count": pending,
-            "decision_progress": _decision_progress(pkg, mesa_dec),
+            "human": pkg.get("human") or [],
         })
 
-    items.sort(key=lambda r: (r["dept"], r["mesa_key"]))
+    skeleton.sort(key=lambda r: (r["dept"], r["mesa_key"]))
+    return skeleton
+
+
+def _get_cached_queue_skeleton(
+    rows: list[dict],
+    exclusions: set[str],
+    *,
+    dept: str | None = None,
+    q: str | None = None,
+    source_available=None,
+    force_reload: bool = False,
+) -> list[dict]:
+    key = _skeleton_cache_key(rows, exclusions, dept=dept, q=q)
+    now = time.time()
+    if not force_reload and key in _SKELETON_CACHE:
+        ts, cached = _SKELETON_CACHE[key]
+        if now - ts < _SKELETON_CACHE_TTL:
+            return cached
+
+    skeleton = _build_queue_skeleton(
+        rows,
+        exclusions,
+        dept=dept,
+        q=q,
+        source_available=source_available,
+    )
+    _SKELETON_CACHE[key] = (now, skeleton)
+    return skeleton
+
+
+def _annotate_skeleton_item(
+    skeleton_item: dict,
+    mesa_decisions: dict[str, dict[str, str]],
+) -> dict[str, Any]:
+    pkg = {"human": skeleton_item.get("human") or []}
+    pending = _pending_field_count(pkg, mesa_decisions)
+    return {
+        **{k: skeleton_item[k] for k in skeleton_item if k != "human"},
+        "pending_human_count": pending,
+        "decision_progress": _decision_progress(pkg, mesa_decisions),
+    }
+
+
+def count_pending_human_mesas(
+    skeleton: list[dict],
+    decided_slots: dict[str, dict],
+) -> int:
+    """Count mesas with at least one undecided human slot."""
+    pending = 0
+    for item in skeleton:
+        mesa_dec = decided_slots.get(item["mesa_key"]) or {}
+        if _pending_field_count({"human": item.get("human") or []}, mesa_dec) > 0:
+            pending += 1
+    return pending
+
+
+def build_queue_page(
+    rows: list[dict],
+    exclusions: set[str],
+    *,
+    page: int = 1,
+    page_size: int = 50,
+    dept: str | None = None,
+    pending_only: bool = False,
+    q: str | None = None,
+    decisions: dict[str, dict] | None = None,
+    decided_slots: dict[str, dict] | None = None,
+    source_available=None,
+) -> dict[str, Any]:
+    """Filter, sort, and paginate queue rows."""
+    decisions = decisions or {}
+    skeleton = _get_cached_queue_skeleton(
+        rows,
+        exclusions,
+        dept=dept,
+        q=q,
+        source_available=source_available,
+    )
+    items: list[dict] = []
+
+    for sk in skeleton:
+        mesa_dec = decisions.get(sk["mesa_key"]) or {}
+        item = _annotate_skeleton_item(sk, mesa_dec)
+        if pending_only and item["pending_human_count"] == 0:
+            continue
+        items.append(item)
+
     total = len(items)
     offset = max(0, (page - 1) * page_size)
     page_items = items[offset: offset + page_size]
-    pending_human = sum(1 for r in items if r["pending_human_count"] > 0)
+    if decided_slots is not None:
+        pending_human = count_pending_human_mesas(skeleton, decided_slots)
+    else:
+        pending_human = sum(1 for r in items if r["pending_human_count"] > 0)
 
     return {
         "items": page_items,
