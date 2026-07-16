@@ -110,6 +110,8 @@ validate-*.ps1
 # ---------------------------------------------------------------------------
 # Scripts — local-only / lab / upload prep (not Railway runtime)
 # ---------------------------------------------------------------------------
+# Production: Supabase SQL lives ONLY under scripts/deploy/ (never scripts/*.sql root)
+scripts/*.sql
 scripts/archive/
 scripts/archive_primera_vuelta.py
 scripts/audit_cloud_to_local.py
