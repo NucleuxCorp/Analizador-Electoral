@@ -1488,7 +1488,11 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 rows, total = _build_mesas_level3_rows(dept, mpio, zona, puesto, page)
             except Exception as exc:
                 logger.warning("mesas_level3_view failed: %s", exc)
-                rows, total = [], 0
+                return render_template(
+                    "mesas.html", level=3, unavailable=True,
+                    breadcrumbs=breadcrumbs, rows=[],
+                    page=1, total_pages=1, semaphore=None,
+                )
 
             total_pages = max(1, (total + 9) // 10) if total else 1
             return render_template(

@@ -111,7 +111,12 @@
   <div class="page-header">
     <div><a class="back-link" href="/">← Volver al inicio</a></div>
     <span class="badge-top">Elecciones Presidenciales 2026 · Acta E-14</span>
-    <h1>Estado de la <span class="accent">Auditoría</span> — Por Municipio</h1>
+    <h1>Estado de la <span class="accent">Auditoría</span> —
+      {% if level == 1 %}Por Municipio
+      {% elif level == 2 %}Por Puesto de Votación
+      {% else %}Por Mesa
+      {% endif %}
+    </h1>
   </div>
 
   {% if breadcrumbs %}

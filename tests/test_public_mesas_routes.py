@@ -13,6 +13,7 @@ Covers (SDD change: mesas-hierarchical-drilldown, Work Unit 2 — Phases 2-4):
 from __future__ import annotations
 
 import os
+import re
 from unittest.mock import patch
 
 import pytest
@@ -139,6 +140,38 @@ class TestLevel1MunicipioTable:
         html = resp.data.decode()
         assert 'href="/mesas/01/001"' in html
 
+    def test_multiple_municipios_show_correct_per_row_totals(self, prod_app):
+        """Two municipios in by_mpio must each render their own semaphore
+        totals — no cross-row bleed or dropped counts."""
+        stats = _hierarchical_stats_fixture()
+        stats["by_mpio"]["01_002"] = _empty_bucket(
+            dept="01", mpio="002", clean=1, known_anomaly=3,
+            total=4, en_revision=2, revisada=0,
+        )
+        with patch(
+            "src.modules.labeler.db.get_hierarchical_mesa_stats",
+            return_value=stats,
+        ):
+            resp = prod_app.test_client().get("/mesas")
+
+        assert resp.status_code == 200
+        html = resp.data.decode()
+        assert 'href="/mesas/01/001"' in html
+        assert 'href="/mesas/01/002"' in html
+
+        def _row_totals(mpio_href: str) -> str:
+            row = re.search(
+                rf'<tr>\s*<td class="row-name"><a href="{re.escape(mpio_href)}">.*?</tr>',
+                html, re.DOTALL,
+            )
+            assert row is not None, f"no row found for {mpio_href}"
+            return row.group(0)
+
+        row_001 = _row_totals("/mesas/01/001")
+        row_002 = _row_totals("/mesas/01/002")
+        assert re.search(r'class="num total">\s*6\s*<', row_001)
+        assert re.search(r'class="num total">\s*4\s*<', row_002)
+
     def test_unavailable_fallback_when_stats_unreachable(self, prod_app):
         with patch(
             "src.modules.labeler.db.get_hierarchical_mesa_stats",
@@ -224,8 +257,8 @@ class TestLevel3MesaListPagination:
 
         assert resp.status_code == 200
         html = resp.data.decode()
-        for i in range(1, 11):
-            assert f">{i}<" in html or f'>{i} <' in html or str(i) in html
+        rendered_mesas = re.findall(r'<td class="row-name">(\d+)</td>', html)
+        assert rendered_mesas == [str(i) for i in range(1, 11)]
         # Pagination link to page 2 must be present (25 > 10)
         assert "page=2" in html
 
@@ -262,6 +295,8 @@ class TestLevel3MesaListPagination:
 
         assert resp.status_code == 200
         html = resp.data.decode()
+        rendered_mesas = re.findall(r'<td class="row-name">(\d+)</td>', html)
+        assert rendered_mesas == [str(i) for i in range(21, 26)]
         assert "page=4" not in html  # no next page beyond the last
 
     def test_le10_mesas_no_pagination_controls(self, prod_app):
@@ -280,6 +315,44 @@ class TestLevel3MesaListPagination:
         html = resp.data.decode()
         assert "page=2" not in html
         assert "pagination" not in html.lower() or "page=" not in html
+
+    def test_mesa_with_algorithm_alert_and_review_both_shown(self, prod_app):
+        """A mesa that is BOTH an algorithm alert AND under human review must
+        show both indicators — neither should overwrite or suppress the other."""
+        mesa_rows = [{
+            "mesa_key": "01_001_01_01_1",
+            "mesa": "1",
+            "dept": "01", "mpio": "001", "zona": "01", "puesto": "01",
+            "overall_status": "known_anomaly",
+        }]
+        stats = _hierarchical_stats_fixture()
+        stats["review_by_mesa"] = {
+            "01_001_01_01_1": {
+                "en_revision": True, "revisada": False, "revisada_result": None,
+            },
+        }
+        with patch(
+            "src.modules.labeler.db.get_mesa_results", return_value=mesa_rows,
+        ), patch(
+            "src.modules.labeler.db.count_mesa_results", return_value=1,
+        ), patch(
+            "src.modules.labeler.db.get_hierarchical_mesa_stats",
+            return_value=stats,
+        ):
+            resp = prod_app.test_client().get("/mesas/01/001/01/01")
+
+        assert resp.status_code == 200
+        html = resp.data.decode()
+        # The single mesa row must show BOTH the algorithm alert (🔴, from
+        # overall_status) and the human-review flag (🟡, from review_by_mesa)
+        # — neither indicator should overwrite or suppress the other.
+        row_match = re.search(
+            r'<td class="row-name">1</td>\s*<td>([^<]+)</td>\s*<td>([^<]+)</td>',
+            html,
+        )
+        assert row_match is not None
+        assert row_match.group(1).strip() == "🔴"
+        assert row_match.group(2).strip() == "🟡"
 
 
 # ---------------------------------------------------------------------------
@@ -311,7 +384,10 @@ class TestInvalidPathParams:
         assert resp.status_code in (200, 404)
         assert resp.status_code != 500
 
-    def test_level3_db_exception_does_not_500(self, prod_app):
+    def test_level3_db_exception_shows_unavailable_not_empty(self, prod_app):
+        """A backend failure must render the unavailable fallback, not the
+        'no mesas here' empty-state — otherwise a transient outage looks
+        identical to a legitimately empty puesto."""
         with patch(
             "src.modules.labeler.db.get_mesa_results",
             side_effect=RuntimeError("db down"),
@@ -325,6 +401,9 @@ class TestInvalidPathParams:
             resp = prod_app.test_client().get("/mesas/01/001/01/01")
 
         assert resp.status_code != 500
+        html = resp.data.decode()
+        assert "Datos no disponibles temporalmente" in html
+        assert "No hay mesas analizadas" not in html
 
 
 # ---------------------------------------------------------------------------
