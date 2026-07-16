@@ -107,8 +107,8 @@ Cada puesto tiene su **propio timestamp** en el filename — se actualiza cuando
 # SUPABASE_URL, SUPABASE_ANON_KEY, SECRET_KEY, LABELS_DIR, USE_SUPABASE_STORAGE
 
 # Setup inicial (una sola vez):
-# 1. Ejecutar scripts/supabase_schema.sql en Supabase dashboard
-# 2. Ejecutar scripts/assign_next_crop.sql en Supabase dashboard
+# 1. Ejecutar scripts/deploy/supabase_schema.sql en Supabase dashboard
+# 2. Ejecutar scripts/deploy/assign_next_crop.sql en Supabase dashboard
 # 3. python scripts/migrate_to_supabase.py  # importa crops + labels existentes
 
 # Dev local (sin Supabase):
