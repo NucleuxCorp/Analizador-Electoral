@@ -53,6 +53,11 @@ class TestTransversalUI:
         assert "renderAlerts" in content
         assert "setSidebarFilter" in content
         assert "getMesaStatus" in content
+        assert "selectMesaByKey" in content
+        assert "itemByKey" in content
+        assert "IntersectionObserver" in content
+        assert "resetQueue" in content
+        assert "fetchQueueAll" not in content
         assert "/api/transversal/decisions/export" in content
         assert "showSaveFilePicker" not in content
 

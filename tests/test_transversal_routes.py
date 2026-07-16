@@ -60,6 +60,8 @@ class TestTransversalRoutesAuth:
         assert data["total"] >= 4117
         assert "pending" in data
         assert "has_more" in data
+        assert "queue_mesas" in data
+        assert "done" in data
         assert data["has_more"] is True
 
     def test_queue_uses_scoped_decisions_for_page_keys(self, client):

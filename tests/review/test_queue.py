@@ -200,6 +200,20 @@ class TestQueueSkeletonCache:
         build_queue_page(rows, set(), source_available=_all_sources)
         assert len(calls) == 6
 
+    def test_done_only_excludes_pending_mesas(self):
+        rows = self._sample_rows()
+        decided = {
+            "01_001_001_01_001": {
+                "SUMA_TOTAL": {"e14c": "accepted", "e14d": "accepted", "e14t": "accepted"},
+            },
+        }
+        result = build_queue_page(
+            rows, set(), done_only=True, decided_slots=decided, source_available=_all_sources,
+        )
+        assert result["total"] == 1
+        assert result["items"][0]["mesa_key"] == "01_001_001_01_001"
+        assert result["items"][0]["pending_human_count"] == 0
+
     def test_count_pending_human_mesas_uses_decided_slots(self):
         rows = self._sample_rows()
         skeleton = queue_mod._build_queue_skeleton(

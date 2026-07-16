@@ -1658,7 +1658,12 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
             except (TypeError, ValueError):
                 page_size = 50
             dept = request.args.get("dept") or None
-            pending_only = request.args.get("pending_only", "").lower() in ("1", "true", "yes")
+            status = (request.args.get("status") or "all").lower()
+            pending_only = (
+                status == "pending"
+                or request.args.get("pending_only", "").lower() in ("1", "true", "yes")
+            )
+            done_only = status == "done"
             q = request.args.get("q") or None
 
             cfg = _transversal_dataset()
@@ -1672,6 +1677,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 page_size=page_size,
                 dept=dept,
                 pending_only=pending_only,
+                done_only=done_only,
                 q=q,
                 decided_slots=decided_slots,
                 source_available=_review_images.queue_source_available,
@@ -1686,12 +1692,17 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 page_size=page_size,
                 dept=dept,
                 pending_only=pending_only,
+                done_only=done_only,
                 q=q,
                 decisions=scoped_decisions,
                 decided_slots=decided_slots,
                 source_available=_review_images.queue_source_available,
             )
-            result["pending"] = result["stats"]["pending_human"]
+            queue_mesas = result.get("queue_mesas", result["total"])
+            pending_human = result["stats"]["pending_human"]
+            result["pending"] = pending_human
+            result["queue_mesas"] = queue_mesas
+            result["done"] = max(0, queue_mesas - pending_human)
             result["has_more"] = page * page_size < result["total"]
             result["dataset"] = {
                 "key": cfg["key"],
