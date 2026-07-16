@@ -279,6 +279,38 @@ def count_pending_human_mesas(
     return pending
 
 
+def list_queue_page_mesa_keys(
+    rows: list[dict],
+    exclusions: set[str],
+    *,
+    page: int = 1,
+    page_size: int = 50,
+    dept: str | None = None,
+    pending_only: bool = False,
+    q: str | None = None,
+    decided_slots: dict[str, dict] | None = None,
+    source_available=None,
+) -> list[str]:
+    """Return mesa_keys for one queue page without fetching per-mesa decisions."""
+    skeleton = _get_cached_queue_skeleton(
+        rows,
+        exclusions,
+        dept=dept,
+        q=q,
+        source_available=source_available,
+    )
+    keys: list[str] = []
+    for sk in skeleton:
+        if pending_only and decided_slots is not None:
+            mesa_dec = decided_slots.get(sk["mesa_key"]) or {}
+            if _pending_field_count({"human": sk.get("human") or []}, mesa_dec) == 0:
+                continue
+        keys.append(sk["mesa_key"])
+
+    offset = max(0, (page - 1) * page_size)
+    return keys[offset: offset + page_size]
+
+
 def build_queue_page(
     rows: list[dict],
     exclusions: set[str],
@@ -303,12 +335,15 @@ def build_queue_page(
     )
     items: list[dict] = []
 
+    slots_for_filter = decided_slots if decided_slots is not None else decisions
+
     for sk in skeleton:
+        if pending_only:
+            mesa_dec_filter = slots_for_filter.get(sk["mesa_key"]) or {}
+            if _pending_field_count({"human": sk.get("human") or []}, mesa_dec_filter) == 0:
+                continue
         mesa_dec = decisions.get(sk["mesa_key"]) or {}
-        item = _annotate_skeleton_item(sk, mesa_dec)
-        if pending_only and item["pending_human_count"] == 0:
-            continue
-        items.append(item)
+        items.append(_annotate_skeleton_item(sk, mesa_dec))
 
     total = len(items)
     offset = max(0, (page - 1) * page_size)
