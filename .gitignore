@@ -117,6 +117,8 @@ validate-*.ps1
 # ---------------------------------------------------------------------------
 # Scripts — local-only / archive / spikes
 # ---------------------------------------------------------------------------
+# Supabase SQL for prod: scripts/deploy/ only (never loose scripts/*.sql at root)
+scripts/*.sql
 scripts/archive/
 scripts/archive_primera_vuelta.py
 scripts/audit_cloud_to_local.py
