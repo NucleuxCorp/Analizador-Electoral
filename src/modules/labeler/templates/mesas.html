@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Estado de la Auditoría — Por Departamento</title>
+  <title>Estado de la Auditoría — Por Municipio</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -16,7 +16,7 @@
 
     .page-header {
       text-align: center;
-      margin-bottom: 32px;
+      margin-bottom: 24px;
     }
     .badge-top {
       display: inline-block; font-size: 0.62rem; letter-spacing: 1.5px;
@@ -30,6 +30,16 @@
       text-decoration: none; margin-bottom: 20px;
     }
     .back-link:hover { text-decoration: underline; }
+
+    /* Breadcrumbs */
+    .breadcrumbs {
+      text-align: center; font-size: 0.78rem; color: #9fb0c0;
+      margin-bottom: 22px;
+    }
+    .breadcrumbs a { color: #7ec8e3; text-decoration: none; }
+    .breadcrumbs a:hover { text-decoration: underline; }
+    .breadcrumbs .sep { color: #445; margin: 0 6px; }
+    .breadcrumbs .current { color: #e6edf3; }
 
     /* Global summary */
     .summary-row {
@@ -59,7 +69,9 @@
     tbody tr { border-bottom: 1px solid #1a1f27; }
     tbody tr:hover { background: #0d1220; }
     td { padding: 9px 14px; }
-    td.dept-name { color: #c9d8e8; }
+    td.row-name { color: #c9d8e8; }
+    td.row-name a { color: #c9d8e8; text-decoration: none; }
+    td.row-name a:hover { color: #7ec8e3; text-decoration: underline; }
     td.num { text-align: right; font-size: 0.85rem; font-weight: bold; }
     td.sin-alerta { color: #9fb0c0; }
     td.alerta { color: #ef5350; }
@@ -67,12 +79,30 @@
     td.revisada { color: #56c25a; }
     td.total { color: #58a6ff; }
 
-    /* Unavailable fallback */
+    /* Empty state (valid but no analyzed mesas in this scope) */
+    .empty-state {
+      text-align: center; padding: 40px 20px;
+      color: #667; font-size: 0.85rem;
+    }
+
+    /* Unavailable fallback (stats backend unreachable) */
     .unavailable {
       text-align: center; padding: 48px 20px;
       color: #667; font-size: 0.85rem;
     }
     .unavailable strong { display: block; font-size: 1rem; color: #9fb0c0; margin-bottom: 8px; }
+
+    /* Pagination */
+    .pagination {
+      display: flex; justify-content: center; gap: 10px;
+      margin-top: 20px; font-size: 0.8rem;
+    }
+    .pagination a, .pagination span {
+      color: #7ec8e3; text-decoration: none; padding: 4px 10px;
+      border: 1px solid #2a3a5a; border-radius: 4px;
+    }
+    .pagination .current-page { color: #e6edf3; border-color: #58a6ff; }
+    .pagination a:hover { background: #0d1220; }
 
     .ver { position: fixed; bottom: 8px; left: 10px; font-size: 0.6rem; color: #445; }
   </style>
@@ -81,58 +111,124 @@
   <div class="page-header">
     <div><a class="back-link" href="/">← Volver al inicio</a></div>
     <span class="badge-top">Elecciones Presidenciales 2026 · Acta E-14</span>
-    <h1>Estado de la <span class="accent">Auditoría</span> — Por Departamento</h1>
+    <h1>Estado de la <span class="accent">Auditoría</span> — Por Municipio</h1>
   </div>
 
-  {% if semaphore %}
-    <div class="summary-row">
-      <span class="sin-alerta">⚪ Sin Alerta: <strong>{{ semaphore.global.sin_alerta | format_number }}</strong> mesas</span>
-      &nbsp;·&nbsp;
-      <span class="alerta">🔴 Alerta: <strong>{{ semaphore.global.alerta | format_number }}</strong> mesas</span>
-    </div>
+  {% if breadcrumbs %}
+  <div class="breadcrumbs">
+    {% for crumb in breadcrumbs %}
+      {% if not loop.first %}<span class="sep">›</span>{% endif %}
+      {% if crumb.url %}
+        <a href="{{ crumb.url }}">{{ crumb.label }}</a>
+      {% else %}
+        <span class="current">{{ crumb.label }}</span>
+      {% endif %}
+    {% endfor %}
+  </div>
+  {% endif %}
 
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>Departamento</th>
-            <th class="num">⚪ Sin Alerta</th>
-            <th class="num">🔴 Alerta</th>
-            <th class="num">🟡 En Revisión</th>
-            <th class="num">🟢 Revisada</th>
-            <th class="num">Total</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for row in semaphore.by_dept %}
-          <tr>
-            <td class="dept-name">{{ row.dept_name }}</td>
-            <td class="num sin-alerta">{{ row.sin_alerta | format_number }}</td>
-            <td class="num alerta">{{ row.alerta | format_number }}</td>
-            <td class="num en-revision">{{ row.en_revision | format_number if row.en_revision > 0 else '—' }}</td>
-            <td class="num revisada">
-              {% if row.revisada %}
-                {{ row.revisada | format_number }}
-                {% if row.limpia_count or row.fraude_count %}
-                  <span style="font-size:9px;color:#475569;">
-                    ({{ row.limpia_count }} limpia / {{ row.fraude_count }} fraude)
-                  </span>
-                {% endif %}
-              {% else %}
-                —
-              {% endif %}
-            </td>
-            <td class="num total">{{ row.total | format_number }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  {% else %}
+  {% if unavailable %}
     <div class="unavailable">
       <strong>Datos no disponibles temporalmente</strong>
       El servicio de estadísticas no pudo responder. Intentá de nuevo en unos minutos.
     </div>
+  {% else %}
+    {% if semaphore %}
+      <div class="summary-row">
+        <span class="sin-alerta">⚪ Sin Alerta: <strong>{{ semaphore.sin_alerta | format_number }}</strong> mesas</span>
+        &nbsp;·&nbsp;
+        <span class="alerta">🔴 Alerta: <strong>{{ semaphore.alerta | format_number }}</strong> mesas</span>
+      </div>
+    {% endif %}
+
+    {% if rows %}
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              {% if level == 1 %}
+                <th>Municipio</th>
+                <th>Departamento</th>
+              {% elif level == 2 %}
+                <th>Zona</th>
+                <th>Puesto</th>
+              {% else %}
+                <th>Mesa</th>
+              {% endif %}
+
+              {% if level in (1, 2) %}
+                <th class="num">⚪ Sin Alerta</th>
+                <th class="num">🔴 Alerta</th>
+                <th class="num">🟡 En Revisión</th>
+                <th class="num">🟢 Revisada</th>
+                <th class="num">Total</th>
+              {% else %}
+                <th>⚪/🔴</th>
+                <th>🟡/🟢</th>
+              {% endif %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in rows %}
+            <tr>
+              {% if level == 1 %}
+                <td class="row-name"><a href="/mesas/{{ row.dept }}/{{ row.mpio }}">{{ row.mpio_name }}</a></td>
+                <td class="row-name">{{ row.dept_name }}</td>
+              {% elif level == 2 %}
+                <td class="row-name">
+                  <a href="/mesas/{{ row.dept }}/{{ row.mpio }}/{{ row.zona }}/{{ row.puesto }}">{{ row.zona }}</a>
+                </td>
+                <td class="row-name">
+                  <a href="/mesas/{{ row.dept }}/{{ row.mpio }}/{{ row.zona }}/{{ row.puesto }}">{{ row.puesto_name }}</a>
+                </td>
+              {% else %}
+                <td class="row-name">{{ row.mesa }}</td>
+              {% endif %}
+
+              {% if level in (1, 2) %}
+                <td class="num sin-alerta">{{ row.sin_alerta | format_number }}</td>
+                <td class="num alerta">{{ row.alerta | format_number }}</td>
+                <td class="num en-revision">{{ row.en_revision | format_number if row.en_revision > 0 else '—' }}</td>
+                <td class="num revisada">{{ row.revisada | format_number if row.revisada > 0 else '—' }}</td>
+                <td class="num total">{{ row.total | format_number }}</td>
+              {% else %}
+                <td>{{ '⚪' if row.sin_alerta else '🔴' }}</td>
+                <td>{{ '🟢' if row.revisada else ('🟡' if row.en_revision else '—') }}</td>
+              {% endif %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      {% if level == 3 and total_pages > 1 %}
+      <div class="pagination">
+        {% if page > 1 %}
+          <a href="?page={{ page - 1 }}">&laquo;</a>
+        {% endif %}
+        {% for p in range(1, total_pages + 1) %}
+          {% if p == page %}
+            <span class="current-page">{{ p }}</span>
+          {% else %}
+            <a href="?page={{ p }}">{{ p }}</a>
+          {% endif %}
+        {% endfor %}
+        {% if page < total_pages %}
+          <a href="?page={{ page + 1 }}">&raquo;</a>
+        {% endif %}
+      </div>
+      {% endif %}
+    {% else %}
+      <div class="empty-state">
+        {% if level == 2 %}
+          No hay mesas analizadas todavía para este municipio.
+        {% elif level == 3 %}
+          No hay mesas analizadas todavía para este puesto de votación.
+        {% else %}
+          No hay mesas analizadas todavía.
+        {% endif %}
+      </div>
+    {% endif %}
   {% endif %}
 
   <div class="ver">v{{ app_version }}</div>
