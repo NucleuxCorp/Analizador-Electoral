@@ -464,6 +464,35 @@ class TestGetHierarchicalMesaStats:
         assert result["by_puesto"]["01_001"]["01_01"]["en_revision"] == 1
         assert result["by_puesto"]["01_001"]["01_01"]["revisada"] == 1
 
+    def test_review_row_without_mesa_results_row_skips_global(self):
+        """A semaphore row for a mesa absent from mesa_results must not inflate
+        _global — _global['en_revision']/['revisada'] must stay the sum of
+        the (empty, in this case) by_mpio/by_puesto children."""
+        import src.modules.labeler.db as db_module
+
+        db_module._hierarchical_stats_cache.clear()
+
+        mesa_rows = [
+            {"dept": "01", "mpio": "001", "zona": "01", "puesto": "01", "mesa": "1", "overall_status": "clean"},
+        ]
+        semaphore_rows = [
+            {
+                "mesa_key_mr": "99_999_01_01_1",  # dept/mpio not present in mesa_rows
+                "dept": "99",
+                "annotation_count_sum": 1,
+                "priority_total": 0,
+                "priority_confirmed": 0,
+            },
+        ]
+        mock_client = self._make_client(mesa_rows, semaphore_rows)
+
+        with patch("src.modules.labeler.db._client", return_value=mock_client):
+            result = db_module.get_hierarchical_mesa_stats()
+
+        assert "99_999" not in result["by_mpio"]
+        assert result["_global"]["en_revision"] == 0
+        assert result["_global"]["revisada"] == 0
+
     def test_global_rollup(self):
         """_global aggregates totals across all mpio/puesto buckets."""
         import src.modules.labeler.db as db_module

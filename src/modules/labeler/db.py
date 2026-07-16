@@ -1373,9 +1373,11 @@ def _get_hierarchical_mesa_stats_uncached() -> dict:
 
             mpio_key = f"{dept}_{mpio}"
             puesto_key = f"{zona}_{puesto}"
-            targets = [global_counts]
-            if mpio_key in by_mpio:
-                targets.append(by_mpio[mpio_key])
+            if mpio_key not in by_mpio:
+                # Mesa not present in the mesa_results scan (e.g. RPC/table
+                # skew) — skip so _global stays the sum of its children.
+                continue
+            targets = [global_counts, by_mpio[mpio_key]]
             if mpio_key in by_puesto and puesto_key in by_puesto[mpio_key]:
                 targets.append(by_puesto[mpio_key][puesto_key])
 
