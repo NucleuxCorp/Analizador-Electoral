@@ -400,6 +400,8 @@ def _post_json(url: str, payload: dict[str, Any], timeout: int = HTTP_TIMEOUT) -
         },
     )
     ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
     with urllib.request.urlopen(req, context=ctx, timeout=timeout) as resp:
         return resp.read(), resp.status
 
