@@ -479,6 +479,163 @@ def _build_semaphore_data() -> dict | None:
 
 
 # ---------------------------------------------------------------------------
+# Mesas hierarchical drill-down — Work Unit 2 (Routes & Builders)
+#
+# Municipio -> Puesto -> Mesa. Replaces the old flat dept-only /mesas table.
+# Level 1/2 read from the single cached get_hierarchical_mesa_stats() blob;
+# Level 3 reads directly from get_mesa_results()/count_mesa_results() (design
+# decision: avoid loading the full national scan just to paginate one puesto).
+# ---------------------------------------------------------------------------
+
+def _mpio_name(dept: str, mpio: str) -> str:
+    """Look up the municipio name from _DIVIPOLE, falling back to the code."""
+    try:
+        return (
+            _DIVIPOLE.get(dept, {})
+            .get("municipios", {})
+            .get(mpio, {})
+            .get("nombre", mpio)
+        ) or mpio
+    except Exception:
+        return mpio
+
+
+def _puesto_name(dept: str, mpio: str, zona: str, puesto: str) -> str:
+    """Look up the puesto de votación name from _DIVIPOLE, falling back to the code."""
+    try:
+        zonas = (
+            _DIVIPOLE.get(dept, {})
+            .get("municipios", {})
+            .get(mpio, {})
+            .get("zonas", {})
+        )
+        return zonas.get(zona, {}).get("puestos", {}).get(puesto, {}).get("nombre", puesto) or puesto
+    except Exception:
+        return puesto
+
+
+def _hierarchical_global_semaphore(stats: dict) -> dict:
+    """Build the {sin_alerta, alerta, en_revision, revisada, total} national summary block."""
+    g = stats.get("_global") or {}
+    total = g.get("total", 0)
+    sin_alerta = g.get("clean", 0)
+    return {
+        "sin_alerta": sin_alerta,
+        "alerta": max(0, total - sin_alerta),
+        "en_revision": g.get("en_revision", 0),
+        "revisada": g.get("revisada", 0),
+        "total": total,
+    }
+
+
+def _build_mesas_level1_rows(stats: dict) -> list[dict]:
+    """Build Level-1 (Municipio) rows from the by_mpio buckets of get_hierarchical_mesa_stats()."""
+    rows = []
+    for bucket in (stats.get("by_mpio") or {}).values():
+        dept = bucket.get("dept", "")
+        mpio = bucket.get("mpio", "")
+        total = bucket.get("total", 0)
+        sin_alerta = bucket.get("clean", 0)
+        rows.append({
+            "dept": dept,
+            "dept_name": _DEPT_NAMES.get(dept, dept),
+            "mpio": mpio,
+            "mpio_name": _mpio_name(dept, mpio),
+            "sin_alerta": sin_alerta,
+            "alerta": max(0, total - sin_alerta),
+            "en_revision": bucket.get("en_revision", 0),
+            "revisada": bucket.get("revisada", 0),
+            "total": total,
+        })
+    rows.sort(key=lambda r: (r["mpio_name"], r["dept_name"]))
+    return rows
+
+
+def _build_mesas_level2_rows(stats: dict, dept: str, mpio: str) -> list[dict]:
+    """Build Level-2 (Puesto) rows for one municipality from the by_puesto buckets."""
+    mpio_key = f"{dept}_{mpio}"
+    puestos = (stats.get("by_puesto") or {}).get(mpio_key, {})
+    rows = []
+    for bucket in puestos.values():
+        zona = bucket.get("zona", "")
+        puesto = bucket.get("puesto", "")
+        total = bucket.get("total", 0)
+        sin_alerta = bucket.get("clean", 0)
+        rows.append({
+            "dept": dept,
+            "mpio": mpio,
+            "zona": zona,
+            "puesto": puesto,
+            "puesto_name": _puesto_name(dept, mpio, zona, puesto),
+            "sin_alerta": sin_alerta,
+            "alerta": max(0, total - sin_alerta),
+            "en_revision": bucket.get("en_revision", 0),
+            "revisada": bucket.get("revisada", 0),
+            "total": total,
+        })
+    rows.sort(key=lambda r: (r["zona"], r["puesto"]))
+    return rows
+
+
+def _build_mesas_level3_rows(
+    dept: str, mpio: str, zona: str, puesto: str, page: int,
+) -> tuple[list[dict], int]:
+    """
+    Build Level-3 (Mesa) rows for one puesto, 10 per page.
+
+    Reads directly from get_mesa_results()/count_mesa_results() (not the cached
+    hierarchical blob), per design. Both db-layer functions are fail-closed
+    (return [] / 0 on any exception), so this never raises.
+    """
+    import src.modules.labeler.db as _db
+
+    results = _db.get_mesa_results(
+        dept=dept, mpio=mpio, zona=zona, puesto=puesto, page=page, per_page=10,
+    )
+    total = _db.count_mesa_results(dept=dept, mpio=mpio, zona=zona, puesto=puesto)
+
+    try:
+        review_by_mesa = _db.get_hierarchical_mesa_stats().get("review_by_mesa", {}) or {}
+    except Exception:
+        review_by_mesa = {}
+
+    rows = []
+    for r in results:
+        mesa_key = r.get("mesa_key", "")
+        status = r.get("overall_status", "")
+        review = review_by_mesa.get(mesa_key, {})
+        rows.append({
+            "mesa": r.get("mesa", ""),
+            "mesa_key": mesa_key,
+            "sin_alerta": status == "clean",
+            "alerta": status != "clean",
+            "en_revision": bool(review.get("en_revision")),
+            "revisada": bool(review.get("revisada")),
+            "revisada_result": review.get("revisada_result"),
+        })
+    return rows, total
+
+
+def _mesas_l1_breadcrumbs() -> list[dict]:
+    return [{"label": "Municipios", "url": None}]
+
+
+def _mesas_l2_breadcrumbs(dept: str, mpio: str) -> list[dict]:
+    return [
+        {"label": "Municipios", "url": "/mesas"},
+        {"label": _mpio_name(dept, mpio), "url": None},
+    ]
+
+
+def _mesas_l3_breadcrumbs(dept: str, mpio: str, zona: str, puesto: str) -> list[dict]:
+    return [
+        {"label": "Municipios", "url": "/mesas"},
+        {"label": _mpio_name(dept, mpio), "url": f"/mesas/{dept}/{mpio}"},
+        {"label": _puesto_name(dept, mpio, zona, puesto), "url": None},
+    ]
+
+
+# ---------------------------------------------------------------------------
 # Auto-skip heuristics — check PNG before presenting to human
 # ---------------------------------------------------------------------------
 
@@ -1259,13 +1416,90 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
             )
 
         # ----------------------------------------------------------------
-        # GET /mesas — public semaphore page (no auth)
+        # GET /mesas — public hierarchical drill-down (Municipio -> Puesto -> Mesa)
         # ----------------------------------------------------------------
 
         @app.route("/mesas")
         def mesas_view() -> str:
-            semaphore = _build_semaphore_data()
-            return render_template("mesas.html", semaphore=semaphore)
+            try:
+                stats = _db.get_hierarchical_mesa_stats()
+            except Exception as exc:
+                logger.warning("mesas_view (L1) get_hierarchical_mesa_stats failed: %s", exc)
+                stats = None
+
+            if stats is None:
+                return render_template(
+                    "mesas.html", level=1, unavailable=True,
+                    breadcrumbs=_mesas_l1_breadcrumbs(), rows=[],
+                    page=1, total_pages=1, semaphore=None,
+                )
+
+            rows = _build_mesas_level1_rows(stats)
+            return render_template(
+                "mesas.html", level=1, unavailable=False,
+                breadcrumbs=_mesas_l1_breadcrumbs(), rows=rows,
+                page=1, total_pages=1,
+                semaphore=_hierarchical_global_semaphore(stats),
+            )
+
+        # ----------------------------------------------------------------
+        # GET /mesas/<dept>/<mpio> — Level 2: puestos within a municipality
+        # ----------------------------------------------------------------
+
+        @app.route("/mesas/<dept>/<mpio>")
+        def mesas_level2_view(dept: str, mpio: str) -> str:
+            try:
+                stats = _db.get_hierarchical_mesa_stats()
+            except Exception as exc:
+                logger.warning("mesas_level2_view get_hierarchical_mesa_stats failed: %s", exc)
+                stats = None
+
+            breadcrumbs = _mesas_l2_breadcrumbs(dept, mpio)
+            if stats is None:
+                return render_template(
+                    "mesas.html", level=2, unavailable=True,
+                    breadcrumbs=breadcrumbs, rows=[],
+                    page=1, total_pages=1, semaphore=None,
+                )
+
+            rows = _build_mesas_level2_rows(stats, dept, mpio)
+            return render_template(
+                "mesas.html", level=2, unavailable=False,
+                breadcrumbs=breadcrumbs, rows=rows,
+                page=1, total_pages=1,
+                semaphore=_hierarchical_global_semaphore(stats),
+            )
+
+        # ----------------------------------------------------------------
+        # GET /mesas/<dept>/<mpio>/<zona>/<puesto> — Level 3: mesas, 10/page
+        # ----------------------------------------------------------------
+
+        @app.route("/mesas/<dept>/<mpio>/<zona>/<puesto>")
+        def mesas_level3_view(dept: str, mpio: str, zona: str, puesto: str) -> str:
+            try:
+                page = int(request.args.get("page", 1))
+            except (TypeError, ValueError):
+                page = 1
+            if page < 1:
+                page = 1
+
+            breadcrumbs = _mesas_l3_breadcrumbs(dept, mpio, zona, puesto)
+            try:
+                rows, total = _build_mesas_level3_rows(dept, mpio, zona, puesto, page)
+            except Exception as exc:
+                logger.warning("mesas_level3_view failed: %s", exc)
+                return render_template(
+                    "mesas.html", level=3, unavailable=True,
+                    breadcrumbs=breadcrumbs, rows=[],
+                    page=1, total_pages=1, semaphore=None,
+                )
+
+            total_pages = max(1, (total + 9) // 10) if total else 1
+            return render_template(
+                "mesas.html", level=3, unavailable=False,
+                breadcrumbs=breadcrumbs, rows=rows,
+                page=page, total_pages=total_pages, semaphore=None,
+            )
 
         # ----------------------------------------------------------------
         # Main labeling route (production) — gated by launch time
