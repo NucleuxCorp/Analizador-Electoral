@@ -5,7 +5,13 @@ import json
 from pathlib import Path
 
 from src.modules.review.exclusions import load_excluded_keys
-from src.modules.review.queue import _pending_field_count, build_queue_page, iter_conflictivas_jsonl
+from src.modules.review import queue as queue_mod
+from src.modules.review.queue import (
+    _pending_field_count,
+    build_queue_page,
+    clear_queue_skeleton_cache,
+    iter_conflictivas_jsonl,
+)
 from src.modules.review.alerts import build_mesa_alert_package
 
 LAB_DIR = Path(
@@ -110,3 +116,112 @@ class TestBuildQueuePage:
         full = build_queue_page(rows, set(), source_available=_all_sources)
         filtered = build_queue_page(rows, excluded, source_available=_all_sources)
         assert filtered["total"] < full["total"]
+
+
+class TestQueueSkeletonCache:
+    @staticmethod
+    def _sample_rows() -> list[dict]:
+        return [
+            {
+                "mesa_key": "01_001_005_08_005",
+                "dept": "01", "mpio": "001", "zona": "005", "puesto": "08", "mesa": "005",
+                "blank_fields": [],
+                "field_class": {
+                    "VOTANTES": "partial",
+                    "URNA": "has_digits",
+                    "SUMA_TOTAL": "has_digits",
+                },
+            },
+            {
+                "mesa_key": "01_001_001_01_001",
+                "dept": "01", "mpio": "001", "zona": "001", "puesto": "01", "mesa": "001",
+                "blank_fields": ["SUMA_TOTAL"],
+                "field_class": {
+                    "VOTANTES": "has_digits",
+                    "URNA": "has_digits",
+                    "SUMA_TOTAL": "confirmed_blank",
+                },
+            },
+            {
+                "mesa_key": "13_001_001_03_011",
+                "dept": "13", "mpio": "001", "zona": "001", "puesto": "03", "mesa": "011",
+                "blank_fields": ["VOTANTES"],
+                "field_class": {
+                    "VOTANTES": "confirmed_blank",
+                    "URNA": "has_digits",
+                    "SUMA_TOTAL": "has_digits",
+                },
+            },
+        ]
+
+    def setup_method(self):
+        clear_queue_skeleton_cache()
+
+    def teardown_method(self):
+        clear_queue_skeleton_cache()
+
+    def test_skeleton_cache_reuses_alert_build_across_pages(self, monkeypatch):
+        rows = self._sample_rows()
+        calls: list[str] = []
+        original = build_mesa_alert_package
+
+        def spy(row, mesa_key=None, **kwargs):
+            calls.append(mesa_key or row.get("mesa_key", ""))
+            return original(row, mesa_key, **kwargs)
+
+        monkeypatch.setattr(queue_mod, "build_mesa_alert_package", spy)
+
+        page1 = build_queue_page(rows, set(), page=1, page_size=1, source_available=_all_sources)
+        page2 = build_queue_page(rows, set(), page=2, page_size=1, source_available=_all_sources)
+
+        assert page1["total"] == 2
+        assert page1["items"][0]["mesa_key"] == "01_001_001_01_001"
+        assert page2["items"][0]["mesa_key"] == "13_001_001_03_011"
+        assert len(calls) == 3
+
+    def test_skeleton_cache_expires_after_ttl(self, monkeypatch):
+        rows = self._sample_rows()
+        calls: list[str] = []
+        original = build_mesa_alert_package
+
+        def spy(row, mesa_key=None, **kwargs):
+            calls.append(mesa_key or row.get("mesa_key", ""))
+            return original(row, mesa_key, **kwargs)
+
+        monkeypatch.setattr(queue_mod, "build_mesa_alert_package", spy)
+
+        fake_now = [1000.0]
+        monkeypatch.setattr(queue_mod.time, "time", lambda: fake_now[0])
+
+        build_queue_page(rows, set(), source_available=_all_sources)
+        assert len(calls) == 3
+
+        fake_now[0] += queue_mod._SKELETON_CACHE_TTL + 1.0
+        build_queue_page(rows, set(), source_available=_all_sources)
+        assert len(calls) == 6
+
+    def test_done_only_excludes_pending_mesas(self):
+        rows = self._sample_rows()
+        decided = {
+            "01_001_001_01_001": {
+                "SUMA_TOTAL": {"e14c": "accepted", "e14d": "accepted", "e14t": "accepted"},
+            },
+        }
+        result = build_queue_page(
+            rows, set(), done_only=True, decided_slots=decided, source_available=_all_sources,
+        )
+        assert result["total"] == 1
+        assert result["items"][0]["mesa_key"] == "01_001_001_01_001"
+        assert result["items"][0]["pending_human_count"] == 0
+
+    def test_count_pending_human_mesas_uses_decided_slots(self):
+        rows = self._sample_rows()
+        skeleton = queue_mod._build_queue_skeleton(
+            rows, set(), source_available=_all_sources,
+        )
+        decided = {
+            "01_001_001_01_001": {
+                "SUMA_TOTAL": {"e14c": "accepted", "e14d": "accepted", "e14t": "accepted"},
+            },
+        }
+        assert queue_mod.count_pending_human_mesas(skeleton, decided) == 1

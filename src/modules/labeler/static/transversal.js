@@ -24,12 +24,24 @@ const DEPT_NAMES = {
   '72': 'VICHADA', '88': 'CONSULADOS',
 };
 
-let queueItems = [];
-let currentIdx = 0;
+const PAGE_SIZE = 50;
+
+let keyOrder = [];
+let itemByKey = {};
 let currentMesaKey = null;
 let mesaDetail = null;
 let searchTimer = null;
 let sidebarFilter = 'all';
+let queueObserver = null;
+let queueMeta = {
+  page: 0,
+  total: 0,
+  queueMesas: 0,
+  pending: 0,
+  done: 0,
+  hasMore: false,
+  loading: false,
+};
 
 function countPending(alerts, decisions) {
   const human = (alerts && alerts.human) || [];
@@ -60,45 +72,159 @@ function getMesaStatus(item) {
   return 'pending';
 }
 
-function getVisibleIndices() {
-  return queueItems
-    .map((item, idx) => ({ idx, status: getMesaStatus(item) }))
-    .filter((x) => sidebarFilter === 'all' || x.status === sidebarFilter)
-    .map((x) => x.idx);
-}
-
-async function fetchQueueAll() {
-  const items = [];
-  let page = 1;
-  const pageSize = 200;
+function buildQueueParams(page) {
+  const params = new URLSearchParams({
+    page: String(page),
+    page_size: String(PAGE_SIZE),
+  });
   const dept = document.getElementById('dept-filter').value;
   const q = document.getElementById('search').value.trim();
+  if (dept) params.set('dept', dept);
+  if (q) params.set('q', q);
+  if (sidebarFilter === 'pending') params.set('status', 'pending');
+  else if (sidebarFilter === 'done') params.set('status', 'done');
+  return params;
+}
 
-  while (true) {
-    const params = new URLSearchParams({
-      page: String(page),
-      page_size: String(pageSize),
-    });
-    if (dept) params.set('dept', dept);
-    if (q) params.set('q', q);
+function navItemHtml(item, index) {
+  const deptName = DEPT_NAMES[item.dept] || item.dept;
+  const short = `${deptName} / z${item.zona} p${item.puesto} m${item.mesa}`;
+  const status = getMesaStatus(item);
+  return `<a href="#" class="nav-item" data-mesa-key="${item.mesa_key}" data-dept="${item.dept}" onclick="selectMesaByKey('${item.mesa_key}');return false;">
+    <span class="nav-num">${String(index + 1).padStart(2, '0')}</span>
+    <span class="nav-label">${short}</span>
+    <span class="nav-status ${status}" title="${status === 'done' ? 'Revisada' : 'Pendiente'}"></span>
+  </a>`;
+}
 
-    const resp = await fetch(`/api/transversal/queue?${params}`);
+function disconnectQueueObserver() {
+  if (queueObserver) {
+    queueObserver.disconnect();
+    queueObserver = null;
+  }
+}
+
+function ensureQueueSentinel() {
+  const list = document.getElementById('sidebar-list');
+  if (!list) return null;
+  let sentinel = document.getElementById('queue-sentinel');
+  if (!sentinel) {
+    sentinel = document.createElement('div');
+    sentinel.id = 'queue-sentinel';
+    sentinel.className = 'sidebar-loading';
+    sentinel.style.minHeight = '1px';
+    list.appendChild(sentinel);
+  }
+  return sentinel;
+}
+
+function setupQueueObserver() {
+  disconnectQueueObserver();
+  const list = document.getElementById('sidebar-list');
+  const sentinel = ensureQueueSentinel();
+  if (!list || !sentinel || !queueMeta.hasMore) return;
+
+  queueObserver = new IntersectionObserver((entries) => {
+    if (entries.some((e) => e.isIntersecting)) {
+      loadNextQueuePage().catch((err) => console.error(err));
+    }
+  }, { root: list, rootMargin: '120px', threshold: 0 });
+
+  queueObserver.observe(sentinel);
+}
+
+function appendQueueItems(items) {
+  const list = document.getElementById('sidebar-list');
+  if (!list || !items.length) return;
+
+  const startIndex = keyOrder.length;
+  const fragment = items.map((item, offset) => {
+    itemByKey[item.mesa_key] = item;
+    keyOrder.push(item.mesa_key);
+    return navItemHtml(item, startIndex + offset);
+  }).join('');
+
+  const sentinel = document.getElementById('queue-sentinel');
+  if (sentinel) {
+    sentinel.insertAdjacentHTML('beforebegin', fragment);
+  } else {
+    list.insertAdjacentHTML('beforeend', fragment);
+  }
+}
+
+async function loadNextQueuePage(reset = false) {
+  if (queueMeta.loading) return;
+  if (!reset && !queueMeta.hasMore) return;
+
+  queueMeta.loading = true;
+  const page = reset ? 1 : queueMeta.page + 1;
+
+  try {
+    const resp = await fetch(`/api/transversal/queue?${buildQueueParams(page)}`);
     if (!resp.ok) {
       const detail = await resp.text().catch(() => '');
       throw new Error(`queue ${resp.status}${detail ? `: ${detail.slice(0, 120)}` : ''}`);
     }
     const data = await resp.json();
-    items.push(...(data.items || []));
-    if (items.length >= data.total || !(data.items || []).length) break;
-    page += 1;
+
+    queueMeta.page = page;
+    queueMeta.total = data.total || 0;
+    queueMeta.queueMesas = data.queue_mesas ?? data.stats?.queue_mesas ?? queueMeta.total;
+    queueMeta.pending = data.pending ?? data.stats?.pending_human ?? 0;
+    queueMeta.done = data.done ?? Math.max(0, queueMeta.queueMesas - queueMeta.pending);
+    queueMeta.hasMore = Boolean(
+      data.has_more ?? (page * PAGE_SIZE < queueMeta.total),
+    );
+
+    if (reset) {
+      keyOrder = [];
+      itemByKey = {};
+      const list = document.getElementById('sidebar-list');
+      if (list) list.innerHTML = '';
+    }
+
+    appendQueueItems(data.items || []);
+    ensureQueueSentinel();
+    const sentinel = document.getElementById('queue-sentinel');
+    if (sentinel) {
+      sentinel.textContent = queueMeta.hasMore ? 'Cargando más…' : '';
+      sentinel.style.display = queueMeta.hasMore ? 'block' : 'none';
+    }
+
+    updateStatsBar();
+    updateFilterButtons();
+    setupQueueObserver();
+
+    if (reset) {
+      if (!keyOrder.length) {
+        document.getElementById('main').innerHTML = '<p class="empty-msg">Sin mesas en cola.</p>';
+        currentMesaKey = null;
+        mesaDetail = null;
+        renderAlerts(null);
+        return;
+      }
+      const keepKey = currentMesaKey && itemByKey[currentMesaKey]
+        ? currentMesaKey
+        : keyOrder[0];
+      await selectMesaByKey(keepKey);
+    }
+  } finally {
+    queueMeta.loading = false;
   }
-  return items;
+}
+
+async function resetQueue() {
+  disconnectQueueObserver();
+  const list = document.getElementById('sidebar-list');
+  if (list) list.innerHTML = '<p class="sidebar-loading">Cargando cola…</p>';
+  queueMeta.hasMore = true;
+  await loadNextQueuePage(true);
 }
 
 function updateStatsBar() {
-  const total = queueItems.length;
-  const pending = queueItems.filter((i) => getMesaStatus(i) === 'pending').length;
-  const done = queueItems.filter((i) => getMesaStatus(i) === 'done').length;
+  const total = queueMeta.queueMesas;
+  const pending = queueMeta.pending;
+  const done = queueMeta.done;
 
   document.getElementById('stat-total').textContent = String(total);
   document.getElementById('stat-pending').textContent = String(pending);
@@ -119,102 +245,49 @@ function updateFilterButtons() {
   });
 }
 
-function applySidebarFilter() {
-  document.querySelectorAll('.nav-item').forEach((a) => {
-    const idx = Number(a.dataset.idx);
-    const status = getMesaStatus(queueItems[idx]);
-    const hidden = sidebarFilter !== 'all' && status !== sidebarFilter;
-    a.classList.toggle('nav-hidden', hidden);
-  });
-  const vis = getVisibleIndices();
-  if (vis.length && !vis.includes(currentIdx)) {
-    selectMesa(vis[0]);
-  } else if (!vis.length) {
-    document.getElementById('main').innerHTML = '<p class="empty-msg">Sin mesas en este filtro.</p>';
-  }
-  updateNavCounter();
-}
-
 function setSidebarFilter(filter) {
+  if (sidebarFilter === filter) return;
   sidebarFilter = filter;
+  currentMesaKey = null;
   updateFilterButtons();
-  applySidebarFilter();
+  resetQueue().catch((err) => console.error(err));
 }
 
 function updateNavCounter() {
   const el = document.getElementById('nav-counter');
   if (!el) return;
-  const vis = getVisibleIndices();
-  const pos = vis.indexOf(currentIdx);
-  el.textContent = vis.length
-    ? `${pos >= 0 ? pos + 1 : 0} / ${vis.length}`
+  const pos = keyOrder.indexOf(currentMesaKey);
+  el.textContent = keyOrder.length
+    ? `${pos >= 0 ? pos + 1 : 0} / ${keyOrder.length}`
     : '0 / 0';
-}
-
-function renderSidebar() {
-  const list = document.getElementById('sidebar-list');
-  if (!list) return;
-  if (!queueItems.length) {
-    list.innerHTML = '<p class="empty-msg">Sin mesas en cola.</p>';
-    return;
-  }
-  list.innerHTML = queueItems.map((item, idx) => {
-    const deptName = DEPT_NAMES[item.dept] || item.dept;
-    const short = `${deptName} / z${item.zona} p${item.puesto} m${item.mesa}`;
-    const status = getMesaStatus(item);
-    return `<a href="#" class="nav-item" data-idx="${idx}" data-mesa-key="${item.mesa_key}" data-dept="${item.dept}" onclick="selectMesa(${idx});return false;">
-      <span class="nav-num">${String(idx + 1).padStart(2, '0')}</span>
-      <span class="nav-label">${short}</span>
-      <span class="nav-status ${status}" title="${status === 'done' ? 'Revisada' : 'Pendiente'}"></span>
-    </a>`;
-  }).join('');
-  updateFilterButtons();
-  applySidebarFilter();
 }
 
 function updateActiveNav() {
   document.querySelectorAll('.nav-item').forEach((a) => a.classList.remove('active'));
-  const active = document.querySelector(`.nav-item[data-idx="${currentIdx}"]`);
+  const active = document.querySelector(`.nav-item[data-mesa-key="${currentMesaKey}"]`);
   if (active) {
     active.classList.add('active');
     active.scrollIntoView({ block: 'nearest' });
   }
 }
 
-async function refreshQueue() {
-  const list = document.getElementById('sidebar-list');
-  if (list) list.innerHTML = '<p class="sidebar-loading">Cargando cola…</p>';
-  queueItems = await fetchQueueAll();
-  renderSidebar();
-  updateStatsBar();
-  if (!queueItems.length) {
-    document.getElementById('main').innerHTML = '<p class="empty-msg">Sin mesas en cola.</p>';
-    currentMesaKey = null;
-    mesaDetail = null;
-    renderAlerts(null);
-    return;
-  }
-  const idx = Math.min(currentIdx, queueItems.length - 1);
-  await selectMesa(idx);
-}
-
-async function selectMesa(idx) {
-  if (idx < 0 || idx >= queueItems.length) return;
-  currentIdx = idx;
-  currentMesaKey = queueItems[idx].mesa_key;
+async function selectMesaByKey(mesaKey) {
+  const item = itemByKey[mesaKey];
+  if (!item) return;
+  currentMesaKey = mesaKey;
   updateActiveNav();
 
   const main = document.getElementById('main');
   main.innerHTML = '<div class="loading">Cargando mesa…</div>';
 
-  const resp = await fetch(`/api/transversal/mesa/${encodeURIComponent(currentMesaKey)}`);
+  const resp = await fetch(`/api/transversal/mesa/${encodeURIComponent(mesaKey)}`);
   if (!resp.ok) {
     main.innerHTML = '<p class="empty-msg">Error al cargar mesa.</p>';
     return;
   }
   mesaDetail = await resp.json();
   renderMesaMain();
-  renderAlerts(currentMesaKey);
+  renderAlerts(mesaKey);
 }
 
 function pageImageUrl(mesaKey, src, pageNum, ext) {
@@ -433,10 +506,14 @@ async function saveDecision(mesaKey, field, src, decision) {
     mesaDetail.decisions[field][src] = decision;
   }
 
-  const item = queueItems.find((i) => i.mesa_key === mesaKey);
+  const item = itemByKey[mesaKey];
   if (item && mesaDetail.alerts) {
     item.decision_progress = computeProgress(mesaDetail.alerts, mesaDetail.decisions);
     item.pending_human_count = countPending(mesaDetail.alerts, mesaDetail.decisions);
+    if (item.pending_human_count === 0) {
+      queueMeta.pending = Math.max(0, queueMeta.pending - 1);
+      queueMeta.done = Math.min(queueMeta.queueMesas, queueMeta.done + 1);
+    }
   }
   renderAlerts(mesaKey);
   updateStatsBar();
@@ -446,16 +523,14 @@ async function saveDecision(mesaKey, field, src, decision) {
 
 function updateNavStatus() {
   document.querySelectorAll('.nav-item').forEach((a) => {
-    const idx = Number(a.dataset.idx);
-    const item = queueItems[idx];
+    const mesaKey = a.dataset.mesaKey;
+    const item = itemByKey[mesaKey];
     const dot = a.querySelector('.nav-status');
     if (!dot || !item) return;
     const status = getMesaStatus(item);
     dot.className = `nav-status ${status}`;
     dot.title = status === 'done' ? 'Revisada' : 'Pendiente';
   });
-  updateStatsBar();
-  applySidebarFilter();
 }
 
 async function reopenMesa(mesaKey) {
@@ -484,26 +559,32 @@ async function reopenMesa(mesaKey) {
     first_decision_at: null,
     decision_count: 0,
   };
-  const item = queueItems.find((i) => i.mesa_key === mesaKey);
+  const item = itemByKey[mesaKey];
   if (item && mesaDetail.alerts) {
+    const wasDone = (item.pending_human_count || 0) === 0;
     item.decision_progress = computeProgress(mesaDetail.alerts, {});
     item.pending_human_count = countPending(mesaDetail.alerts, {});
+    if (wasDone && item.pending_human_count > 0) {
+      queueMeta.pending += 1;
+      queueMeta.done = Math.max(0, queueMeta.done - 1);
+    }
   }
   renderAlerts(mesaKey);
   updateNavStatus();
   updateActiveNav();
+  updateStatsBar();
 }
 
 function goPrev() {
-  const vis = getVisibleIndices();
-  const pos = vis.indexOf(currentIdx);
-  if (pos > 0) selectMesa(vis[pos - 1]);
+  const pos = keyOrder.indexOf(currentMesaKey);
+  if (pos > 0) selectMesaByKey(keyOrder[pos - 1]);
 }
 
 function goNext() {
-  const vis = getVisibleIndices();
-  const pos = vis.indexOf(currentIdx);
-  if (pos >= 0 && pos < vis.length - 1) selectMesa(vis[pos + 1]);
+  const pos = keyOrder.indexOf(currentMesaKey);
+  if (pos >= 0 && pos < keyOrder.length - 1) {
+    selectMesaByKey(keyOrder[pos + 1]);
+  }
 }
 
 function toggleSidebar() {
@@ -521,8 +602,8 @@ function exportDecisions() {
 }
 
 function onFilterChange() {
-  currentIdx = 0;
-  refreshQueue().catch((err) => console.error(err));
+  currentMesaKey = null;
+  resetQueue().catch((err) => console.error(err));
 }
 
 function onSearchInput() {
@@ -541,7 +622,7 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-window.selectMesa = selectMesa;
+window.selectMesaByKey = selectMesaByKey;
 window.goPrev = goPrev;
 window.goNext = goNext;
 window.saveDecision = saveDecision;
@@ -552,9 +633,10 @@ window.exportDecisions = exportDecisions;
 window.onFilterChange = onFilterChange;
 window.onSearchInput = onSearchInput;
 window.setSidebarFilter = setSidebarFilter;
+window.resetQueue = resetQueue;
 
 document.addEventListener('DOMContentLoaded', () => {
-  refreshQueue().catch((err) => {
+  resetQueue().catch((err) => {
     console.error(err);
     const list = document.getElementById('sidebar-list');
     if (list) list.innerHTML = '<p class="empty-msg">Error cargando cola.</p>';

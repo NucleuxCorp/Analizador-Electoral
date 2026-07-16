@@ -1611,6 +1611,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
         from src.modules.review.queue import (
             build_queue_page,
             get_transversal_index_row,
+            list_queue_page_mesa_keys,
             load_transversal_index_rows,
         )
 
@@ -1657,13 +1658,33 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
             except (TypeError, ValueError):
                 page_size = 50
             dept = request.args.get("dept") or None
-            pending_only = request.args.get("pending_only", "").lower() in ("1", "true", "yes")
+            status = (request.args.get("status") or "all").lower()
+            pending_only = (
+                status == "pending"
+                or request.args.get("pending_only", "").lower() in ("1", "true", "yes")
+            )
+            done_only = status == "done"
             q = request.args.get("q") or None
 
             cfg = _transversal_dataset()
             rows = _transversal_load_index_rows()
             exclusions = load_excluded_keys("confirmed", source=cfg["primary_source"])
-            decisions = _db.get_transversal_decisions()
+            decided_slots = _db.get_transversal_decided_slots()
+            page_keys = list_queue_page_mesa_keys(
+                rows,
+                exclusions,
+                page=page,
+                page_size=page_size,
+                dept=dept,
+                pending_only=pending_only,
+                done_only=done_only,
+                q=q,
+                decided_slots=decided_slots,
+                source_available=_review_images.queue_source_available,
+            )
+            scoped_decisions = (
+                _db.get_transversal_decisions(mesa_keys=page_keys) if page_keys else {}
+            )
             result = build_queue_page(
                 rows,
                 exclusions,
@@ -1671,10 +1692,18 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 page_size=page_size,
                 dept=dept,
                 pending_only=pending_only,
+                done_only=done_only,
                 q=q,
-                decisions=decisions,
+                decisions=scoped_decisions,
+                decided_slots=decided_slots,
                 source_available=_review_images.queue_source_available,
             )
+            queue_mesas = result.get("queue_mesas", result["total"])
+            pending_human = result["stats"]["pending_human"]
+            result["pending"] = pending_human
+            result["queue_mesas"] = queue_mesas
+            result["done"] = max(0, queue_mesas - pending_human)
+            result["has_more"] = page * page_size < result["total"]
             result["dataset"] = {
                 "key": cfg["key"],
                 "label": cfg["label"],

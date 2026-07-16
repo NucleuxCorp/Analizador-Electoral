@@ -10,6 +10,7 @@ def _make_chain(rows: list[dict] | None = None) -> MagicMock:
     chain = MagicMock()
     chain.select.return_value = chain
     chain.eq.return_value = chain
+    chain.in_.return_value = chain
     chain.limit.return_value = chain
     chain.order.return_value = chain
     chain.range.return_value = chain
@@ -122,6 +123,145 @@ class TestTransversalDecisionEditWindow:
         assert ok is True
         assert err is None
         delete_chain.delete.assert_called_once()
+
+
+class TestTransversalDecisionsScope:
+    def test_mesa_key_single_uses_eq_filter(self):
+        from src.modules.labeler import db
+
+        rows = [
+            {
+                "mesa_key": "01_001_001_01_001",
+                "field": "VOTANTES",
+                "source": "e14c",
+                "decision": "accepted",
+            },
+        ]
+        chain = _make_chain(rows)
+        with patch("src.modules.labeler.db._client", return_value=_make_client(chain)):
+            result = db.get_transversal_decisions("01_001_001_01_001")
+
+        assert result["01_001_001_01_001"]["VOTANTES"]["e14c"] == "accepted"
+        chain.eq.assert_called_once_with("mesa_key", "01_001_001_01_001")
+        chain.in_.assert_not_called()
+
+    def test_mesa_keys_collection_uses_in_filter(self):
+        from src.modules.labeler import db
+
+        keys = ["01_001_001_01_001", "13_001_001_03_011"]
+        rows = [
+            {
+                "mesa_key": keys[0],
+                "field": "VOTANTES",
+                "source": "e14c",
+                "decision": "accepted",
+            },
+            {
+                "mesa_key": keys[1],
+                "field": "SUMA_TOTAL",
+                "source": "e14d",
+                "decision": "rejected",
+            },
+        ]
+        chain = _make_chain(rows)
+        with patch("src.modules.labeler.db._client", return_value=_make_client(chain)):
+            result = db.get_transversal_decisions(mesa_keys=keys)
+
+        assert result[keys[0]]["VOTANTES"]["e14c"] == "accepted"
+        assert result[keys[1]]["SUMA_TOTAL"]["e14d"] == "rejected"
+        chain.in_.assert_called_once_with("mesa_key", keys)
+        chain.eq.assert_not_called()
+
+    def test_mesa_keys_empty_returns_empty_without_query(self):
+        from src.modules.labeler import db
+
+        client = MagicMock()
+        with patch("src.modules.labeler.db._client", return_value=client):
+            assert db.get_transversal_decisions(mesa_keys=[]) == {}
+        client.table.assert_not_called()
+
+    def test_no_filter_fetches_all_rows(self):
+        from src.modules.labeler import db
+
+        chain = _make_chain([
+            {
+                "mesa_key": "01_001_001_01_001",
+                "field": "VOTANTES",
+                "source": "e14c",
+                "decision": "accepted",
+            },
+        ])
+        with patch("src.modules.labeler.db._client", return_value=_make_client(chain)):
+            result = db.get_transversal_decisions()
+
+        assert "01_001_001_01_001" in result
+        chain.eq.assert_not_called()
+        chain.in_.assert_not_called()
+
+
+class TestTransversalDecidedSlots:
+    @pytest.fixture(autouse=True)
+    def _clear_cache(self):
+        from src.modules.labeler import db
+
+        db.clear_transversal_decided_slots_cache()
+        yield
+        db.clear_transversal_decided_slots_cache()
+
+    def test_decided_slots_reuses_query_within_ttl(self, monkeypatch):
+        from src.modules.labeler import db
+
+        rows = [
+            {
+                "mesa_key": "01_001_001_01_001",
+                "field": "VOTANTES",
+                "source": "e14c",
+                "decision": "accepted",
+            },
+        ]
+        chain = _make_chain(rows)
+        client = _make_client(chain)
+
+        fake_now = [1000.0]
+        monkeypatch.setattr(db.time, "time", lambda: fake_now[0])
+
+        with patch("src.modules.labeler.db._client", return_value=client):
+            first = db.get_transversal_decided_slots()
+            second = db.get_transversal_decided_slots()
+
+        assert first == second
+        assert client.table.call_count == 1
+
+    def test_decided_slots_refetches_after_ttl(self, monkeypatch):
+        from src.modules.labeler import db
+
+        chain = _make_chain([])
+        client = _make_client(chain)
+
+        fake_now = [1000.0]
+        monkeypatch.setattr(db.time, "time", lambda: fake_now[0])
+
+        with patch("src.modules.labeler.db._client", return_value=client):
+            db.get_transversal_decided_slots()
+            fake_now[0] += db._PENDING_CACHE_TTL + 1.0
+            db.get_transversal_decided_slots()
+
+        assert client.table.call_count == 2
+
+    def test_force_reload_bypasses_decided_slots_cache(self, monkeypatch):
+        from src.modules.labeler import db
+
+        chain = _make_chain([])
+        client = _make_client(chain)
+
+        fake_now = [1000.0]
+        monkeypatch.setattr(db.time, "time", lambda: fake_now[0])
+
+        with patch("src.modules.labeler.db._client", return_value=client):
+            db.get_transversal_decided_slots()
+            db.get_transversal_decided_slots(force_reload=True)
+
+        assert client.table.call_count == 2
 
 
 class TestExportTransversalDecisions:

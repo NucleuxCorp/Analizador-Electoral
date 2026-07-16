@@ -50,6 +50,7 @@ class TestTransversalRoutesAuth:
     def test_moderator_queue_200(self, client):
         with patch("src.modules.labeler.auth.decode_jwt", return_value={"sub": "mod-user"}), \
              patch("src.modules.labeler.auth._get_user_role", return_value="moderator"), \
+             patch("src.modules.labeler.db.get_transversal_decided_slots", return_value={}), \
              patch("src.modules.labeler.db.get_transversal_decisions", return_value={}):
             resp = client.get("/api/transversal/queue?page_size=5")
         assert resp.status_code == 200
@@ -57,6 +58,26 @@ class TestTransversalRoutesAuth:
         assert "items" in data
         assert "total" in data
         assert data["total"] >= 4117
+        assert "pending" in data
+        assert "has_more" in data
+        assert "queue_mesas" in data
+        assert "done" in data
+        assert data["has_more"] is True
+
+    def test_queue_uses_scoped_decisions_for_page_keys(self, client):
+        with patch("src.modules.labeler.auth.decode_jwt", return_value={"sub": "mod-user"}), \
+             patch("src.modules.labeler.auth._get_user_role", return_value="moderator"), \
+             patch("src.modules.labeler.db.get_transversal_decided_slots", return_value={}) as mock_slots, \
+             patch("src.modules.labeler.db.get_transversal_decisions", return_value={}) as mock_scoped:
+            resp = client.get("/api/transversal/queue?page=1&page_size=3")
+        assert resp.status_code == 200
+        mock_slots.assert_called_once()
+        mock_scoped.assert_called_once()
+        page_keys = mock_scoped.call_args.kwargs.get("mesa_keys") or mock_scoped.call_args.args
+        if mock_scoped.call_args.kwargs:
+            assert len(mock_scoped.call_args.kwargs["mesa_keys"]) == 3
+        else:
+            assert len(page_keys) == 3
 
     def test_validator_queue_403(self, client):
         with patch("src.modules.labeler.auth.decode_jwt", return_value={"sub": "val-user"}), \
