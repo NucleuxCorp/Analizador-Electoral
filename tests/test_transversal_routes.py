@@ -137,6 +137,37 @@ class TestTransversalRoutesAuth:
         assert resp.get_json()["ok"] is True
         mock_reopen.assert_called_once_with("01_001_026_08_011")
 
+    def test_post_transversal_report(self, client):
+        with patch("src.modules.labeler.auth.decode_jwt", return_value={"sub": "mod-user"}), \
+             patch("src.modules.labeler.auth._get_user_role", return_value="moderator"), \
+             patch("src.modules.labeler.db.insert_transversal_reports", return_value=[{
+                 "id": "rep-1",
+                 "source": "e14c",
+                 "report_type": "enmienda",
+                 "notes": "tachon",
+             }]) as mock_insert:
+            resp = client.post(
+                "/api/transversal/reports",
+                data=json.dumps({
+                    "mesa_key": "01_001_001_01_001",
+                    "entries": [{
+                        "source": "e14c",
+                        "report_type": "enmienda",
+                        "notes": "tachon",
+                    }],
+                }),
+                content_type="application/json",
+            )
+        assert resp.status_code == 200
+        assert resp.get_json()["ok"] is True
+        mock_insert.assert_called_once()
+
+    def test_get_transversal_reports_requires_mesa_key(self, client):
+        with patch("src.modules.labeler.auth.decode_jwt", return_value={"sub": "mod-user"}), \
+             patch("src.modules.labeler.auth._get_user_role", return_value="moderator"):
+            resp = client.get("/api/transversal/reports")
+        assert resp.status_code == 400
+
     def test_reopen_expired_returns_403(self, client):
         with patch("src.modules.labeler.auth.decode_jwt", return_value={"sub": "mod-user"}), \
              patch("src.modules.labeler.auth._get_user_role", return_value="moderator"), \

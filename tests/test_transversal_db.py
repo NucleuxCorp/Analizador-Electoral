@@ -15,6 +15,8 @@ def _make_chain(rows: list[dict] | None = None) -> MagicMock:
     chain.order.return_value = chain
     chain.range.return_value = chain
     chain.upsert.return_value = chain
+    chain.insert.return_value = chain
+    chain.delete.return_value = chain
     chain.execute.return_value = MagicMock(data=rows if rows is not None else [])
     return chain
 
@@ -264,11 +266,82 @@ class TestTransversalDecidedSlots:
         assert client.table.call_count == 2
 
 
+class TestTransversalReports:
+    def test_list_reports_filters_by_mesa_key(self):
+        from src.modules.labeler import db
+
+        rows = [
+            {
+                "id": "r1",
+                "mesa_key": "01_001_001_01_001",
+                "source": "e14c",
+                "report_type": "enmienda",
+                "notes": "tachon visible",
+                "fields": None,
+                "annotator": "user-1",
+                "created_at": "2026-07-16T00:00:00Z",
+            },
+        ]
+        chain = _make_chain(rows)
+        with patch("src.modules.labeler.db._client", return_value=_make_client(chain)):
+            result = db.list_transversal_reports("01_001_001_01_001")
+
+        assert len(result) == 1
+        assert result[0]["report_type"] == "enmienda"
+        chain.eq.assert_called_with("mesa_key", "01_001_001_01_001")
+
+    def test_insert_reports_batch(self):
+        from src.modules.labeler import db
+
+        inserted = [
+            {
+                "id": "new-1",
+                "mesa_key": "01_001_001_01_001",
+                "source": "e14d",
+                "report_type": "otro",
+                "notes": "nota",
+                "fields": None,
+                "annotator": "mod-user",
+                "created_at": "2026-07-16T01:00:00Z",
+            },
+        ]
+        insert_chain = _make_chain(inserted)
+        with patch("src.modules.labeler.db._client", return_value=_make_client(insert_chain)):
+            result = db.insert_transversal_reports(
+                "01_001_001_01_001",
+                [{"source": "e14d", "report_type": "otro", "notes": "nota"}],
+                "mod-user",
+            )
+
+        assert len(result) == 1
+        insert_chain.insert.assert_called_once()
+
+    def test_delete_report_by_owner(self):
+        from src.modules.labeler import db
+
+        select_chain = _make_chain([{"id": "r1", "annotator": "owner-1"}])
+        delete_chain = MagicMock()
+        delete_chain.delete.return_value = delete_chain
+        delete_chain.eq.return_value = delete_chain
+        delete_chain.execute.return_value = MagicMock(data=[])
+        client = MagicMock()
+        client.table.side_effect = [select_chain, delete_chain]
+        with patch("src.modules.labeler.db._client", return_value=client):
+            assert db.delete_transversal_report("r1", "owner-1") is True
+
+    def test_delete_report_forbidden_for_other_user(self):
+        from src.modules.labeler import db
+
+        select_chain = _make_chain([{"id": "r1", "annotator": "owner-1"}])
+        with patch("src.modules.labeler.db._client", return_value=_make_client(select_chain)):
+            assert db.delete_transversal_report("r1", "other-user") is False
+
+
 class TestExportTransversalDecisions:
     def test_export_envelope_shape(self):
         from src.modules.labeler import db
 
-        chain = _make_chain([
+        decision_chain = _make_chain([
             {
                 "mesa_key": "13_001_001_03_011",
                 "field": "SUMA_TOTAL",
@@ -276,9 +349,24 @@ class TestExportTransversalDecisions:
                 "decision": "accepted",
             },
         ])
-        with patch("src.modules.labeler.db._client", return_value=_make_client(chain)):
+        report_chain = _make_chain([
+            {
+                "id": "rep-1",
+                "mesa_key": "13_001_001_03_011",
+                "source": "e14c",
+                "report_type": "enmienda",
+                "notes": "hallazgo",
+                "fields": None,
+                "annotator": "u1",
+                "created_at": "2026-07-16T00:00:00Z",
+            },
+        ])
+        client = MagicMock()
+        client.table.side_effect = [decision_chain, report_chain]
+        with patch("src.modules.labeler.db._client", return_value=client):
             payload = db.export_transversal_decisions()
 
         assert "generated" in payload
         assert payload["project"] == "transversal_review_E14C_conflictivas"
         assert payload["decisions"]["13_001_001_03_011"]["SUMA_TOTAL"]["e14c"] == "accepted"
+        assert payload["reports"]["13_001_001_03_011"][0]["report_type"] == "enmienda"
