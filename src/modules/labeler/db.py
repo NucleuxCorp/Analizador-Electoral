@@ -22,6 +22,7 @@ import time
 import re
 import uuid
 from datetime import datetime, timezone, timedelta
+from collections.abc import Collection
 from typing import Any
 
 logger = logging.getLogger("labeler.db")
@@ -1360,19 +1361,64 @@ def _nest_transversal_rows(rows: list[dict]) -> dict:
     return nested
 
 
-def get_transversal_decisions(mesa_key: str | None = None) -> dict:
-    """Return nested decisions: mesa → field → source → accepted|rejected."""
-    try:
+_DECIDED_SLOTS_CACHE: tuple[float, dict] | None = None
+_PENDING_CACHE_TTL = 30.0
+
+
+def _fetch_transversal_decision_rows(
+    mesa_key: str | None = None,
+    *,
+    mesa_keys: Collection[str] | None = None,
+) -> list[dict]:
+    if mesa_keys is not None:
+        if not mesa_keys:
+            return []
         query = _client().table("transversal_review_decisions").select(
             "mesa_key, field, source, decision"
         )
-        if mesa_key is not None:
-            query = query.eq("mesa_key", mesa_key)
-        rows = (query.execute().data) or []
+        return (query.in_("mesa_key", list(mesa_keys)).execute().data) or []
+
+    query = _client().table("transversal_review_decisions").select(
+        "mesa_key, field, source, decision"
+    )
+    if mesa_key is not None:
+        query = query.eq("mesa_key", mesa_key)
+    return (query.execute().data) or []
+
+
+def get_transversal_decisions(
+    mesa_key: str | None = None,
+    *,
+    mesa_keys: Collection[str] | None = None,
+) -> dict:
+    """Return nested decisions: mesa → field → source → accepted|rejected."""
+    try:
+        rows = _fetch_transversal_decision_rows(mesa_key, mesa_keys=mesa_keys)
         return _nest_transversal_rows(rows)
     except Exception as exc:
         logger.warning("get_transversal_decisions failed: %s", exc)
         return {}
+
+
+def get_transversal_decided_slots(*, force_reload: bool = False) -> dict:
+    """Cached full decided-slot index for pending-queue reconciliation."""
+    global _DECIDED_SLOTS_CACHE
+    now = time.time()
+    if (
+        not force_reload
+        and _DECIDED_SLOTS_CACHE is not None
+        and now - _DECIDED_SLOTS_CACHE[0] < _PENDING_CACHE_TTL
+    ):
+        return _DECIDED_SLOTS_CACHE[1]
+
+    nested = get_transversal_decisions()
+    _DECIDED_SLOTS_CACHE = (now, nested)
+    return nested
+
+
+def clear_transversal_decided_slots_cache() -> None:
+    global _DECIDED_SLOTS_CACHE
+    _DECIDED_SLOTS_CACHE = None
 
 
 def export_transversal_decisions(dataset: str | None = None) -> dict:
