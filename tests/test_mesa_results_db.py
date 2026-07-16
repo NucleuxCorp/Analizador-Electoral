@@ -370,3 +370,258 @@ class TestGetMesaStatsSupabaseUnavailable:
 def _call_uncached(fn):
     """Call fn(None) — used when _get_mesa_stats_uncached is not yet public."""
     return fn(None)
+
+
+# ---------------------------------------------------------------------------
+# Work Unit 1 / Phase 1 — hierarchical mesa stats + drill-down filters
+# ---------------------------------------------------------------------------
+
+class TestGetHierarchicalMesaStats:
+    """get_hierarchical_mesa_stats builds by_mpio / by_puesto / _global / review_by_mesa."""
+
+    def _make_client(self, mesa_rows: list[dict], semaphore_rows: list[dict]) -> MagicMock:
+        """Client wired for both the mesa_results table scan and the semaphore RPC."""
+        table_chain = MagicMock()
+        table_chain.select.return_value = table_chain
+        table_chain.range.return_value = table_chain
+        table_chain.eq.return_value = table_chain
+        table_chain.execute.return_value = MagicMock(data=mesa_rows)
+
+        rpc_chain = MagicMock()
+        rpc_chain.execute.return_value = MagicMock(data=semaphore_rows)
+
+        client = MagicMock()
+        client.table.return_value = table_chain
+        client.rpc.return_value = rpc_chain
+        return client
+
+    def test_by_mpio_and_by_puesto_buckets(self):
+        """by_mpio and by_puesto are keyed correctly and only include analyzed mesas."""
+        import src.modules.labeler.db as db_module
+
+        db_module._hierarchical_stats_cache.clear()
+
+        mesa_rows = [
+            {"dept": "01", "mpio": "001", "zona": "01", "puesto": "01", "mesa": "1", "overall_status": "clean"},
+            {"dept": "01", "mpio": "001", "zona": "01", "puesto": "01", "mesa": "2", "overall_status": "warning"},
+            {"dept": "01", "mpio": "002", "zona": "01", "puesto": "05", "mesa": "1", "overall_status": "clean"},
+        ]
+        mock_client = self._make_client(mesa_rows, [])
+
+        with patch("src.modules.labeler.db._client", return_value=mock_client):
+            result = db_module.get_hierarchical_mesa_stats()
+
+        assert result["by_mpio"]["01_001"]["total"] == 2
+        assert result["by_mpio"]["01_001"]["clean"] == 1
+        assert result["by_mpio"]["01_001"]["warning"] == 1
+        assert result["by_mpio"]["01_002"]["total"] == 1
+
+        assert result["by_puesto"]["01_001"]["01_01"]["total"] == 2
+        assert result["by_puesto"]["01_002"]["01_05"]["total"] == 1
+        # No zero-row DIVIPOLE entries — only mpio/puesto combos actually present.
+        assert "01_003" not in result["by_mpio"]
+
+    def test_review_counts_merged_from_semaphore(self):
+        """en_revision / revisada counts are parsed from mesa_key_mr and merged in."""
+        import src.modules.labeler.db as db_module
+
+        db_module._hierarchical_stats_cache.clear()
+
+        mesa_rows = [
+            {"dept": "01", "mpio": "001", "zona": "01", "puesto": "01", "mesa": "1", "overall_status": "clean"},
+            {"dept": "01", "mpio": "001", "zona": "01", "puesto": "01", "mesa": "2", "overall_status": "warning"},
+        ]
+        semaphore_rows = [
+            {
+                "mesa_key_mr": "01_001_01_01_1",
+                "dept": "01",
+                "annotation_count_sum": 1,
+                "priority_total": 0,
+                "priority_confirmed": 0,
+            },
+            {
+                "mesa_key_mr": "01_001_01_01_2",
+                "dept": "01",
+                "annotation_count_sum": 1,
+                "priority_total": 2,
+                "priority_confirmed": 2,
+                "candidato_sum": 10,
+                "total_urna_val": 10,
+            },
+        ]
+        mock_client = self._make_client(mesa_rows, semaphore_rows)
+
+        with patch("src.modules.labeler.db._client", return_value=mock_client):
+            result = db_module.get_hierarchical_mesa_stats()
+
+        assert result["review_by_mesa"]["01_001_01_01_1"]["en_revision"] is True
+        assert result["review_by_mesa"]["01_001_01_01_1"]["revisada"] is False
+        assert result["review_by_mesa"]["01_001_01_01_2"]["revisada"] is True
+        assert result["review_by_mesa"]["01_001_01_01_2"]["revisada_result"] == "mesa_limpia"
+
+        assert result["by_mpio"]["01_001"]["en_revision"] == 1
+        assert result["by_mpio"]["01_001"]["revisada"] == 1
+        assert result["by_puesto"]["01_001"]["01_01"]["en_revision"] == 1
+        assert result["by_puesto"]["01_001"]["01_01"]["revisada"] == 1
+
+    def test_global_rollup(self):
+        """_global aggregates totals across all mpio/puesto buckets."""
+        import src.modules.labeler.db as db_module
+
+        db_module._hierarchical_stats_cache.clear()
+
+        mesa_rows = [
+            {"dept": "01", "mpio": "001", "zona": "01", "puesto": "01", "mesa": "1", "overall_status": "clean"},
+            {"dept": "05", "mpio": "002", "zona": "01", "puesto": "02", "mesa": "1", "overall_status": "warning"},
+        ]
+        mock_client = self._make_client(mesa_rows, [])
+
+        with patch("src.modules.labeler.db._client", return_value=mock_client):
+            result = db_module.get_hierarchical_mesa_stats()
+
+        assert result["_global"]["total"] == 2
+        assert result["_global"]["clean"] == 1
+        assert result["_global"]["warning"] == 1
+
+    def test_cache_hit_single_scan(self):
+        """Two calls within TTL must scan mesa_results only once."""
+        import src.modules.labeler.db as db_module
+
+        db_module._hierarchical_stats_cache.clear()
+
+        mesa_rows = [
+            {"dept": "01", "mpio": "001", "zona": "01", "puesto": "01", "mesa": "1", "overall_status": "clean"},
+        ]
+        mock_client = self._make_client(mesa_rows, [])
+
+        with patch("src.modules.labeler.db._client", return_value=mock_client):
+            r1 = db_module.get_hierarchical_mesa_stats()
+            r2 = db_module.get_hierarchical_mesa_stats()
+
+        assert r1 == r2
+        assert mock_client.table.call_count == 1
+
+    def test_supabase_unavailable_returns_empty_shape(self):
+        """On any exception, returns the empty-but-shaped dict (fail-closed)."""
+        import src.modules.labeler.db as db_module
+
+        db_module._hierarchical_stats_cache.clear()
+
+        with patch("src.modules.labeler.db._client", side_effect=RuntimeError("no client")):
+            result = db_module.get_hierarchical_mesa_stats()
+
+        assert result == {"by_mpio": {}, "by_puesto": {}, "_global": {}, "review_by_mesa": {}}
+
+
+class TestGetMesaResultsHierarchicalFilters:
+    """get_mesa_results accepts mpio/zona/puesto keyword filters."""
+
+    def test_mpio_filter_applied(self):
+        from src.modules.labeler.db import get_mesa_results
+
+        chain = _make_chain([])
+        mock_client = _make_client(chain)
+
+        with patch("src.modules.labeler.db._client", return_value=mock_client):
+            get_mesa_results(dept="01", mpio="001", page=1, per_page=10)
+
+        eq_calls = [c.args for c in chain.eq.call_args_list]
+        assert ("mpio", "001") in eq_calls
+
+    def test_zona_filter_applied(self):
+        from src.modules.labeler.db import get_mesa_results
+
+        chain = _make_chain([])
+        mock_client = _make_client(chain)
+
+        with patch("src.modules.labeler.db._client", return_value=mock_client):
+            get_mesa_results(dept="01", mpio="001", zona="01", page=1, per_page=10)
+
+        eq_calls = [c.args for c in chain.eq.call_args_list]
+        assert ("zona", "01") in eq_calls
+
+    def test_puesto_filter_applied(self):
+        from src.modules.labeler.db import get_mesa_results
+
+        chain = _make_chain([])
+        mock_client = _make_client(chain)
+
+        with patch("src.modules.labeler.db._client", return_value=mock_client):
+            get_mesa_results(dept="01", mpio="001", zona="01", puesto="01", page=1, per_page=10)
+
+        eq_calls = [c.args for c in chain.eq.call_args_list]
+        assert ("puesto", "01") in eq_calls
+
+    def test_no_hierarchical_filters_no_eq(self):
+        """When mpio/zona/puesto are omitted, no extra .eq() calls are made."""
+        from src.modules.labeler.db import get_mesa_results
+
+        chain = _make_chain([])
+        mock_client = _make_client(chain)
+
+        with patch("src.modules.labeler.db._client", return_value=mock_client):
+            get_mesa_results(page=1, per_page=10)
+
+        chain.eq.assert_not_called()
+
+
+class TestCountMesaResults:
+    """count_mesa_results returns the filtered row count for Level-3 pagination."""
+
+    def _make_count_client(self, count: int) -> MagicMock:
+        chain = MagicMock()
+        chain.select.return_value = chain
+        chain.eq.return_value = chain
+        chain.execute.return_value = MagicMock(count=count, data=[])
+        client = MagicMock()
+        client.table.return_value = chain
+        return client
+
+    def test_count_mesa_results_returns_count(self):
+        from src.modules.labeler.db import count_mesa_results
+
+        mock_client = self._make_count_client(42)
+
+        with patch("src.modules.labeler.db._client", return_value=mock_client):
+            result = count_mesa_results(dept="01", mpio="001", zona="01", puesto="01")
+
+        assert result == 42
+        mock_client.table.assert_called_once_with("mesa_results")
+
+    def test_count_mesa_results_filters_applied(self):
+        from src.modules.labeler.db import count_mesa_results
+
+        mock_client = self._make_count_client(0)
+        chain = mock_client.table.return_value
+
+        with patch("src.modules.labeler.db._client", return_value=mock_client):
+            count_mesa_results(dept="01", mpio="001", zona="01", puesto="01", status="clean")
+
+        eq_calls = [c.args for c in chain.eq.call_args_list]
+        assert ("dept", "01") in eq_calls
+        assert ("mpio", "001") in eq_calls
+        assert ("zona", "01") in eq_calls
+        assert ("puesto", "01") in eq_calls
+        assert ("overall_status", "clean") in eq_calls
+
+    def test_count_mesa_results_no_filters(self):
+        """With no filters, no .eq() call is made and the raw count is returned."""
+        from src.modules.labeler.db import count_mesa_results
+
+        mock_client = self._make_count_client(100)
+        chain = mock_client.table.return_value
+
+        with patch("src.modules.labeler.db._client", return_value=mock_client):
+            result = count_mesa_results()
+
+        assert result == 100
+        chain.eq.assert_not_called()
+
+    def test_count_mesa_results_error_returns_zero(self):
+        """On any exception, returns 0 (fail-closed)."""
+        from src.modules.labeler.db import count_mesa_results
+
+        with patch("src.modules.labeler.db._client", side_effect=RuntimeError("no client")):
+            result = count_mesa_results(dept="01")
+
+        assert result == 0
