@@ -44,6 +44,7 @@ class TestTransversalUI:
         assert "stat-done" in html
         assert "sf-pending" in html
         assert "Revisadas" in html
+        assert "report-modal" in html
         assert "/admin/conflicts" in html
 
     def test_static_transversal_js_exists(self):
@@ -58,6 +59,10 @@ class TestTransversalUI:
         assert "IntersectionObserver" in content
         assert "resetQueue" in content
         assert "fetchQueueAll" not in content
+        assert "openReportPanel" in content
+        assert "saveModalReport" in content
+        assert "report-modal" in content
+        assert "btn-report" in content
         assert "/api/transversal/decisions/export" in content
         assert "showSaveFilePicker" not in content
 

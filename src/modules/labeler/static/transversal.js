@@ -343,6 +343,7 @@ function renderMesaMain() {
           <span class="mesa-meta">C1+C2=${d.candidate_votes ?? '—'}</span>
         </div>
         <div class="mesa-nav">
+          <button type="button" class="btn-report" onclick="openReportPanel('${d.mesa_key}')">📝 Reporte</button>
           <button type="button" onclick="goPrev()">← Anterior</button>
           <span id="nav-counter">—</span>
           <button type="button" onclick="goNext()">Siguiente →</button>
@@ -597,6 +598,170 @@ function toggleAlertPanel() {
   chevron.textContent = document.getElementById('alert-panel').classList.contains('collapsed') ? '▼' : '▲';
 }
 
+const BLANK_FIELDS = ['VOTANTES', 'URNA', 'SUMA_TOTAL'];
+const RTYPE_LABELS = {
+  campos_vacios: 'Campos críticos vacíos',
+  enmienda: 'Enmienda / Tachón',
+  otro: 'Otros',
+};
+
+let _reportMesaKey = null;
+let _selectedRtype = null;
+
+function openReportPanel(mesaKey) {
+  _reportMesaKey = mesaKey;
+  _selectedRtype = null;
+  document.querySelectorAll('.src-check').forEach((c) => { c.checked = false; });
+  document.querySelectorAll('.rtype-btn').forEach((b) => b.classList.remove('selected'));
+  document.getElementById('report-notes').value = '';
+  document.getElementById('campos-detail').style.display = 'none';
+  document.getElementById('campos-per-src').innerHTML = '';
+  renderModalSaved(mesaKey);
+  document.getElementById('report-modal').classList.add('open');
+}
+
+function closeReportModal(e) {
+  if (e && e.target !== document.getElementById('report-modal')) return;
+  document.getElementById('report-modal').classList.remove('open');
+  _reportMesaKey = null;
+  _selectedRtype = null;
+}
+
+function selectReportType(btn) {
+  document.querySelectorAll('.rtype-btn').forEach((b) => b.classList.remove('selected'));
+  btn.classList.add('selected');
+  _selectedRtype = btn.dataset.type;
+  updateCamposDetail();
+}
+
+function onReportSrcChange() {
+  updateCamposDetail();
+}
+
+function updateCamposDetail() {
+  const detail = document.getElementById('campos-detail');
+  const perSrc = document.getElementById('campos-per-src');
+  if (_selectedRtype !== 'campos_vacios') {
+    detail.style.display = 'none';
+    perSrc.innerHTML = '';
+    return;
+  }
+  const selected = [...document.querySelectorAll('.src-check:checked')].map((c) => c.value);
+  if (!selected.length) {
+    detail.style.display = 'none';
+    perSrc.innerHTML = '';
+    return;
+  }
+  detail.style.display = '';
+  perSrc.innerHTML = selected.map((src) => {
+    const color = SOURCE_COLORS[src];
+    const label = SOURCE_LABELS[src];
+    const fields = BLANK_FIELDS.map((f) =>
+      `<label><input type="checkbox" id="campo-${src}-${f}" checked> ${f}</label>`,
+    ).join('');
+    return `<div class="campos-src-block">
+      <div class="campos-src-header" style="background:${color}22;border-bottom:1px solid ${color}44">
+        <span class="src-dot" style="background:${color}"></span>
+        <span style="color:${color}">${label}</span>
+      </div>
+      <div class="campos-src-fields">${fields}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderModalSaved(mesaKey) {
+  const reports = (mesaKey === currentMesaKey && mesaDetail && mesaDetail.reports) || [];
+  const sec = document.getElementById('modal-saved-section');
+  const list = document.getElementById('modal-saved-list');
+  if (!reports.length) {
+    sec.style.display = 'none';
+    list.innerHTML = '';
+    return;
+  }
+  sec.style.display = '';
+  list.innerHTML = reports.map((r) => {
+    const color = SOURCE_COLORS[r.source] || '#475569';
+    const srcLabel = SOURCE_LABELS[r.source] || r.source;
+    const typeLabel = RTYPE_LABELS[r.report_type] || r.report_type;
+    let fieldsHtml = '';
+    if (r.fields) {
+      fieldsHtml = `<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:3px">${
+        Object.entries(r.fields).map(([f, v]) =>
+          `<span class="field-tag ${v ? 'on' : 'off'}">${f}</span>`,
+        ).join('')
+      }</div>`;
+    }
+    return `<div class="modal-saved-item">
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+          <span class="src-dot" style="background:${color}"></span>
+          <span style="font-size:0.7rem;color:${color};font-weight:700">${srcLabel}</span>
+          <span class="rtype-badge ${r.report_type}">${typeLabel}</span>
+        </div>
+        ${fieldsHtml}
+        <div style="font-size:0.7rem;color:#64748b;margin-top:3px">${r.notes}</div>
+      </div>
+      <button type="button" class="modal-del-btn" onclick="deleteModalReport('${r.id}')">✕</button>
+    </div>`;
+  }).join('');
+}
+
+async function saveModalReport() {
+  const sources = [...document.querySelectorAll('.src-check:checked')].map((c) => c.value);
+  const notes = document.getElementById('report-notes').value.trim();
+  if (!sources.length) { alert('Selecciona al menos una fuente.'); return; }
+  if (!_selectedRtype) { alert('Selecciona el tipo de reporte.'); return; }
+  if (!notes) { alert('Las notas son obligatorias.'); return; }
+
+  const entries = sources.map((src) => {
+    const entry = { source: src, report_type: _selectedRtype, notes };
+    if (_selectedRtype === 'campos_vacios') {
+      const fields = {};
+      BLANK_FIELDS.forEach((f) => {
+        const el = document.getElementById(`campo-${src}-${f}`);
+        if (el) fields[f] = el.checked;
+      });
+      entry.fields = fields;
+    }
+    return entry;
+  });
+
+  const resp = await fetch('/api/transversal/reports', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mesa_key: _reportMesaKey, entries }),
+  });
+  if (!resp.ok) {
+    alert('Error al guardar reporte.');
+    return;
+  }
+  const data = await resp.json();
+  if (mesaDetail && _reportMesaKey === currentMesaKey) {
+    mesaDetail.reports = [...(mesaDetail.reports || []), ...(data.reports || [])];
+  }
+  renderModalSaved(_reportMesaKey);
+  document.getElementById('report-notes').value = '';
+  document.querySelectorAll('.rtype-btn').forEach((b) => b.classList.remove('selected'));
+  document.querySelectorAll('.src-check').forEach((c) => { c.checked = false; });
+  document.getElementById('campos-detail').style.display = 'none';
+  document.getElementById('campos-per-src').innerHTML = '';
+  _selectedRtype = null;
+}
+
+async function deleteModalReport(reportId) {
+  const resp = await fetch(`/api/transversal/reports/${encodeURIComponent(reportId)}`, {
+    method: 'DELETE',
+  });
+  if (!resp.ok) {
+    alert('No se pudo borrar el reporte.');
+    return;
+  }
+  if (mesaDetail && mesaDetail.reports) {
+    mesaDetail.reports = mesaDetail.reports.filter((r) => r.id !== reportId);
+  }
+  renderModalSaved(_reportMesaKey || currentMesaKey);
+}
+
 function exportDecisions() {
   window.location.href = '/api/transversal/decisions/export';
 }
@@ -634,6 +799,12 @@ window.onFilterChange = onFilterChange;
 window.onSearchInput = onSearchInput;
 window.setSidebarFilter = setSidebarFilter;
 window.resetQueue = resetQueue;
+window.openReportPanel = openReportPanel;
+window.closeReportModal = closeReportModal;
+window.selectReportType = selectReportType;
+window.onReportSrcChange = onReportSrcChange;
+window.saveModalReport = saveModalReport;
+window.deleteModalReport = deleteModalReport;
 
 document.addEventListener('DOMContentLoaded', () => {
   resetQueue().catch((err) => {

@@ -630,6 +630,45 @@ def _validate_glyph(value: str) -> bool:
     return True
 
 
+_TRANSVERSAL_REPORT_SOURCES = frozenset({"e14c", "e14d", "e14t"})
+_TRANSVERSAL_REPORT_TYPES = frozenset({"campos_vacios", "enmienda", "otro"})
+_TRANSVERSAL_BLANK_FIELDS = frozenset({"VOTANTES", "URNA", "SUMA_TOTAL"})
+
+
+def _validate_transversal_reports_payload(body: dict) -> tuple[dict, str | None]:
+    """Validate POST /api/transversal/reports body."""
+    mesa_key = (body.get("mesa_key") or "").strip()
+    entries = body.get("entries")
+    if not mesa_key or not isinstance(entries, list) or not entries:
+        return {}, "missing_fields"
+    cleaned_entries: list[dict] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            return {}, "invalid_entry"
+        source = (entry.get("source") or "").strip()
+        report_type = (entry.get("report_type") or "").strip()
+        notes = (entry.get("notes") or "").strip()
+        if source not in _TRANSVERSAL_REPORT_SOURCES:
+            return {}, "invalid_source"
+        if report_type not in _TRANSVERSAL_REPORT_TYPES:
+            return {}, "invalid_report_type"
+        if not notes:
+            return {}, "notes_required"
+        cleaned: dict = {
+            "source": source,
+            "report_type": report_type,
+            "notes": notes,
+        }
+        if report_type == "campos_vacios" and isinstance(entry.get("fields"), dict):
+            cleaned["fields"] = {
+                field: bool(entry["fields"].get(field))
+                for field in _TRANSVERSAL_BLANK_FIELDS
+                if field in entry["fields"]
+            }
+        cleaned_entries.append(cleaned)
+    return {"mesa_key": mesa_key, "entries": cleaned_entries}, None
+
+
 def _validate_report_payload(body: dict) -> tuple[dict, str | None]:
     """Validate a POST /report JSON body.
 
@@ -1734,6 +1773,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 if _review_images.source_available(mesa_key, src)
             }
             decisions = _db.get_transversal_decisions(mesa_key).get(mesa_key, {})
+            reports = _db.list_transversal_reports(mesa_key)
             edit_window = _db.get_transversal_decision_edit_window(mesa_key)
             storage_base = _review_images.storage_public_base()
             return jsonify({
@@ -1748,6 +1788,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 "alerts": alerts,
                 "pages": pages,
                 "decisions": decisions,
+                "reports": reports,
                 "decision_edit": edit_window,
                 "storage_base": storage_base,
                 "image_formats": list(_review_images.GALLERY_EXTS),
@@ -1820,6 +1861,48 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 mimetype="application/json",
                 headers={"Content-Disposition": f'attachment; filename="{filename}"'},
             )
+
+        @app.route("/api/transversal/reports", methods=["GET", "POST"])
+        @require_auth
+        @require_role(ROLE_ADMIN, ROLE_MODERATOR)
+        def api_transversal_reports() -> Response:
+            from flask import g
+
+            if request.method == "GET":
+                mesa_key = (request.args.get("mesa_key") or "").strip()
+                if not mesa_key:
+                    return jsonify({"error": "missing_fields"}), 400
+                return jsonify({"reports": _db.list_transversal_reports(mesa_key)})
+
+            body = request.get_json(force=True, silent=True) or {}
+            payload, err = _validate_transversal_reports_payload(body)
+            if err:
+                return jsonify({"ok": False, "error": err}), 400
+            inserted = _db.insert_transversal_reports(
+                payload["mesa_key"],
+                payload["entries"],
+                g.user_id,
+            )
+            if not inserted:
+                return jsonify({"ok": False, "error": "insert_failed"}), 400
+            return jsonify({"ok": True, "reports": inserted})
+
+        @app.route("/api/transversal/reports/<report_id>", methods=["DELETE"])
+        @require_auth
+        @require_role(ROLE_ADMIN, ROLE_MODERATOR)
+        def api_transversal_report_delete(report_id: str) -> Response:
+            from flask import g
+            from src.modules.labeler.auth import _get_user_role
+
+            allow_any = _get_user_role(g.user_id) == ROLE_ADMIN
+            ok = _db.delete_transversal_report(
+                report_id,
+                g.user_id,
+                allow_any=allow_any,
+            )
+            if not ok:
+                return jsonify({"ok": False, "error": "not_found_or_forbidden"}), 403
+            return jsonify({"ok": True})
 
         # ----------------------------------------------------------------
         # POST /admin/hide — soft-delete a fraud/feedback/report record (admin only)
