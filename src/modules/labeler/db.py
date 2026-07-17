@@ -1425,3 +1425,84 @@ def get_hierarchical_mesa_stats() -> dict:
     data = _get_hierarchical_mesa_stats_uncached()
     _hierarchical_stats_cache[_HIERARCHICAL_STATS_CACHE_KEY] = {"data": data, "ts": now}
     return data
+
+
+# ---------------------------------------------------------------------------
+# transversal_review_reports — structured mesa reports (ported from production)
+# ---------------------------------------------------------------------------
+
+_TRANSVERSAL_SOURCES = frozenset({"e14c", "e14d", "e14t"})
+
+_TRANSVERSAL_REPORT_TYPES = frozenset({"campos_vacios", "enmienda", "otro"})
+
+
+def _serialize_transversal_report_row(row: dict) -> dict:
+    return {
+        "id": row.get("id"),
+        "source": row.get("source"),
+        "report_type": row.get("report_type"),
+        "notes": row.get("notes"),
+        "fields": row.get("fields"),
+        "annotator": row.get("annotator"),
+        "created_at": row.get("created_at"),
+    }
+
+
+def list_transversal_reports(mesa_key: str) -> list[dict]:
+    """Return reports for one mesa, newest first."""
+    try:
+        rows = (
+            _client()
+            .table("transversal_review_reports")
+            .select("id, mesa_key, source, report_type, notes, fields, annotator, created_at")
+            .eq("mesa_key", mesa_key)
+            .order("created_at", desc=True)
+            .execute()
+            .data
+        ) or []
+        return [_serialize_transversal_report_row(r) for r in rows]
+    except Exception as exc:
+        logger.warning("list_transversal_reports failed: %s", exc)
+        return []
+
+
+def insert_transversal_reports(
+    mesa_key: str,
+    entries: list[dict],
+    annotator: str,
+) -> list[dict]:
+    """Insert one or more structured reports for a mesa."""
+    rows: list[dict] = []
+    for entry in entries:
+        source = entry.get("source")
+        report_type = entry.get("report_type")
+        notes = (entry.get("notes") or "").strip()
+        if source not in _TRANSVERSAL_SOURCES:
+            return []
+        if report_type not in _TRANSVERSAL_REPORT_TYPES:
+            return []
+        if not notes:
+            return []
+        row = {
+            "mesa_key": mesa_key,
+            "source": source,
+            "report_type": report_type,
+            "notes": notes,
+            "fields": entry.get("fields"),
+            "annotator": annotator,
+        }
+        rows.append(row)
+    if not rows:
+        return []
+    try:
+        inserted = (
+            _client()
+            .table("transversal_review_reports")
+            .insert(rows)
+            .execute()
+            .data
+        ) or []
+        return [_serialize_transversal_report_row(r) for r in inserted]
+    except Exception as exc:
+        logger.warning("insert_transversal_reports failed: %s", exc)
+        return []
