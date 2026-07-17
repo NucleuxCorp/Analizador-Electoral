@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import os
+from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -180,6 +181,31 @@ class TestAdminUsersListView:
         body = resp.get_data(as_text=True)
         assert "No hay usuarios registrados." in body
         assert "no respondió" not in body
+
+    def test_datetime_timestamp_fields_do_not_crash_rendering(self, prod_app, admin_client):
+        """The real gotrue SDK parses created_at/last_sign_in_at into
+        datetime.datetime objects, not strings — the list view must not
+        crash (e.g. via string-slicing a datetime) when rendering them."""
+        users = [
+            _make_user(
+                "u1", "real@example.com", "validator",
+                email_confirmed_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                created_at=datetime(2026, 1, 1, 12, 30, tzinfo=timezone.utc),
+                last_sign_in_at=datetime(2026, 7, 1, 9, 15, tzinfo=timezone.utc),
+            ),
+        ]
+        mock_client = MagicMock()
+        mock_client.auth.admin.list_users.return_value = users
+
+        p1, p2 = _admin_auth_patches()
+        with p1, p2, patch("src.modules.labeler.db._client", return_value=mock_client):
+            resp = admin_client.get("/admin/users", headers={"Accept": "text/html"})
+
+        assert resp.status_code == 200
+        body = resp.get_data(as_text=True)
+        assert "real@example.com" in body
+        assert "2026-01-01" in body
+        assert "2026-07-01" in body
 
     def test_list_users_failure_shows_unavailable_not_empty(self, prod_app, admin_client):
         """A Supabase outage must NOT look identical to a genuinely-empty user list."""

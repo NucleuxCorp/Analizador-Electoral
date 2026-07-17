@@ -106,8 +106,8 @@
         <td>
           {% if u.email_confirmed_at %}<span class="bool-yes">&#x2713;</span>{% else %}<span class="bool-no">&#x2717;</span>{% endif %}
         </td>
-        <td class="muted" style="font-size:.68rem;white-space:nowrap;">{{ (u.created_at or '—')[:16] }}</td>
-        <td class="muted" style="font-size:.68rem;white-space:nowrap;">{{ (u.last_sign_in_at or '—')[:16] }}</td>
+        <td class="muted" style="font-size:.68rem;white-space:nowrap;">{{ u.created_at or '—' }}</td>
+        <td class="muted" style="font-size:.68rem;white-space:nowrap;">{{ u.last_sign_in_at or '—' }}</td>
         <td>
           {% if u.role == 'admin' %}
           <span class="muted" style="font-size:.65rem;">cuenta admin — inmutable</span>
