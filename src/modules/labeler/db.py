@@ -1498,23 +1498,33 @@ def list_transversal_reports(mesa_key: str) -> list[dict]:
         return []
 
 
-def list_recent_transversal_reports(limit: int = 200) -> list[dict]:
-    """Fetch a global, bounded listing of transversal_review_reports (all
-    mesas, all sources), newest first — mirroring get_mesa_reports(limit=200)'s
-    bounded/fail-closed conventions, but pointed at transversal_review_reports
-    instead of mesa_reports_view.
+def list_recent_transversal_reports(page: int = 1, per_page: int = 50) -> list[dict]:
+    """Fetch a paginated, global listing of transversal_review_reports (all
+    mesas, all sources), newest first — mirroring get_mesa_results()'s
+    page/per_page/.range() pagination convention (design D7), but pointed at
+    transversal_review_reports instead of mesa_results.
 
     Unlike list_transversal_reports(mesa_key), this reads across ALL mesas
     (no .eq() filter) — intended for the admin "Reportes de usuarios" queue.
-    Returns [] on any error.
+    Pagination is 1-based via PostgREST .range(offset, offset+per_page-1).
+
+    Args:
+        page:     1-based page number (page=1 -> offset 0).
+        per_page: Number of rows per page (default 50, mirrors the admin
+                  mesa_results route convention).
+
+    Returns:
+        List of report row dicts, newest first, or [] on any error
+        (fail-closed).
     """
     try:
+        offset = (page - 1) * per_page
         rows = (
             _client()
             .table("transversal_review_reports")
             .select("id, mesa_key, source, report_type, notes, fields, annotator, created_at")
             .order("created_at", desc=True)
-            .limit(limit)
+            .range(offset, offset + per_page - 1)
             .execute()
             .data
         ) or []
@@ -1525,6 +1535,26 @@ def list_recent_transversal_reports(limit: int = 200) -> list[dict]:
     except Exception as exc:
         logger.warning("list_recent_transversal_reports failed: %s", exc)
         return []
+
+
+def count_recent_transversal_reports() -> int:
+    """Return the total count of transversal_review_reports rows (no
+    filters), mirroring count_mesa_results()'s count="exact" convention.
+
+    Used to compute total pages for the admin "Reportes de usuarios" tab.
+    Returns 0 on any exception (fail-closed).
+    """
+    try:
+        response = (
+            _client()
+            .table("transversal_review_reports")
+            .select("id", count="exact")
+            .execute()
+        )
+        return response.count or 0
+    except Exception as exc:
+        logger.warning("count_recent_transversal_reports failed: %s", exc)
+        return 0
 
 
 def insert_transversal_reports(
