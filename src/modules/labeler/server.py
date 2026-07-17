@@ -1861,9 +1861,11 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
         def admin_users_view() -> Response:
             try:
                 raw_users = _db._client().auth.admin.list_users()
+                unavailable = False
             except Exception as exc:
                 logger.error("admin_users_view: list_users failed: %s", exc)
                 raw_users = []
+                unavailable = True
 
             users = []
             for u in raw_users:
@@ -1884,6 +1886,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 "admin_users.html",
                 users=users,
                 non_admin_roles=sorted(NON_ADMIN_ROLES),
+                unavailable=unavailable,
             )
 
         # ----------------------------------------------------------------
@@ -1944,14 +1947,23 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 logger.error("admin_users_role_view: update_user_by_id failed target=%s: %s", target_id, exc)
                 return jsonify({"ok": False, "error": "role change failed"}), 400
 
-            evict_role_cache(target_id)
+            # The write already committed — cache eviction and the audit log are
+            # best-effort follow-ups and must never turn a successful write into
+            # an apparent failure (or a 500) for the caller.
+            try:
+                evict_role_cache(target_id)
+            except Exception as exc:
+                logger.error("admin_users_role_view: evict_role_cache failed target=%s: %s", target_id, exc)
 
-            actor_email = _strip_crlf(session.get("user_email", ""))
-            target_email = _strip_crlf(getattr(current_user, "email", "") or "")
-            logger.info(
-                "role-change actor=%s (%s) target=%s (%s) old=%s new=%s",
-                g.user_id, actor_email, target_id, target_email, current_role, new_role,
-            )
+            try:
+                actor_email = _strip_crlf(session.get("user_email", ""))
+                target_email = _strip_crlf(getattr(current_user, "email", "") or "")
+                logger.info(
+                    "role-change actor=%s (%s) target=%s (%s) old=%s new=%s",
+                    g.user_id, actor_email, target_id, target_email, current_role, new_role,
+                )
+            except Exception as exc:
+                logger.error("admin_users_role_view: audit log failed target=%s: %s", target_id, exc)
 
             return jsonify({"ok": True, "role": new_role})
 

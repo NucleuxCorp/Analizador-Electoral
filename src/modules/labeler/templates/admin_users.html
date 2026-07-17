@@ -80,7 +80,9 @@
 </div>
 
 <div class="wrap">
-  {% if not users %}
+  {% if unavailable %}
+    <div class="empty">No se pudo cargar la lista de usuarios. El servicio no respondió — intentá de nuevo en unos minutos.</div>
+  {% elif not users %}
     <div class="empty">No hay usuarios registrados.</div>
   {% else %}
   <table>

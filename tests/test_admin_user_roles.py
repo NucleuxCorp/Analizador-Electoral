@@ -148,6 +148,53 @@ class TestAdminUsersListView:
         # No <select> or role-change button should reference the admin row's id.
         assert 'changeRole(\'admin-2\'' not in body and 'changeRole("admin-2"' not in body
 
+    def test_multiple_users_all_render(self, prod_app, admin_client):
+        """Multi-row list: every user must appear, not just the first."""
+        users = [
+            _make_user("u1", "one@example.com", "validator"),
+            _make_user("u2", "two@example.com", "moderator"),
+            _make_user("u3", "three@example.com", "reader"),
+        ]
+        mock_client = MagicMock()
+        mock_client.auth.admin.list_users.return_value = users
+
+        p1, p2 = _admin_auth_patches()
+        with p1, p2, patch("src.modules.labeler.db._client", return_value=mock_client):
+            resp = admin_client.get("/admin/users", headers={"Accept": "text/html"})
+
+        assert resp.status_code == 200
+        body = resp.get_data(as_text=True)
+        assert "one@example.com" in body
+        assert "two@example.com" in body
+        assert "three@example.com" in body
+
+    def test_empty_user_list_shows_empty_state_not_error(self, prod_app, admin_client):
+        mock_client = MagicMock()
+        mock_client.auth.admin.list_users.return_value = []
+
+        p1, p2 = _admin_auth_patches()
+        with p1, p2, patch("src.modules.labeler.db._client", return_value=mock_client):
+            resp = admin_client.get("/admin/users", headers={"Accept": "text/html"})
+
+        assert resp.status_code == 200
+        body = resp.get_data(as_text=True)
+        assert "No hay usuarios registrados." in body
+        assert "no respondió" not in body
+
+    def test_list_users_failure_shows_unavailable_not_empty(self, prod_app, admin_client):
+        """A Supabase outage must NOT look identical to a genuinely-empty user list."""
+        mock_client = MagicMock()
+        mock_client.auth.admin.list_users.side_effect = RuntimeError("supabase down")
+
+        p1, p2 = _admin_auth_patches()
+        with p1, p2, patch("src.modules.labeler.db._client", return_value=mock_client):
+            resp = admin_client.get("/admin/users", headers={"Accept": "text/html"})
+
+        assert resp.status_code == 200
+        body = resp.get_data(as_text=True)
+        assert "no respondió" in body
+        assert "No hay usuarios registrados." not in body
+
     def test_non_admin_denied_access_html(self, prod_app):
         client = prod_app.test_client()
         with client.session_transaction() as sess:
@@ -413,6 +460,49 @@ class TestAdminUsersRoleChange:
         assert resp.status_code == 403
         audit_lines = [r.message for r in caplog.records if "role-change" in r.message]
         assert audit_lines == []
+
+    def test_success_survives_cache_eviction_failure(self, tmp_path):
+        """The write already committed on Supabase — a broken evict_role_cache()
+        must not turn a successful role change into a 500 for the caller.
+
+        evict_role_cache is imported into a closure inside create_app(), so it
+        must be patched on the auth module BEFORE create_app() runs (unlike the
+        other tests here, which patch after prod_app/admin_client are built)."""
+        env_vars = {
+            "SUPABASE_URL": "https://fake.supabase.co",
+            "SUPABASE_ANON_KEY": "fake-anon-key",
+            "SECRET_KEY": "test-secret-admin-user-roles",
+        }
+        target = _make_user("target-1", "target@example.com", "validator")
+        mock_client = MagicMock()
+        get_resp = MagicMock()
+        get_resp.user = target
+        mock_client.auth.admin.get_user_by_id.return_value = get_resp
+
+        with patch.dict(os.environ, env_vars), \
+             patch("src.modules.labeler.auth.evict_role_cache", side_effect=RuntimeError("cache broken")):
+            from src.modules.labeler.server import create_app
+            index_path = tmp_path / "crops" / "index.jsonl"
+            index_path.parent.mkdir(parents=True, exist_ok=True)
+            app = create_app(index_path=index_path, labels_dir=tmp_path)
+            app.config["TESTING"] = True
+            client = app.test_client()
+            with client.session_transaction() as sess:
+                sess["access_token"] = "fake-valid-token"
+                sess["refresh_token"] = "fake-refresh"
+                sess["user_email"] = "acting-admin@example.com"
+
+            p1, p2 = _admin_auth_patches()
+            with p1, p2, patch("src.modules.labeler.db._client", return_value=mock_client):
+                resp = client.post(
+                    "/admin/users/role",
+                    json={"user_id": "target-1", "role": "moderator"},
+                    headers={"Accept": "application/json"},
+                )
+
+        assert resp.status_code == 200
+        assert resp.get_json() == {"ok": True, "role": "moderator"}
+        mock_client.auth.admin.update_user_by_id.assert_called_once()
 
     def test_non_admin_denied_access_json(self, prod_app):
         client = prod_app.test_client()
