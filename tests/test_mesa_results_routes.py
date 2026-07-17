@@ -198,3 +198,101 @@ class TestMesasStatsRoute:
             resp = auth_client.get("/admin/mesas/stats")
 
         assert "application/json" in resp.content_type
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 (mesa-findings-consolidation) — GET /admin/mesas/<mesa_key>
+# ---------------------------------------------------------------------------
+
+_MESA_KEY = "01_001_001_01_001"
+
+
+class TestAdminMesaDetailRoute:
+    """GET /admin/mesas/<mesa_key> merges mesa_results + transversal reports."""
+
+    def test_admin_mesa_detail_route_requires_admin_or_moderator(self, prod_app):
+        """Unauthorized role (validator) is denied, mirroring /admin/conflicts."""
+        client = prod_app.test_client()
+        with client.session_transaction() as sess:
+            sess["access_token"] = "fake-valid-token"
+            sess["refresh_token"] = "fake-refresh"
+        with patch("src.modules.labeler.auth.decode_jwt", return_value={"sub": "validator-1"}), \
+             patch("src.modules.labeler.auth._get_user_role", return_value="validator"):
+            resp = client.get(f"/admin/mesas/{_MESA_KEY}", headers={"Accept": "application/json"})
+        assert resp.status_code == 403
+
+    def test_admin_mesa_detail_route_with_status_and_reports(self, prod_app, auth_client):
+        """Status row + both reports (newest first) render in the response body."""
+        status_row = {
+            "mesa_key": _MESA_KEY, "dept": "01", "mpio": "001", "zona": "01",
+            "puesto": "001", "mesa": "001", "overall_status": "needs_review_large_delta",
+        }
+        reports = [
+            {"id": 2, "source": "e14c", "report_type": "enmienda", "notes": "segunda nota",
+             "annotator": "user2", "created_at": "2026-07-17T10:00:00"},
+            {"id": 1, "source": "e14d", "report_type": "campos_vacios", "notes": "primera nota",
+             "annotator": "user1", "created_at": "2026-07-16T10:00:00"},
+        ]
+        with patch("src.modules.labeler.auth.decode_jwt", return_value={"sub": "admin-test-user"}), \
+             patch("src.modules.labeler.auth._get_user_role", return_value="admin"), \
+             patch("src.modules.labeler.db.get_mesa_results", return_value=[status_row]) as mock_results, \
+             patch("src.modules.labeler.db.list_transversal_reports", return_value=reports) as mock_reports:
+            resp = auth_client.get(f"/admin/mesas/{_MESA_KEY}")
+
+        assert resp.status_code == 200
+        mock_results.assert_called_once_with(mesa_key=_MESA_KEY)
+        mock_reports.assert_called_once_with(_MESA_KEY)
+        body = resp.get_data(as_text=True)
+        assert "needs_review_large_delta" in body
+        assert "segunda nota" in body
+        assert "primera nota" in body
+
+    def test_admin_mesa_detail_route_zero_reports_renders_empty_state(self, prod_app, auth_client):
+        """Status row exists, zero reports — empty-state message, no error."""
+        status_row = {
+            "mesa_key": _MESA_KEY, "dept": "01", "mpio": "001", "zona": "01",
+            "puesto": "001", "mesa": "001", "overall_status": "clean",
+        }
+        with patch("src.modules.labeler.auth.decode_jwt", return_value={"sub": "admin-test-user"}), \
+             patch("src.modules.labeler.auth._get_user_role", return_value="admin"), \
+             patch("src.modules.labeler.db.get_mesa_results", return_value=[status_row]), \
+             patch("src.modules.labeler.db.list_transversal_reports", return_value=[]):
+            resp = auth_client.get(f"/admin/mesas/{_MESA_KEY}")
+
+        assert resp.status_code == 200
+        body = resp.get_data(as_text=True)
+        assert "clean" in body
+        assert "Sin reportes" in body or "sin reportes" in body.lower()
+
+    def test_admin_mesa_detail_route_unknown_mesa_key_returns_safe_response(self, prod_app, auth_client):
+        """Both sources empty — safe response, never HTTP 500."""
+        with patch("src.modules.labeler.auth.decode_jwt", return_value={"sub": "admin-test-user"}), \
+             patch("src.modules.labeler.auth._get_user_role", return_value="admin"), \
+             patch("src.modules.labeler.db.get_mesa_results", return_value=[]), \
+             patch("src.modules.labeler.db.list_transversal_reports", return_value=[]):
+            resp = auth_client.get("/admin/mesas/99_999_999_99_999")
+
+        assert resp.status_code in (200, 404)
+        assert resp.status_code != 500
+
+    def test_admin_mesa_detail_route_no_decision_badge_rendered(self, prod_app, auth_client):
+        """No confirmado/pendiente/disputado wording — Phase A is view-only."""
+        status_row = {
+            "mesa_key": _MESA_KEY, "dept": "01", "mpio": "001", "zona": "01",
+            "puesto": "001", "mesa": "001", "overall_status": "warning",
+        }
+        reports = [
+            {"id": 1, "source": "e14c", "report_type": "otro", "notes": "nota",
+             "annotator": "user1", "created_at": "2026-07-16T10:00:00"},
+        ]
+        with patch("src.modules.labeler.auth.decode_jwt", return_value={"sub": "admin-test-user"}), \
+             patch("src.modules.labeler.auth._get_user_role", return_value="admin"), \
+             patch("src.modules.labeler.db.get_mesa_results", return_value=[status_row]), \
+             patch("src.modules.labeler.db.list_transversal_reports", return_value=reports):
+            resp = auth_client.get(f"/admin/mesas/{_MESA_KEY}")
+
+        assert resp.status_code == 200
+        body = resp.get_data(as_text=True).lower()
+        assert "confirmado" not in body
+        assert "pendiente" not in body
+        assert "disputado" not in body
