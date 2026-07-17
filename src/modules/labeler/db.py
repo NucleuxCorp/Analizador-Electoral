@@ -843,22 +843,29 @@ _MESA_STATUSES: tuple[str, ...] = (
 def get_mesa_results(
     dept: str | None = None,
     status: str | None = None,
+    mpio: str | None = None,
+    zona: str | None = None,
+    puesto: str | None = None,
     page: int = 1,
     per_page: int = 50,
 ) -> list[dict]:
     """
     Fetch a paginated slice of mesa_results rows.
 
-    Applies optional dept and/or overall_status filters. Pagination is
-    zero-based via PostgREST .range(offset, offset+per_page-1). Returns []
-    on any exception (fail-closed).
+    Applies optional dept, overall_status, mpio, zona and/or puesto filters.
+    Pagination is zero-based via PostgREST .range(offset, offset+per_page-1).
+    Returns [] on any exception (fail-closed).
 
     Args:
         dept:     Two-digit department code to filter on, or None for all.
         status:   overall_status value to filter on, or None for all.
+        mpio:     Municipio code to filter on (drill-down level 1), or None.
+        zona:     Zona code to filter on (drill-down level 2), or None.
+        puesto:   Puesto de votación code to filter on (drill-down level 2),
+                  or None.
         page:     1-based page number (page=1 → offset 0).
-        per_page: Number of rows per page. Hard-coded at 50 in the admin route
-                  (design D7), but kept flexible here for testing.
+        per_page: Number of rows per page. 50 for the admin route (design D7),
+                  10 for the public Level-3 mesa drill-down page.
 
     Returns:
         List of mesa_results row dicts.
@@ -870,11 +877,86 @@ def get_mesa_results(
             query = query.eq("dept", dept)
         if status is not None:
             query = query.eq("overall_status", status)
+        if mpio is not None:
+            query = query.eq("mpio", mpio)
+        if zona is not None:
+            query = query.eq("zona", zona)
+        if puesto is not None:
+            query = query.eq("puesto", puesto)
         response = query.range(offset, offset + per_page - 1).execute()
         return response.data or []
     except Exception as exc:
         logger.warning("get_mesa_results failed: %s", exc)
         return []
+
+
+def count_mesa_results(
+    dept: str | None = None,
+    mpio: str | None = None,
+    zona: str | None = None,
+    puesto: str | None = None,
+    status: str | None = None,
+) -> int:
+    """
+    Return the count of mesa_results rows matching the given filters.
+
+    Used for Level-3 (mesa) pagination, 10 rows/page (design D7 drill-down).
+    Returns 0 on any exception (fail-closed).
+
+    Args:
+        dept:     Two-digit department code to filter on, or None for all.
+        mpio:     Municipio code to filter on, or None.
+        zona:     Zona code to filter on, or None.
+        puesto:   Puesto de votación code to filter on, or None.
+        status:   overall_status value to filter on, or None for all.
+
+    Returns:
+        Matching row count, or 0 on error.
+    """
+    try:
+        query = _client().table("mesa_results").select("mesa_key", count="exact")
+        if dept is not None:
+            query = query.eq("dept", dept)
+        if mpio is not None:
+            query = query.eq("mpio", mpio)
+        if zona is not None:
+            query = query.eq("zona", zona)
+        if puesto is not None:
+            query = query.eq("puesto", puesto)
+        if status is not None:
+            query = query.eq("overall_status", status)
+        response = query.execute()
+        return response.count or 0
+    except Exception as exc:
+        logger.warning("count_mesa_results failed: %s", exc)
+        return 0
+
+
+def _fetch_mesa_results_batched(select_cols: str, dept: str | None = None) -> list[dict]:
+    """
+    Fetch all mesa_results rows for the given columns, paginating in 1000-row
+    batches (Supabase enforces db-max-rows=1000 regardless of .limit()).
+
+    Shared by _get_mesa_stats_uncached and _get_hierarchical_mesa_stats_uncached
+    so both stay in sync on the pagination strategy.
+    """
+    _BATCH = 1000
+    rows: list[dict] = []
+    offset = 0
+    while True:
+        q = (
+            _client().table("mesa_results")
+            .select(select_cols)
+            .range(offset, offset + _BATCH - 1)
+        )
+        if dept is not None:
+            q = q.eq("dept", dept)
+        batch = (q.execute().data) or []
+        rows.extend(batch)
+        if len(batch) < _BATCH:
+            break
+        offset += _BATCH
+    return rows
 
 
 def _get_mesa_stats_uncached(dept: str | None = None) -> dict:
@@ -895,23 +977,7 @@ def _get_mesa_stats_uncached(dept: str | None = None) -> dict:
     Returns {} on any exception (fail-closed).
     """
     try:
-        # Supabase enforces db-max-rows=1000 regardless of .limit(); paginate.
-        _BATCH = 1000
-        rows: list[dict] = []
-        offset = 0
-        while True:
-            q = (
-                _client().table("mesa_results")
-                .select("dept, overall_status")
-                .range(offset, offset + _BATCH - 1)
-            )
-            if dept is not None:
-                q = q.eq("dept", dept)
-            batch = (q.execute().data) or []
-            rows.extend(batch)
-            if len(batch) < _BATCH:
-                break
-            offset += _BATCH
+        rows = _fetch_mesa_results_batched("dept, overall_status", dept=dept)
 
         # Aggregate per-dept counts
         per_dept: dict[str, dict[str, int]] = {}
@@ -1562,3 +1628,161 @@ def export_transversal_decisions(dataset: str | None = None) -> dict:
     payload = build_export_envelope(nested, dataset=slug)
     payload["reports"] = get_transversal_reports_grouped()
     return payload
+
+
+# ---------------------------------------------------------------------------
+# Mesas hierarchical drill-down — Work Unit 1 / Phase 1 (DB Foundation)
+# ---------------------------------------------------------------------------
+
+# Separate TTL cache for the hierarchical stats (same 5-min TTL convention as
+# _mesa_stats_cache / _review_semaphore_cache). Single global scan, so the
+# cache key is a fixed constant rather than a dept param.
+_hierarchical_stats_cache: dict = {}
+_HIERARCHICAL_STATS_TTL = 300  # seconds
+_HIERARCHICAL_STATS_CACHE_KEY = "hierarchical"
+
+_HIERARCHICAL_EMPTY_SHAPE: dict = {
+    "by_mpio": {},
+    "by_puesto": {},
+    "_global": {},
+    "review_by_mesa": {},
+}
+
+
+def _empty_hierarchical_bucket() -> dict:
+    """A fresh per-bucket dict: the 5-status taxonomy + total + review counts."""
+    bucket = {st: 0 for st in _MESA_STATUSES}
+    bucket["total"] = 0
+    bucket["en_revision"] = 0
+    bucket["revisada"] = 0
+    return bucket
+
+
+def _accumulate_status(bucket: dict, status: str) -> None:
+    """Increment bucket[status] (if it is a known status) and bucket['total']."""
+    if status in bucket:
+        bucket[status] += 1
+    bucket["total"] += 1
+
+
+def _get_hierarchical_mesa_stats_uncached() -> dict:
+    """
+    Build the by_mpio / by_puesto / _global / review_by_mesa aggregation
+    described by the mesas hierarchical drill-down design (D-Phase1).
+
+    Does ONE scan of mesa_results (reusing the shared batch-pagination
+    helper) plus one call to the review semaphore RPC (via
+    _get_review_semaphore_uncached) to merge in 🟡/🟢 review counts, parsed
+    from mesa_key_mr segments (dept_mpio_zona_puesto_mesa).
+
+    Only mpio/puesto combinations with >=1 analyzed mesa are present (no
+    zero-row DIVIPOLE entries), since buckets are built strictly from
+    mesa_results rows.
+
+    Returns the empty shape (all sub-dicts {}) on any exception (fail-closed).
+    """
+    try:
+        rows = _fetch_mesa_results_batched("dept, mpio, zona, puesto, mesa, overall_status")
+
+        by_mpio: dict[str, dict] = {}
+        by_puesto: dict[str, dict[str, dict]] = {}
+        global_counts = _empty_hierarchical_bucket()
+
+        for row in rows:
+            dept = row.get("dept", "unknown")
+            mpio = row.get("mpio", "unknown")
+            zona = row.get("zona", "unknown")
+            puesto = row.get("puesto", "unknown")
+            status = row.get("overall_status", "unknown")
+
+            mpio_key = f"{dept}_{mpio}"
+            if mpio_key not in by_mpio:
+                bucket = _empty_hierarchical_bucket()
+                bucket["dept"] = dept
+                bucket["mpio"] = mpio
+                by_mpio[mpio_key] = bucket
+            _accumulate_status(by_mpio[mpio_key], status)
+
+            puesto_bucket_map = by_puesto.setdefault(mpio_key, {})
+            puesto_key = f"{zona}_{puesto}"
+            if puesto_key not in puesto_bucket_map:
+                bucket = _empty_hierarchical_bucket()
+                bucket["dept"] = dept
+                bucket["mpio"] = mpio
+                bucket["zona"] = zona
+                bucket["puesto"] = puesto
+                puesto_bucket_map[puesto_key] = bucket
+            _accumulate_status(puesto_bucket_map[puesto_key], status)
+
+            _accumulate_status(global_counts, status)
+
+        # Merge in 🟡/🟢 review counts from the semaphore RPC, parsing
+        # mesa_key_mr as dept_mpio_zona_puesto_mesa (same format as mesa_key).
+        review_by_mesa: dict[str, dict] = {}
+        semaphore_data = _get_review_semaphore_uncached()
+        for mesa_mr, info in semaphore_data.items():
+            parts = mesa_mr.split("_")
+            if len(parts) != 5:
+                continue
+            dept, mpio, zona, puesto, _mesa = parts
+
+            review_by_mesa[mesa_mr] = {
+                "en_revision": info.get("en_revision", False),
+                "revisada": info.get("revisada", False),
+                "revisada_result": info.get("revisada_result"),
+            }
+
+            mpio_key = f"{dept}_{mpio}"
+            puesto_key = f"{zona}_{puesto}"
+            if mpio_key not in by_mpio:
+                # Mesa not present in the mesa_results scan (e.g. RPC/table
+                # skew) — skip so _global stays the sum of its children.
+                continue
+            targets = [global_counts, by_mpio[mpio_key]]
+            if mpio_key in by_puesto and puesto_key in by_puesto[mpio_key]:
+                targets.append(by_puesto[mpio_key][puesto_key])
+
+            for bucket in targets:
+                if info.get("revisada"):
+                    bucket["revisada"] += 1
+                elif info.get("en_revision"):
+                    bucket["en_revision"] += 1
+
+        return {
+            "by_mpio": by_mpio,
+            "by_puesto": by_puesto,
+            "_global": global_counts,
+            "review_by_mesa": review_by_mesa,
+        }
+    except Exception as exc:
+        logger.warning("_get_hierarchical_mesa_stats_uncached failed: %s", exc)
+        return dict(_HIERARCHICAL_EMPTY_SHAPE)
+
+
+def get_hierarchical_mesa_stats() -> dict:
+    """
+    Return the hierarchical mesa stats aggregation, with a 5-min TTL cache.
+
+    Return shape:
+        {
+            "by_mpio":   {"{dept}_{mpio}": {..status counts.., "total": N,
+                                             "en_revision": N, "revisada": N}},
+            "by_puesto": {"{dept}_{mpio}": {"{zona}_{puesto}": {...same shape...}}},
+            "_global":   {...same shape... national totals},
+            "review_by_mesa": {"{dept}_{mpio}_{zona}_{puesto}_{mesa}":
+                                {"en_revision": bool, "revisada": bool,
+                                 "revisada_result": str | None}},
+        }
+
+    Delegates to _get_hierarchical_mesa_stats_uncached() on a cache miss and
+    stores the result under a single fixed cache key (one global scan).
+    Returns the empty shape on any exception (fail-closed).
+    """
+    now = time.monotonic()
+    entry = _hierarchical_stats_cache.get(_HIERARCHICAL_STATS_CACHE_KEY)
+    if entry is not None and (now - entry["ts"]) < _HIERARCHICAL_STATS_TTL:
+        return entry["data"]
+
+    data = _get_hierarchical_mesa_stats_uncached()
+    _hierarchical_stats_cache[_HIERARCHICAL_STATS_CACHE_KEY] = {"data": data, "ts": now}
+    return data
