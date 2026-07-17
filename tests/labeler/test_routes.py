@@ -697,6 +697,29 @@ class TestAdminConflictsView:
         body = resp.get_data(as_text=True)
         assert "Sin reportes de usuarios" in body
 
+    def test_reports_page_beyond_total_still_shows_pagination_back_link(self, prod_app):
+        """A page beyond the total must still render pagination controls (with
+        a way back to page 1) — the empty-state message alone leaves the user
+        stuck with no in-page navigation."""
+        client = _authed_session_client(prod_app)
+        p1, p2 = _role_auth_patches("admin")
+
+        with p1, p2, \
+             patch("src.modules.labeler.db.get_conflict_crops", return_value=[]), \
+             patch("src.modules.labeler.db.get_fraud_marks", return_value=[]), \
+             patch("src.modules.labeler.db.get_feedback_marks", return_value=[]), \
+             patch("src.modules.labeler.db.get_amended_crops", return_value=[]), \
+             patch("src.modules.labeler.db.get_reports", return_value=[]), \
+             patch("src.modules.labeler.db.get_mesa_reports", return_value=[]), \
+             patch("src.modules.labeler.db.list_recent_transversal_reports", return_value=[]), \
+             patch("src.modules.labeler.db.count_recent_transversal_reports", return_value=200):
+            resp = client.get("/admin/conflicts?page=99", headers={"Accept": "text/html"})
+
+        assert resp.status_code == 200
+        body = resp.get_data(as_text=True)
+        assert 'class="pagination"' in body
+        assert 'href="?page=1"' in body
+
     def test_pagination_controls_shown_when_multiple_pages(self, prod_app):
         client = _authed_session_client(prod_app)
         p1, p2 = _role_auth_patches("admin")

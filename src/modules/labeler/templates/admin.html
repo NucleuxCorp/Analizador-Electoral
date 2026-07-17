@@ -485,6 +485,7 @@
         {% endfor %}
       </tbody>
     </table>
+    {% endif %}
     {% if user_reports_total_pages and user_reports_total_pages > 1 %}
     <div class="pagination">
       {% if user_reports_page > 1 %}
@@ -501,7 +502,6 @@
         <a href="?page={{ user_reports_page + 1 }}">&raquo;</a>
       {% endif %}
     </div>
-    {% endif %}
     {% endif %}
   </div>
 
