@@ -170,6 +170,8 @@ python main.py cross-report --input data/cross_mesa_validation.jsonl
 - 112,691 mesas subidas a `mesa_results` (upsert exitoso)
 - 3,000 filas de consulados (dept 88) fallaron por timeout — se dejaron así porque aún no tienen E14C publicado en la Registraduría
 - Contador público y admin panel actualizados
+- **Confirmado 2026-07-17:** verificado en vivo contra `index.json` de la Registraduría — el archivo de mesas de dept 88 no cambió desde el snapshot de mayo (mismo timestamp `20260526_162324_975`, contenido `[]` en la muestra chequeada); las 3,000 filas de CONSULADOS siguen genuinamente sin acta publicada, no es un bug del pipeline de upload. Universo de mesas (DIVIPOLE/e14c_index) es independiente de si fueron analizadas por etiquetado o análisis transversal — esta ausencia es un estado real de esas mesas, no un vacío de nuestro procesamiento
+- Pendiente real: subir las ~9,300 mesas analizadas desde julio 4 (122,019 locales actuales vs 112,691 subidas) vía `python scripts/upload/upload_mesa_results.py`
 
 ### 147 archivos E14C con ñ/tildes sin prefijo
 
