@@ -58,6 +58,8 @@ ROUTES = [
     # ── Protected routes — admin only ──
     ("POST", "/admin/hide",             True,  ["admin"],                         False, "admin hide"),
     ("GET",  "/debug/sentry-test",      True,  ["admin"],                         True,  "sentry debug"),
+    ("GET",  "/admin/users",            True,  ["admin"],                         True,  "admin user list"),
+    ("POST", "/admin/users/role",       True,  ["admin"],                         False, "admin role change"),
     # ── Vulnerable: @require_auth only, no @require_role ──
     ("POST", "/feedback",               True,  None,                              False, "VULNERABILITY: missing @require_role"),
 ]
