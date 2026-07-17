@@ -1840,6 +1840,8 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
             amended_crops  = _db.get_amended_crops()
             reports        = _db.get_reports()
             mesa_reports   = _db.get_mesa_reports()
+            user_reports   = _db.list_recent_transversal_reports()
+            user_role      = getattr(g, "user_role", "")
             return render_template(
                 "admin.html",
                 conflicts=conflicts,
@@ -1848,6 +1850,8 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 amended_crops=amended_crops,
                 reports=reports,
                 mesa_reports=mesa_reports,
+                user_reports=user_reports,
+                user_role=user_role,
             )
 
         # ----------------------------------------------------------------

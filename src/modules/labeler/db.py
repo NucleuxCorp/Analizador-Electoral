@@ -1498,6 +1498,35 @@ def list_transversal_reports(mesa_key: str) -> list[dict]:
         return []
 
 
+def list_recent_transversal_reports(limit: int = 200) -> list[dict]:
+    """Fetch a global, bounded listing of transversal_review_reports (all
+    mesas, all sources), newest first — mirroring get_mesa_reports(limit=200)'s
+    bounded/fail-closed conventions, but pointed at transversal_review_reports
+    instead of mesa_reports_view.
+
+    Unlike list_transversal_reports(mesa_key), this reads across ALL mesas
+    (no .eq() filter) — intended for the admin "Reportes de usuarios" queue.
+    Returns [] on any error.
+    """
+    try:
+        rows = (
+            _client()
+            .table("transversal_review_reports")
+            .select("id, mesa_key, source, report_type, notes, fields, annotator, created_at")
+            .order("created_at", desc=True)
+            .limit(limit)
+            .execute()
+            .data
+        ) or []
+        return [
+            {**_serialize_transversal_report_row(r), "mesa_key": r.get("mesa_key")}
+            for r in rows
+        ]
+    except Exception as exc:
+        logger.warning("list_recent_transversal_reports failed: %s", exc)
+        return []
+
+
 def insert_transversal_reports(
     mesa_key: str,
     entries: list[dict],

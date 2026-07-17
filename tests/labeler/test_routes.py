@@ -542,3 +542,225 @@ class TestStatusRoute:
         data = resp.get_json()
         for field in ("labeled", "remaining", "confirmed", "conflicts", "my_labeled"):
             assert field in data, f"Missing field: {field}"
+
+
+# ---------------------------------------------------------------------------
+# GET /admin/conflicts — admin-panel-overview: user_reports + user_role wiring
+# ---------------------------------------------------------------------------
+
+def _role_auth_patches(role: str, acting_user_id: str = "acting-user-id"):
+    """Mirror tests/test_admin_user_roles.py's _admin_auth_patches, parameterized by role."""
+    return (
+        patch("src.modules.labeler.auth.decode_jwt", return_value={"sub": acting_user_id}),
+        patch("src.modules.labeler.auth._get_user_role", return_value=role),
+    )
+
+
+def _authed_session_client(prod_app):
+    c = prod_app.test_client()
+    with c.session_transaction() as sess:
+        sess["access_token"] = "fake-valid-token"
+        sess["refresh_token"] = "fake-refresh"
+        sess["user_email"] = "user@example.com"
+    return c
+
+
+class TestAdminConflictsView:
+    """admin_conflicts_view() passes user_reports (from the NEW, distinct
+    list_recent_transversal_reports) and user_role into the admin.html
+    context, reusing existing tab data unchanged."""
+
+    def test_passes_user_reports_from_new_db_fn_called_once(self, prod_app):
+        client = _authed_session_client(prod_app)
+        p1, p2 = _role_auth_patches("admin")
+
+        with p1, p2, \
+             patch("src.modules.labeler.db.get_conflict_crops", return_value=[]), \
+             patch("src.modules.labeler.db.get_fraud_marks", return_value=[]), \
+             patch("src.modules.labeler.db.get_feedback_marks", return_value=[]), \
+             patch("src.modules.labeler.db.get_amended_crops", return_value=[]), \
+             patch("src.modules.labeler.db.get_reports", return_value=[]), \
+             patch("src.modules.labeler.db.get_mesa_reports", return_value=[]), \
+             patch(
+                 "src.modules.labeler.db.list_recent_transversal_reports",
+                 return_value=[
+                     {
+                         "id": "row-1",
+                         "mesa_key": "01_001_01_01_1",
+                         "source": "e14c",
+                         "report_type": "otro",
+                         "notes": "nota de usuario autenticado",
+                         "annotator": "user-1",
+                         "created_at": "2026-01-01T00:00:00Z",
+                     }
+                 ],
+             ) as mock_list_recent:
+            resp = client.get("/admin/conflicts", headers={"Accept": "text/html"})
+
+        assert resp.status_code == 200
+        mock_list_recent.assert_called_once()
+        body = resp.get_data(as_text=True)
+        assert "01_001_01_01_1" in body
+        assert "nota de usuario autenticado" in body
+
+    def test_moderator_reaches_admin_conflicts_same_as_before(self, prod_app):
+        """Regression: existing @require_role(ROLE_ADMIN, ROLE_MODERATOR) gate unchanged."""
+        client = _authed_session_client(prod_app)
+        p1, p2 = _role_auth_patches("moderator")
+
+        with p1, p2, \
+             patch("src.modules.labeler.db.get_conflict_crops", return_value=[]), \
+             patch("src.modules.labeler.db.get_fraud_marks", return_value=[]), \
+             patch("src.modules.labeler.db.get_feedback_marks", return_value=[]), \
+             patch("src.modules.labeler.db.get_amended_crops", return_value=[]), \
+             patch("src.modules.labeler.db.get_reports", return_value=[]), \
+             patch("src.modules.labeler.db.get_mesa_reports", return_value=[]), \
+             patch("src.modules.labeler.db.list_recent_transversal_reports", return_value=[]):
+            resp = client.get("/admin/conflicts", headers={"Accept": "text/html"})
+
+        assert resp.status_code == 200
+
+    def test_non_admin_non_moderator_denied(self, prod_app):
+        """Regression: unauthorized role still denied per existing @require_role gate."""
+        client = _authed_session_client(prod_app)
+        p1, p2 = _role_auth_patches("validator")
+
+        with p1, p2:
+            resp = client.get("/admin/conflicts", headers={"Accept": "text/html"})
+
+        assert resp.status_code in (302, 403)
+
+    def test_admin_sees_users_nav_link(self, prod_app):
+        client = _authed_session_client(prod_app)
+        p1, p2 = _role_auth_patches("admin")
+
+        with p1, p2, \
+             patch("src.modules.labeler.db.get_conflict_crops", return_value=[]), \
+             patch("src.modules.labeler.db.get_fraud_marks", return_value=[]), \
+             patch("src.modules.labeler.db.get_feedback_marks", return_value=[]), \
+             patch("src.modules.labeler.db.get_amended_crops", return_value=[]), \
+             patch("src.modules.labeler.db.get_reports", return_value=[]), \
+             patch("src.modules.labeler.db.get_mesa_reports", return_value=[]), \
+             patch("src.modules.labeler.db.list_recent_transversal_reports", return_value=[]):
+            resp = client.get("/admin/conflicts", headers={"Accept": "text/html"})
+
+        body = resp.get_data(as_text=True)
+        assert 'href="/admin/users"' in body
+
+    def test_moderator_does_not_see_users_nav_link(self, prod_app):
+        client = _authed_session_client(prod_app)
+        p1, p2 = _role_auth_patches("moderator")
+
+        with p1, p2, \
+             patch("src.modules.labeler.db.get_conflict_crops", return_value=[]), \
+             patch("src.modules.labeler.db.get_fraud_marks", return_value=[]), \
+             patch("src.modules.labeler.db.get_feedback_marks", return_value=[]), \
+             patch("src.modules.labeler.db.get_amended_crops", return_value=[]), \
+             patch("src.modules.labeler.db.get_reports", return_value=[]), \
+             patch("src.modules.labeler.db.get_mesa_reports", return_value=[]), \
+             patch("src.modules.labeler.db.list_recent_transversal_reports", return_value=[]):
+            resp = client.get("/admin/conflicts", headers={"Accept": "text/html"})
+
+        body = resp.get_data(as_text=True)
+        assert 'href="/admin/users"' not in body
+
+    def test_overview_tab_reuses_existing_context_no_extra_calls(self, prod_app):
+        """Overview tab renders from already-passed context; asserts each
+        underlying db fn used by the OTHER tabs is called exactly once
+        (i.e. Overview itself doesn't trigger any additional query)."""
+        client = _authed_session_client(prod_app)
+        p1, p2 = _role_auth_patches("admin")
+
+        with p1, p2, \
+             patch("src.modules.labeler.db.get_conflict_crops", return_value=[{"crop_id": "c1", "field_name": "f"}]) as m_conf, \
+             patch("src.modules.labeler.db.get_fraud_marks", return_value=[]) as m_fraud, \
+             patch("src.modules.labeler.db.get_feedback_marks", return_value=[]) as m_fb, \
+             patch("src.modules.labeler.db.get_amended_crops", return_value=[]) as m_am, \
+             patch("src.modules.labeler.db.get_reports", return_value=[]) as m_rep, \
+             patch("src.modules.labeler.db.get_mesa_reports", return_value=[]) as m_mr, \
+             patch("src.modules.labeler.db.list_recent_transversal_reports", return_value=[]) as m_ur:
+            resp = client.get("/admin/conflicts", headers={"Accept": "text/html"})
+
+        assert resp.status_code == 200
+        for mock_fn in (m_conf, m_fraud, m_fb, m_am, m_rep, m_mr, m_ur):
+            mock_fn.assert_called_once()
+        body = resp.get_data(as_text=True)
+        assert "Resumen" in body
+
+    def test_reportes_tab_and_reportes_de_usuarios_tab_are_distinct_data_sources(self, prod_app):
+        """Explicit distinctness proof: existing 'Reportes' tab reads
+        get_mesa_reports() (mesa_reports_view); 'Reportes de usuarios' reads
+        list_recent_transversal_reports() (transversal_review_reports).
+        Fixture mesa_keys/content are DELIBERATELY different so a row from
+        one source must not appear inside the other tab's panel markup."""
+        client = _authed_session_client(prod_app)
+        p1, p2 = _role_auth_patches("admin")
+
+        mesa_reports_fixture = [
+            {
+                "mesa_key": "05_002_02_01_003_2",
+                "total_reports": 1,
+                "enmiendas": 1,
+                "otros": 0,
+                "mesa_reports": 0,
+                "annotators": 1,
+                "last_report_at": "2026-02-02T00:00:00Z",
+                "first_crop_id": None,
+                "reports_by_type": {
+                    "E14C": [
+                        {
+                            "id": 111,
+                            "report_type": "enmienda",
+                            "digit_original": "1",
+                            "digit_corrected": "7",
+                            "digit": "0",
+                            "notes": "NOTA-DEL-TAB-REPORTES-XYZ",
+                            "crop_id": None,
+                            "created_at": "2026-02-02T00:00:00Z",
+                        }
+                    ]
+                },
+            }
+        ]
+        user_reports_fixture = [
+            {
+                "id": "ur-999",
+                "mesa_key": "07_003_01_01_9",
+                "source": "e14d",
+                "report_type": "campos_vacios",
+                "notes": "NOTA-DEL-TAB-USUARIOS-ABC",
+                "annotator": "user-authenticated-1",
+                "created_at": "2026-03-03T00:00:00Z",
+            }
+        ]
+
+        with p1, p2, \
+             patch("src.modules.labeler.db.get_conflict_crops", return_value=[]), \
+             patch("src.modules.labeler.db.get_fraud_marks", return_value=[]), \
+             patch("src.modules.labeler.db.get_feedback_marks", return_value=[]), \
+             patch("src.modules.labeler.db.get_amended_crops", return_value=[]), \
+             patch("src.modules.labeler.db.get_reports", return_value=[]), \
+             patch("src.modules.labeler.db.get_mesa_reports", return_value=mesa_reports_fixture), \
+             patch("src.modules.labeler.db.list_recent_transversal_reports", return_value=user_reports_fixture):
+            resp = client.get("/admin/conflicts", headers={"Accept": "text/html"})
+
+        body = resp.get_data(as_text=True)
+
+        reports_start = body.index('id="panel-reports"')
+        reports_end = body.index('id="panel-mesas"')
+        # Insert boundary is user-reports panel, which sits between reports and mesas
+        user_reports_start = body.index('id="panel-user-reports"')
+
+        reports_panel_html = body[reports_start:user_reports_start]
+        user_reports_panel_html = body[user_reports_start:reports_end]
+
+        # Reportes tab shows its own fixture, NOT the user-reports fixture
+        assert "05_002_02_01_003_2" in reports_panel_html or "NOTA-DEL-TAB-REPORTES-XYZ" in reports_panel_html
+        assert "NOTA-DEL-TAB-USUARIOS-ABC" not in reports_panel_html
+        assert "07_003_01_01_9" not in reports_panel_html
+
+        # Reportes de usuarios tab shows its own fixture, NOT the mesa_reports fixture
+        assert "07_003_01_01_9" in user_reports_panel_html
+        assert "NOTA-DEL-TAB-USUARIOS-ABC" in user_reports_panel_html
+        assert "NOTA-DEL-TAB-REPORTES-XYZ" not in user_reports_panel_html
+        assert "05_002_02_01_003_2" not in user_reports_panel_html

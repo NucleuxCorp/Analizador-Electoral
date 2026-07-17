@@ -175,6 +175,9 @@
   <div class="links">
     <a href="/">Inicio</a>
     <a href="/work">Etiquetado</a>
+    {% if user_role == 'admin' %}
+    <a href="/admin/users">Usuarios</a>
+    {% endif %}
     <form action="/auth/logout" method="post" style="margin:0;">
       <button type="submit" style="background:none;border:none;color:#556;cursor:pointer;font-family:monospace;font-size:.72rem;padding:0;">Cerrar sesión</button>
     </form>
@@ -183,7 +186,10 @@
 
 <div class="wrap">
   <div class="tabs">
-    <div class="tab active" onclick="showTab('conflicts', this)">
+    <div class="tab active" onclick="showTab('overview', this)">
+      Resumen
+    </div>
+    <div class="tab" onclick="showTab('conflicts', this)">
       Conflictos <span class="cnt red">{{ conflicts|length }}</span>
     </div>
     <div class="tab" onclick="showTab('fraud', this)">
@@ -198,13 +204,46 @@
     <div class="tab" onclick="showTab('reports', this)">
       Reportes <span class="cnt yellow">{{ mesa_reports|length }}</span>
     </div>
+    <div class="tab" onclick="showTab('user-reports', this)">
+      Reportes de usuarios <span class="cnt yellow">{{ user_reports|length }}</span>
+    </div>
     <div class="tab" id="tab-mesas" onclick="showTab('mesas', this); loadMesasTab()">
       Mesas <span class="cnt" id="mesas-count">—</span>
     </div>
   </div>
 
+  <!-- OVERVIEW (Resumen) -->
+  <div id="panel-overview" class="panel active">
+    <div class="stats-bar">
+      <div class="stat-item">
+        <span class="stat-label">Conflictos</span>
+        <span class="stat-val red">{{ conflicts|length }}</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">Fraude</span>
+        <span class="stat-val yellow">{{ fraud_marks|length }}</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">Feedback</span>
+        <span class="stat-val">{{ feedback_marks|length }}</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">Correcciones OCR</span>
+        <span class="stat-val yellow">{{ amended_crops|length }}</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">Reportes</span>
+        <span class="stat-val yellow">{{ mesa_reports|length }}</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">Reportes de usuarios</span>
+        <span class="stat-val yellow">{{ user_reports|length }}</span>
+      </div>
+    </div>
+  </div>
+
   <!-- CONFLICTS -->
-  <div id="panel-conflicts" class="panel active">
+  <div id="panel-conflicts" class="panel">
     {% if not conflicts %}
       <div class="empty">Sin conflictos pendientes.</div>
     {% else %}
@@ -399,6 +438,42 @@
       </div>
       {% endfor %}
     </div>
+    {% endif %}
+  </div>
+
+  <!-- USER REPORTS (Reportes de usuarios) — transversal_review_reports, DISTINCT from Reportes (mesa_reports_view) above -->
+  <div id="panel-user-reports" class="panel">
+    {% if not user_reports %}
+      <div class="empty">Sin reportes de usuarios registrados.</div>
+    {% else %}
+    <table id="user-reports-table">
+      <thead>
+        <tr>
+          <th>Mesa key</th>
+          <th>Fuente</th>
+          <th>Tipo</th>
+          <th>Notas</th>
+          <th>Anotador</th>
+          <th>Fecha</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in user_reports %}
+        <tr id="user-report-row-{{ r.id }}">
+          <td class="mono" style="font-size:.7rem;">{{ r.mesa_key or '—' }}</td>
+          <td class="muted mono" style="font-size:.68rem;">{{ r.source or '—' }}</td>
+          <td>
+            {% if r.report_type == 'enmienda' %}<span class="badge badge-enmienda">enmienda</span>
+            {% elif r.report_type == 'campos_vacios' %}<span class="badge" style="background:#3a2008;color:#ff9100;">campos vacíos</span>
+            {% else %}<span class="badge" style="background:#0d2a3a;color:#7ec8e3;">otro</span>{% endif %}
+          </td>
+          <td style="max-width:320px;word-break:break-word;font-size:.72rem;">{{ r.notes or '—' }}</td>
+          <td class="muted mono" style="font-size:.68rem;">{{ r.annotator or '—' }}</td>
+          <td class="muted" style="font-size:.65rem;white-space:nowrap;">{{ (r.created_at or '—')[:16] }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
     {% endif %}
   </div>
 
