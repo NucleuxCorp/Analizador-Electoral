@@ -956,7 +956,14 @@ class TestGetTransversalDecidedSlotsCache:
 
         assert mock_client.table.call_count == 2
 
-    def test_supabase_error_on_ttl_refetch_returns_stale_cached_value(self):
+    def test_supabase_error_on_ttl_refetch_overwrites_cache_with_empty(self):
+        """Verbatim production behavior: get_transversal_decided_slots() has
+        NO stale-cache fallback. A Supabase error on a TTL-triggered refetch
+        does not preserve the last-known-good cached value — it overwrites
+        the cache with the fail-closed {} for the next _PENDING_CACHE_TTL
+        window. This is a known, pre-existing risk (not introduced by this
+        port) worth surfacing once mesa-findings-consolidation Phase B wires
+        a live caller to this function."""
         rows = [{"mesa_key": "mesa-1", "field": "VOTANTES", "source": "e14c", "decision": "accepted"}]
         chain = _make_chain(rows)
         mock_client = _make_client(chain)
