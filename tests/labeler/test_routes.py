@@ -565,6 +565,21 @@ def _authed_session_client(prod_app):
     return c
 
 
+class TestAdminRootRedirect:
+    """GET /admin and /admin/ redirect to the admin panel landing page;
+    auth/role enforcement still happens on the target route."""
+
+    def test_admin_redirects_to_conflicts(self, prod_app):
+        resp = prod_app.test_client().get("/admin", follow_redirects=False)
+        assert resp.status_code == 302
+        assert resp.headers.get("Location") in ("/admin/conflicts", "http://localhost/admin/conflicts")
+
+    def test_admin_trailing_slash_redirects_to_conflicts(self, prod_app):
+        resp = prod_app.test_client().get("/admin/", follow_redirects=False)
+        assert resp.status_code == 302
+        assert resp.headers.get("Location") in ("/admin/conflicts", "http://localhost/admin/conflicts")
+
+
 class TestAdminConflictsView:
     """admin_conflicts_view() passes user_reports (from the NEW, distinct
     list_recent_transversal_reports) and user_role into the admin.html

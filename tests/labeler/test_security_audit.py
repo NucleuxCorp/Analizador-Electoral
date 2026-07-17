@@ -27,6 +27,7 @@ ROUTES = [
     ("GET",  "/status",                 False, None,   True,  "monitoring endpoint"),
     ("GET",  "/privacy",                False, None,   True,  "privacy policy"),
     ("GET",  "/mesas",                  False, None,   True,  "public dashboard"),
+    ("GET",  "/admin",                  False, None,   True,  "redirect to /admin/conflicts — target route enforces auth"),
     ("GET",  "/auth/login",             False, None,   True,  "login page"),
     ("POST", "/auth/login",             False, None,   True,  "login submit"),
     ("GET",  "/auth/register",          False, None,   True,  "register page"),
