@@ -92,6 +92,26 @@
     }
     .unavailable strong { display: block; font-size: 1rem; color: #9fb0c0; margin-bottom: 8px; }
 
+    /* Empty puesto, zero rows in mesa_results — distinct from unavailable */
+    .sin-actas {
+      text-align: center; padding: 48px 20px;
+      color: #667; font-size: 0.85rem;
+    }
+    .sin-actas strong { display: block; font-size: 1rem; color: #9fb0c0; margin-bottom: 8px; }
+
+    /* Report control */
+    .report-btn {
+      font-family: monospace; font-size: 0.72rem; color: #7ec8e3;
+      background: transparent; border: 1px solid #2a3a5a; border-radius: 4px;
+      padding: 3px 10px; cursor: pointer;
+    }
+    .report-btn:hover { background: #0d1220; }
+    .report-btn:disabled { opacity: 0.6; cursor: default; }
+    .report-login-hint { font-size: 0.68rem; color: #445; }
+    .report-msg { font-size: 0.68rem; margin-left: 8px; }
+    .report-msg.ok { color: #56c25a; }
+    .report-msg.err { color: #ef5350; }
+
     /* Pagination */
     .pagination {
       display: flex; justify-content: center; gap: 10px;
@@ -170,6 +190,7 @@
               {% else %}
                 <th>⚪/🔴</th>
                 <th>🟡/🟢</th>
+                <th>Reportar</th>
               {% endif %}
             </tr>
           </thead>
@@ -199,6 +220,15 @@
               {% else %}
                 <td>{{ '⚪' if row.sin_alerta else '🔴' }}</td>
                 <td>{{ '🟢' if row.revisada else ('🟡' if row.en_revision else '—') }}</td>
+                <td>
+                  {% if logged_in and row.mesa_key %}
+                    <span data-mesa-key="{{ row.mesa_key }}">
+                      <button type="button" class="report-btn" onclick="submitMesaReport('{{ row.mesa_key }}', this)">Reportar</button>
+                    </span>
+                  {% else %}
+                    <span class="report-login-hint"><a href="/login">Iniciá sesión</a> para reportar</span>
+                  {% endif %}
+                </td>
               {% endif %}
             </tr>
             {% endfor %}
@@ -223,6 +253,11 @@
         {% endif %}
       </div>
       {% endif %}
+    {% elif level == 3 and sin_actas %}
+      <div class="sin-actas">
+        <strong>Sin actas publicadas</strong>
+        Este puesto de votación todavía no tiene actas E-14 publicadas por la Registraduría.
+      </div>
     {% else %}
       <div class="empty-state">
         {% if level == 2 %}
@@ -237,5 +272,53 @@
   {% endif %}
 
   <div class="ver">v{{ app_version }}</div>
+
+  {% if RECAPTCHA_SITE_KEY %}<script src="https://www.google.com/recaptcha/enterprise.js?render={{ RECAPTCHA_SITE_KEY }}" async defer></script>{% endif %}
+  <script>
+    var _mesaReportSiteKey = {{ RECAPTCHA_SITE_KEY | tojson }};
+
+    function _doMesaReportFetch(mesaKey, notes, btn, token) {
+      fetch("/api/mesa-report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mesa_key: mesaKey, notes: notes, g_recaptcha_response: token }),
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          btn.disabled = false;
+          if (d.ok === false) {
+            _showMesaReportMsg(btn, "Error: " + (d.error || "?"), "err");
+            return;
+          }
+          _showMesaReportMsg(btn, "Reportado, ¡gracias!", "ok");
+        })
+        .catch(function () {
+          btn.disabled = false;
+          _showMesaReportMsg(btn, "Error de red — intentá de nuevo.", "err");
+        });
+    }
+
+    function _showMesaReportMsg(btn, text, kind) {
+      var span = document.createElement("span");
+      span.className = "report-msg " + kind;
+      span.textContent = text;
+      btn.insertAdjacentElement("afterend", span);
+      setTimeout(function () { span.remove(); }, 4000);
+    }
+
+    window.submitMesaReport = function (mesaKey, btn) {
+      var notes = window.prompt("Describí brevemente el problema con esta mesa:");
+      if (notes === null) return;
+      notes = notes.trim();
+      if (!notes) { _showMesaReportMsg(btn, "Escribí una descripción primero.", "err"); return; }
+      btn.disabled = true;
+      if (_mesaReportSiteKey && typeof grecaptcha !== "undefined" && grecaptcha.enterprise) {
+        grecaptcha.enterprise.execute(_mesaReportSiteKey, { action: "mesa_report" })
+          .then(function (token) { _doMesaReportFetch(mesaKey, notes, btn, token); });
+      } else {
+        _doMesaReportFetch(mesaKey, notes, btn, "");
+      }
+    };
+  </script>
 </body>
 </html>
