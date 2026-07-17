@@ -471,7 +471,7 @@
       <tbody>
         {% for r in user_reports %}
         <tr id="user-report-row-{{ r.id }}">
-          <td class="mono" style="font-size:.7rem;">{{ r.mesa_key or '—' }}</td>
+          <td class="mono" style="font-size:.7rem;">{% if r.mesa_key %}<a href="/admin/mesas/{{ r.mesa_key }}" style="color:#7ec8e3;">{{ r.mesa_key }}</a>{% else %}—{% endif %}</td>
           <td class="muted mono" style="font-size:.68rem;">{{ r.source or '—' }}</td>
           <td>
             {% if r.report_type == 'enmienda' %}<span class="badge badge-enmienda">enmienda</span>

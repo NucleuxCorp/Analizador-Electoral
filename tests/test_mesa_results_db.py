@@ -594,6 +594,41 @@ class TestGetMesaResultsHierarchicalFilters:
         chain.eq.assert_not_called()
 
 
+# ---------------------------------------------------------------------------
+# Phase 3 (mesa-findings-consolidation) — single-mesa detail accessor
+# ---------------------------------------------------------------------------
+
+class TestGetMesaResultsMesaKeyFilter:
+    """get_mesa_results(mesa_key=...) applies an exact .eq('mesa_key', ...) filter."""
+
+    def test_get_mesa_results_filters_by_mesa_key(self):
+        """mesa_key kwarg applies .eq('mesa_key', ...) and returns the matching row list."""
+        from src.modules.labeler.db import get_mesa_results
+
+        row = {"mesa_key": "01_001_001_01_001", "dept": "01", "overall_status": "clean"}
+        chain = _make_chain([row])
+        mock_client = _make_client(chain)
+
+        with patch("src.modules.labeler.db._client", return_value=mock_client):
+            result = get_mesa_results(mesa_key="01_001_001_01_001")
+
+        assert result == [row]
+        eq_calls = [c.args for c in chain.eq.call_args_list]
+        assert ("mesa_key", "01_001_001_01_001") in eq_calls
+
+    def test_get_mesa_results_mesa_key_no_match_returns_empty_list(self):
+        """mesa_key with no matching row returns []."""
+        from src.modules.labeler.db import get_mesa_results
+
+        chain = _make_chain([])
+        mock_client = _make_client(chain)
+
+        with patch("src.modules.labeler.db._client", return_value=mock_client):
+            result = get_mesa_results(mesa_key="99_999_999_99_999")
+
+        assert result == []
+
+
 class TestCountMesaResults:
     """count_mesa_results returns the filtered row count for Level-3 pagination."""
 

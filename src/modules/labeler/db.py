@@ -845,15 +845,17 @@ def get_mesa_results(
     mpio: str | None = None,
     zona: str | None = None,
     puesto: str | None = None,
+    mesa_key: str | None = None,
     page: int = 1,
     per_page: int = 50,
 ) -> list[dict]:
     """
     Fetch a paginated slice of mesa_results rows.
 
-    Applies optional dept, overall_status, mpio, zona and/or puesto filters.
-    Pagination is zero-based via PostgREST .range(offset, offset+per_page-1).
-    Returns [] on any exception (fail-closed).
+    Applies optional dept, overall_status, mpio, zona, puesto and/or exact
+    mesa_key filters. Pagination is zero-based via
+    PostgREST .range(offset, offset+per_page-1). Returns [] on any exception
+    (fail-closed).
 
     Args:
         dept:     Two-digit department code to filter on, or None for all.
@@ -862,6 +864,8 @@ def get_mesa_results(
         zona:     Zona code to filter on (drill-down level 2), or None.
         puesto:   Puesto de votación code to filter on (drill-down level 2),
                   or None.
+        mesa_key: Exact mesa_key to filter on (mesa detail lookup,
+                  mesa-findings-consolidation Phase 3), or None.
         page:     1-based page number (page=1 → offset 0).
         per_page: Number of rows per page. 50 for the admin route (design D7),
                   10 for the public Level-3 mesa drill-down page.
@@ -882,6 +886,8 @@ def get_mesa_results(
             query = query.eq("zona", zona)
         if puesto is not None:
             query = query.eq("puesto", puesto)
+        if mesa_key is not None:
+            query = query.eq("mesa_key", mesa_key)
         response = query.range(offset, offset + per_page - 1).execute()
         return response.data or []
     except Exception as exc:

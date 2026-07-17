@@ -1881,6 +1881,30 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
             )
 
         # ----------------------------------------------------------------
+        # GET /admin/mesas/<mesa_key> — single-mesa detail (algorithm status
+        # + user reports), Phase A of mesa-findings-consolidation. View-only:
+        # no decision-confirmation state (transversal_review_decisions
+        # doesn't exist yet).
+        # ----------------------------------------------------------------
+
+        @app.route("/admin/mesas/<mesa_key>")
+        @require_auth
+        @require_role(ROLE_ADMIN, ROLE_MODERATOR)
+        def admin_mesa_detail_view(mesa_key: str) -> Response:
+            results = _db.get_mesa_results(mesa_key=mesa_key)
+            mesa_status = results[0] if results else None
+            reports = _db.list_transversal_reports(mesa_key)
+
+            user_role = getattr(g, "user_role", "")
+            return render_template(
+                "mesa_detail.html",
+                mesa_key=mesa_key,
+                mesa_status=mesa_status,
+                reports=reports,
+                user_role=user_role,
+            )
+
+        # ----------------------------------------------------------------
         # POST /admin/hide — soft-delete a fraud/feedback/report record (admin only)
         # ----------------------------------------------------------------
 
