@@ -1850,7 +1850,20 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
             amended_crops  = _db.get_amended_crops()
             reports        = _db.get_reports()
             mesa_reports   = _db.get_mesa_reports()
-            user_reports   = _db.list_recent_transversal_reports()
+
+            try:
+                user_reports_page = int(request.args.get("page", 1))
+            except (TypeError, ValueError):
+                user_reports_page = 1
+            if user_reports_page < 1:
+                user_reports_page = 1
+
+            user_reports       = _db.list_recent_transversal_reports(page=user_reports_page, per_page=50)
+            user_reports_total = _db.count_recent_transversal_reports()
+            user_reports_total_pages = (
+                max(1, (user_reports_total + 49) // 50) if user_reports_total else 1
+            )
+
             user_role      = getattr(g, "user_role", "")
             return render_template(
                 "admin.html",
@@ -1861,6 +1874,9 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 reports=reports,
                 mesa_reports=mesa_reports,
                 user_reports=user_reports,
+                user_reports_page=user_reports_page,
+                user_reports_total=user_reports_total,
+                user_reports_total_pages=user_reports_total_pages,
                 user_role=user_role,
             )
 

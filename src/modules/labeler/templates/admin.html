@@ -126,6 +126,17 @@
     }
     .btn-page:disabled { opacity: 0.35; cursor: default; }
     .page-label { color: #556; }
+    /* Pagination (server-rendered, full-page reload — mirrors mesas.html) */
+    .pagination {
+      display: flex; justify-content: center; gap: 10px;
+      margin-top: 20px; font-size: 0.8rem;
+    }
+    .pagination a, .pagination span {
+      color: #7ec8e3; text-decoration: none; padding: 4px 10px;
+      border: 1px solid #2a3a5a; border-radius: 4px;
+    }
+    .pagination .current-page { color: #e6edf3; border-color: #58a6ff; }
+    .pagination a:hover { background: #0d1220; }
     .loading-msg { color: #556; font-size: .8rem; padding: 16px 0; }
     /* Row coloring by overall_status */
     tr.status-needs_review_large_delta td { background: #2a0a0a; }
@@ -474,6 +485,23 @@
         {% endfor %}
       </tbody>
     </table>
+    {% if user_reports_total_pages and user_reports_total_pages > 1 %}
+    <div class="pagination">
+      {% if user_reports_page > 1 %}
+        <a href="?page={{ user_reports_page - 1 }}">&laquo;</a>
+      {% endif %}
+      {% for p in range(1, user_reports_total_pages + 1) %}
+        {% if p == user_reports_page %}
+          <span class="current-page">{{ p }}</span>
+        {% else %}
+          <a href="?page={{ p }}">{{ p }}</a>
+        {% endif %}
+      {% endfor %}
+      {% if user_reports_page < user_reports_total_pages %}
+        <a href="?page={{ user_reports_page + 1 }}">&raquo;</a>
+      {% endif %}
+    </div>
+    {% endif %}
     {% endif %}
   </div>
 

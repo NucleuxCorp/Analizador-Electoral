@@ -596,6 +596,7 @@ class TestAdminConflictsView:
              patch("src.modules.labeler.db.get_amended_crops", return_value=[]), \
              patch("src.modules.labeler.db.get_reports", return_value=[]), \
              patch("src.modules.labeler.db.get_mesa_reports", return_value=[]), \
+             patch("src.modules.labeler.db.count_recent_transversal_reports", return_value=1), \
              patch(
                  "src.modules.labeler.db.list_recent_transversal_reports",
                  return_value=[
@@ -617,6 +618,141 @@ class TestAdminConflictsView:
         body = resp.get_data(as_text=True)
         assert "01_001_01_01_1" in body
         assert "nota de usuario autenticado" in body
+
+    def test_reports_page_1_default_calls_list_with_page_1_per_page_50(self, prod_app):
+        """No ?page query param -> page=1, per_page=50, matching
+        get_mesa_results()/get_mesa_results-style admin route convention."""
+        client = _authed_session_client(prod_app)
+        p1, p2 = _role_auth_patches("admin")
+
+        with p1, p2, \
+             patch("src.modules.labeler.db.get_conflict_crops", return_value=[]), \
+             patch("src.modules.labeler.db.get_fraud_marks", return_value=[]), \
+             patch("src.modules.labeler.db.get_feedback_marks", return_value=[]), \
+             patch("src.modules.labeler.db.get_amended_crops", return_value=[]), \
+             patch("src.modules.labeler.db.get_reports", return_value=[]), \
+             patch("src.modules.labeler.db.get_mesa_reports", return_value=[]), \
+             patch("src.modules.labeler.db.list_recent_transversal_reports", return_value=[]) as m_list, \
+             patch("src.modules.labeler.db.count_recent_transversal_reports", return_value=0) as m_count:
+            resp = client.get("/admin/conflicts", headers={"Accept": "text/html"})
+
+        assert resp.status_code == 200
+        m_list.assert_called_once_with(page=1, per_page=50)
+        m_count.assert_called_once()
+
+    def test_reports_page_query_param_passed_through(self, prod_app):
+        """?page=2 -> list_recent_transversal_reports(page=2, per_page=50),
+        and page/total reach the template context."""
+        client = _authed_session_client(prod_app)
+        p1, p2 = _role_auth_patches("admin")
+
+        with p1, p2, \
+             patch("src.modules.labeler.db.get_conflict_crops", return_value=[]), \
+             patch("src.modules.labeler.db.get_fraud_marks", return_value=[]), \
+             patch("src.modules.labeler.db.get_feedback_marks", return_value=[]), \
+             patch("src.modules.labeler.db.get_amended_crops", return_value=[]), \
+             patch("src.modules.labeler.db.get_reports", return_value=[]), \
+             patch("src.modules.labeler.db.get_mesa_reports", return_value=[]), \
+             patch(
+                 "src.modules.labeler.db.list_recent_transversal_reports",
+                 return_value=[
+                     {
+                         "id": "row-2",
+                         "mesa_key": "02_002_02_02_2",
+                         "source": "e14t",
+                         "report_type": "otro",
+                         "notes": "pagina dos",
+                         "annotator": "user-2",
+                         "created_at": "2026-01-02T00:00:00Z",
+                     }
+                 ],
+             ) as m_list, \
+             patch("src.modules.labeler.db.count_recent_transversal_reports", return_value=120):
+            resp = client.get("/admin/conflicts?page=2", headers={"Accept": "text/html"})
+
+        assert resp.status_code == 200
+        m_list.assert_called_once_with(page=2, per_page=50)
+        body = resp.get_data(as_text=True)
+        assert "pagina dos" in body
+        assert "?page=3" in body  # 120 rows / 50 per page => 3 pages, next-page link present
+
+    def test_reports_page_beyond_total_renders_empty_no_500(self, prod_app):
+        """A page number beyond the total row count renders an empty result
+        set gracefully instead of erroring."""
+        client = _authed_session_client(prod_app)
+        p1, p2 = _role_auth_patches("admin")
+
+        with p1, p2, \
+             patch("src.modules.labeler.db.get_conflict_crops", return_value=[]), \
+             patch("src.modules.labeler.db.get_fraud_marks", return_value=[]), \
+             patch("src.modules.labeler.db.get_feedback_marks", return_value=[]), \
+             patch("src.modules.labeler.db.get_amended_crops", return_value=[]), \
+             patch("src.modules.labeler.db.get_reports", return_value=[]), \
+             patch("src.modules.labeler.db.get_mesa_reports", return_value=[]), \
+             patch("src.modules.labeler.db.list_recent_transversal_reports", return_value=[]), \
+             patch("src.modules.labeler.db.count_recent_transversal_reports", return_value=10):
+            resp = client.get("/admin/conflicts?page=99", headers={"Accept": "text/html"})
+
+        assert resp.status_code == 200
+        body = resp.get_data(as_text=True)
+        assert "Sin reportes de usuarios" in body
+
+    def test_pagination_controls_shown_when_multiple_pages(self, prod_app):
+        client = _authed_session_client(prod_app)
+        p1, p2 = _role_auth_patches("admin")
+
+        with p1, p2, \
+             patch("src.modules.labeler.db.get_conflict_crops", return_value=[]), \
+             patch("src.modules.labeler.db.get_fraud_marks", return_value=[]), \
+             patch("src.modules.labeler.db.get_feedback_marks", return_value=[]), \
+             patch("src.modules.labeler.db.get_amended_crops", return_value=[]), \
+             patch("src.modules.labeler.db.get_reports", return_value=[]), \
+             patch("src.modules.labeler.db.get_mesa_reports", return_value=[]), \
+             patch(
+                 "src.modules.labeler.db.list_recent_transversal_reports",
+                 return_value=[{
+                     "id": "row-1", "mesa_key": "01_001_01_01_1", "source": "e14c",
+                     "report_type": "otro", "notes": "n", "annotator": "u",
+                     "created_at": "2026-01-01T00:00:00Z",
+                 }],
+             ), \
+             patch("src.modules.labeler.db.count_recent_transversal_reports", return_value=120):
+            resp = client.get("/admin/conflicts", headers={"Accept": "text/html"})
+
+        body = resp.get_data(as_text=True)
+        panel_start = body.index('id="panel-user-reports"')
+        panel_end = body.index('id="panel-mesas"')
+        panel_html = body[panel_start:panel_end]
+        assert 'class="pagination"' in panel_html
+        assert '?page=2' in panel_html
+
+    def test_pagination_controls_hidden_when_single_page(self, prod_app):
+        client = _authed_session_client(prod_app)
+        p1, p2 = _role_auth_patches("admin")
+
+        with p1, p2, \
+             patch("src.modules.labeler.db.get_conflict_crops", return_value=[]), \
+             patch("src.modules.labeler.db.get_fraud_marks", return_value=[]), \
+             patch("src.modules.labeler.db.get_feedback_marks", return_value=[]), \
+             patch("src.modules.labeler.db.get_amended_crops", return_value=[]), \
+             patch("src.modules.labeler.db.get_reports", return_value=[]), \
+             patch("src.modules.labeler.db.get_mesa_reports", return_value=[]), \
+             patch(
+                 "src.modules.labeler.db.list_recent_transversal_reports",
+                 return_value=[{
+                     "id": "row-1", "mesa_key": "01_001_01_01_1", "source": "e14c",
+                     "report_type": "otro", "notes": "n", "annotator": "u",
+                     "created_at": "2026-01-01T00:00:00Z",
+                 }],
+             ), \
+             patch("src.modules.labeler.db.count_recent_transversal_reports", return_value=1):
+            resp = client.get("/admin/conflicts", headers={"Accept": "text/html"})
+
+        body = resp.get_data(as_text=True)
+        panel_start = body.index('id="panel-user-reports"')
+        panel_end = body.index('id="panel-mesas"')
+        panel_html = body[panel_start:panel_end]
+        assert 'class="pagination"' not in panel_html
 
     def test_moderator_reaches_admin_conflicts_same_as_before(self, prod_app):
         """Regression: existing @require_role(ROLE_ADMIN, ROLE_MODERATOR) gate unchanged."""
