@@ -112,6 +112,47 @@
     .report-msg.ok { color: #56c25a; }
     .report-msg.err { color: #ef5350; }
 
+    /* Report modal (same panel language as /admin/transversal's report modal) */
+    .report-modal-overlay {
+      display: none; position: fixed; inset: 0; background: rgba(6,9,16,0.7);
+      z-index: 100; align-items: center; justify-content: center;
+    }
+    .report-modal-overlay.open { display: flex; }
+    .report-modal {
+      background: #12161f; border: 1px solid #2a3a5a; border-radius: 8px;
+      padding: 20px; width: 100%; max-width: 420px; margin: 16px;
+    }
+    .report-modal h3 {
+      font-size: 0.95rem; color: #fff; margin-bottom: 6px;
+    }
+    .report-modal p.hint {
+      font-size: 0.75rem; color: #9fb0c0; margin-bottom: 12px;
+    }
+    .report-modal textarea {
+      width: 100%; min-height: 90px; background: #0d1220; color: #e6edf3;
+      border: 1px solid #2a3a5a; border-radius: 4px; padding: 8px;
+      font-family: monospace; font-size: 0.82rem; resize: vertical;
+    }
+    .report-modal .modal-err {
+      font-size: 0.72rem; color: #ef5350; margin-top: 6px; min-height: 1em;
+    }
+    .report-modal .modal-actions {
+      display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px;
+    }
+    .report-modal .modal-actions button {
+      font-family: monospace; font-size: 0.78rem; border-radius: 4px;
+      padding: 6px 14px; cursor: pointer;
+    }
+    .report-modal .modal-cancel {
+      background: transparent; color: #9fb0c0; border: 1px solid #2a3a5a;
+    }
+    .report-modal .modal-cancel:hover { background: #0d1220; }
+    .report-modal .modal-submit {
+      background: #1f2a44; color: #7ec8e3; border: 1px solid #2a3a5a;
+    }
+    .report-modal .modal-submit:hover { background: #253256; }
+    .report-modal .modal-submit:disabled { opacity: 0.6; cursor: default; }
+
     /* Pagination */
     .pagination {
       display: flex; justify-content: center; gap: 10px;
@@ -273,11 +314,28 @@
 
   <div class="ver">v{{ app_version }}</div>
 
+  <div class="report-modal-overlay" id="mesa-report-overlay" onclick="if (event.target === this) closeMesaReportModal();">
+    <div class="report-modal">
+      <h3>Reportar mesa</h3>
+      <p class="hint">Describí brevemente el problema que encontraste con esta mesa.</p>
+      <textarea id="mesa-report-notes" maxlength="1000" placeholder="Ej: el acta publicada no coincide con lo que vi en el conteo..."></textarea>
+      <div class="modal-err" id="mesa-report-modal-err"></div>
+      <div class="modal-actions">
+        <button type="button" class="modal-cancel" onclick="closeMesaReportModal()">Cancelar</button>
+        <button type="button" class="modal-submit" id="mesa-report-submit-btn" onclick="mesaReportModalSubmit()">Enviar</button>
+      </div>
+    </div>
+  </div>
+
   {% if RECAPTCHA_SITE_KEY %}<script src="https://www.google.com/recaptcha/enterprise.js?render={{ RECAPTCHA_SITE_KEY }}" async defer></script>{% endif %}
   <script>
     var _mesaReportSiteKey = {{ RECAPTCHA_SITE_KEY | tojson }};
+    var _mesaReportKey = null;
+    var _mesaReportBtn = null;
 
-    function _doMesaReportFetch(mesaKey, notes, btn, token) {
+    function _doMesaReportFetch(mesaKey, notes, token) {
+      var submitBtn = document.getElementById("mesa-report-submit-btn");
+      var errEl = document.getElementById("mesa-report-modal-err");
       fetch("/api/mesa-report", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -287,23 +345,24 @@
           return r.json().then(function (d) { return { status: r.status, ok: r.ok, body: d }; });
         })
         .then(function (res) {
-          btn.disabled = false;
+          submitBtn.disabled = false;
           // Require BOTH a 2xx HTTP status AND the route's own {ok:true} —
           // a 401/403/503 body may carry no "ok" field at all (e.g. the
           // session-expired auth-failure response), which must never be
           // read as success.
           if (!res.ok || res.body.ok !== true) {
-            var msg = (res.status === 401)
+            errEl.textContent = (res.status === 401)
               ? "Tu sesión expiró — iniciá sesión de nuevo para reportar."
               : "Error: " + (res.body.error || res.status);
-            _showMesaReportMsg(btn, msg, "err");
             return;
           }
-          _showMesaReportMsg(btn, "Reportado, ¡gracias!", "ok");
+          var btn = _mesaReportBtn;
+          closeMesaReportModal();
+          if (btn) _showMesaReportMsg(btn, "Reportado, ¡gracias!", "ok");
         })
         .catch(function () {
-          btn.disabled = false;
-          _showMesaReportMsg(btn, "Error de red — intentá de nuevo.", "err");
+          submitBtn.disabled = false;
+          errEl.textContent = "Error de red — intentá de nuevo.";
         });
     }
 
@@ -316,16 +375,33 @@
     }
 
     window.submitMesaReport = function (mesaKey, btn) {
-      var notes = window.prompt("Describí brevemente el problema con esta mesa:");
-      if (notes === null) return;
-      notes = notes.trim();
-      if (!notes) { _showMesaReportMsg(btn, "Escribí una descripción primero.", "err"); return; }
-      btn.disabled = true;
+      _mesaReportKey = mesaKey;
+      _mesaReportBtn = btn;
+      document.getElementById("mesa-report-notes").value = "";
+      document.getElementById("mesa-report-modal-err").textContent = "";
+      document.getElementById("mesa-report-overlay").classList.add("open");
+      document.getElementById("mesa-report-notes").focus();
+    };
+
+    window.closeMesaReportModal = function () {
+      document.getElementById("mesa-report-overlay").classList.remove("open");
+      _mesaReportKey = null;
+      _mesaReportBtn = null;
+    };
+
+    window.mesaReportModalSubmit = function () {
+      var errEl = document.getElementById("mesa-report-modal-err");
+      var notes = document.getElementById("mesa-report-notes").value.trim();
+      if (!notes) { errEl.textContent = "Escribí una descripción primero."; return; }
+      errEl.textContent = "";
+      var submitBtn = document.getElementById("mesa-report-submit-btn");
+      submitBtn.disabled = true;
+      var mesaKey = _mesaReportKey;
       if (_mesaReportSiteKey && typeof grecaptcha !== "undefined" && grecaptcha.enterprise) {
         grecaptcha.enterprise.execute(_mesaReportSiteKey, { action: "mesa_report" })
-          .then(function (token) { _doMesaReportFetch(mesaKey, notes, btn, token); });
+          .then(function (token) { _doMesaReportFetch(mesaKey, notes, token); });
       } else {
-        _doMesaReportFetch(mesaKey, notes, btn, "");
+        _doMesaReportFetch(mesaKey, notes, "");
       }
     };
   </script>
