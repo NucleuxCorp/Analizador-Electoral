@@ -487,31 +487,110 @@ def _build_semaphore_data() -> dict | None:
 # decision: avoid loading the full national scan just to paginate one puesto).
 # ---------------------------------------------------------------------------
 
+# Public /mesas table page sizes (Level 3 already uses 10 via get_mesa_results).
+MESAS_L1_PAGE_SIZE = 50
+MESAS_L2_PAGE_SIZE = 50
+MESAS_L3_PAGE_SIZE = 10
+
+
+def _pad_divipole_code(code: str, width: int) -> str:
+    """Normalize numeric DIVIPOLE codes (e.g. '1' → '01') for lookup keys."""
+    c = str(code or "").strip()
+    if c.isdigit():
+        return c.zfill(width)
+    return c
+
+
+def _divipole_key_candidates(code: str, width: int) -> list[str]:
+    """Prefer zero-padded key, then raw — mesa_results codes are often unpadded."""
+    raw = str(code or "").strip()
+    padded = _pad_divipole_code(raw, width)
+    out: list[str] = []
+    for k in (padded, raw):
+        if k and k not in out:
+            out.append(k)
+    return out
+
+
 def _mpio_name(dept: str, mpio: str) -> str:
     """Look up the municipio name from _DIVIPOLE, falling back to the code."""
     try:
-        return (
-            _DIVIPOLE.get(dept, {})
-            .get("municipios", {})
-            .get(mpio, {})
-            .get("nombre", mpio)
-        ) or mpio
+        for d in _divipole_key_candidates(dept, 2):
+            dept_node = _DIVIPOLE.get(d) or {}
+            mpios = dept_node.get("municipios") or {}
+            for m in _divipole_key_candidates(mpio, 3):
+                name = (mpios.get(m) or {}).get("nombre")
+                if name:
+                    return name
+        return str(mpio or "")
     except Exception:
-        return mpio
+        return str(mpio or "")
 
 
 def _puesto_name(dept: str, mpio: str, zona: str, puesto: str) -> str:
     """Look up the puesto de votación name from _DIVIPOLE, falling back to the code."""
     try:
-        zonas = (
-            _DIVIPOLE.get(dept, {})
-            .get("municipios", {})
-            .get(mpio, {})
-            .get("zonas", {})
-        )
-        return zonas.get(zona, {}).get("puestos", {}).get(puesto, {}).get("nombre", puesto) or puesto
+        for d in _divipole_key_candidates(dept, 2):
+            dept_node = _DIVIPOLE.get(d) or {}
+            mpios = dept_node.get("municipios") or {}
+            for m in _divipole_key_candidates(mpio, 3):
+                zonas = (mpios.get(m) or {}).get("zonas") or {}
+                for z in _divipole_key_candidates(zona, 2):
+                    puestos = (zonas.get(z) or {}).get("puestos") or {}
+                    for p in _divipole_key_candidates(puesto, 2):
+                        name = (puestos.get(p) or {}).get("nombre")
+                        if name:
+                            return name
+        return str(puesto or "")
     except Exception:
-        return puesto
+        return str(puesto or "")
+
+
+def _parse_mesas_page(raw) -> int:
+    try:
+        page = int(raw or 1)
+    except (TypeError, ValueError):
+        page = 1
+    return max(1, page)
+
+
+def _paginate_rows(rows: list[dict], page: int, page_size: int) -> tuple[list[dict], int, int]:
+    """Return (page_slice, clamped_page, total_pages)."""
+    total = len(rows)
+    total_pages = max(1, (total + page_size - 1) // page_size) if total else 1
+    page = min(max(1, page), total_pages)
+    start = (page - 1) * page_size
+    return rows[start:start + page_size], page, total_pages
+
+
+def _dept_filter_options(stats: dict) -> list[dict]:
+    """Departments present in hierarchical stats, for the L1 filter dropdown."""
+    codes = {
+        str(bucket.get("dept") or "").strip()
+        for bucket in (stats.get("by_mpio") or {}).values()
+        if bucket.get("dept")
+    }
+    options = [
+        {"code": code, "name": _DEPT_NAMES.get(code, code)}
+        for code in codes
+    ]
+    options.sort(key=lambda o: o["name"])
+    return options
+
+
+def _semaphore_from_level_rows(rows: list[dict]) -> dict:
+    """Aggregate ⚪/🔴 summary from already-built L1/L2 row dicts."""
+    sin_alerta = sum(int(r.get("sin_alerta") or 0) for r in rows)
+    alerta = sum(int(r.get("alerta") or 0) for r in rows)
+    en_revision = sum(int(r.get("en_revision") or 0) for r in rows)
+    revisada = sum(int(r.get("revisada") or 0) for r in rows)
+    return {
+        "sin_alerta": sin_alerta,
+        "alerta": alerta,
+        "en_revision": en_revision,
+        "revisada": revisada,
+        "total": sin_alerta + alerta,
+    }
 
 
 def _hierarchical_global_semaphore(stats: dict) -> dict:
@@ -528,17 +607,21 @@ def _hierarchical_global_semaphore(stats: dict) -> dict:
     }
 
 
-def _build_mesas_level1_rows(stats: dict) -> list[dict]:
+def _build_mesas_level1_rows(stats: dict, dept_filter: str | None = None) -> list[dict]:
     """Build Level-1 (Municipio) rows from the by_mpio buckets of get_hierarchical_mesa_stats()."""
     rows = []
+    want = (dept_filter or "").strip()
+    want_padded = _pad_divipole_code(want, 2) if want else ""
     for bucket in (stats.get("by_mpio") or {}).values():
         dept = bucket.get("dept", "")
+        if want and str(dept) != want and _pad_divipole_code(str(dept), 2) != want_padded:
+            continue
         mpio = bucket.get("mpio", "")
         total = bucket.get("total", 0)
         sin_alerta = bucket.get("clean", 0)
         rows.append({
             "dept": dept,
-            "dept_name": _DEPT_NAMES.get(dept, dept),
+            "dept_name": _DEPT_NAMES.get(dept, dept) or _DEPT_NAMES.get(_pad_divipole_code(str(dept), 2), dept),
             "mpio": mpio,
             "mpio_name": _mpio_name(dept, mpio),
             "sin_alerta": sin_alerta,
@@ -553,8 +636,16 @@ def _build_mesas_level1_rows(stats: dict) -> list[dict]:
 
 def _build_mesas_level2_rows(stats: dict, dept: str, mpio: str) -> list[dict]:
     """Build Level-2 (Puesto) rows for one municipality from the by_puesto buckets."""
-    mpio_key = f"{dept}_{mpio}"
-    puestos = (stats.get("by_puesto") or {}).get(mpio_key, {})
+    # Try both raw and zero-padded keys — mesa_results keys may not match DIVIPOLE padding.
+    candidates = [
+        f"{dept}_{mpio}",
+        f"{_pad_divipole_code(dept, 2)}_{_pad_divipole_code(mpio, 3)}",
+    ]
+    puestos: dict = {}
+    for key in candidates:
+        puestos = (stats.get("by_puesto") or {}).get(key) or {}
+        if puestos:
+            break
     rows = []
     for bucket in puestos.values():
         zona = bucket.get("zona", "")
@@ -573,7 +664,7 @@ def _build_mesas_level2_rows(stats: dict, dept: str, mpio: str) -> list[dict]:
             "revisada": bucket.get("revisada", 0),
             "total": total,
         })
-    rows.sort(key=lambda r: (r["zona"], r["puesto"]))
+    rows.sort(key=lambda r: (r["zona"], r["puesto"], r["puesto_name"]))
     return rows
 
 
@@ -1465,6 +1556,9 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
 
         @app.route("/mesas")
         def mesas_view() -> str:
+            page = _parse_mesas_page(request.args.get("page"))
+            dept_filter = (request.args.get("dept") or "").strip() or None
+
             try:
                 stats = _db.get_hierarchical_mesa_stats()
             except Exception as exc:
@@ -1484,14 +1578,20 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                         "mesas.html", level=1, unavailable=True,
                         breadcrumbs=_mesas_l1_breadcrumbs(), rows=[],
                         page=1, total_pages=1, semaphore=None,
+                        dept_filter=None, dept_options=[],
                     )
 
-            rows = _build_mesas_level1_rows(stats)
+            all_rows = _build_mesas_level1_rows(stats, dept_filter=dept_filter)
+            page_rows, page, total_pages = _paginate_rows(
+                all_rows, page, MESAS_L1_PAGE_SIZE,
+            )
             return render_template(
                 "mesas.html", level=1, unavailable=False,
-                breadcrumbs=_mesas_l1_breadcrumbs(), rows=rows,
-                page=1, total_pages=1,
-                semaphore=_hierarchical_global_semaphore(stats),
+                breadcrumbs=_mesas_l1_breadcrumbs(), rows=page_rows,
+                page=page, total_pages=total_pages,
+                semaphore=_semaphore_from_level_rows(all_rows),
+                dept_filter=dept_filter,
+                dept_options=_dept_filter_options(stats),
             )
 
         # ----------------------------------------------------------------
@@ -1500,6 +1600,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
 
         @app.route("/mesas/<dept>/<mpio>")
         def mesas_level2_view(dept: str, mpio: str) -> str:
+            page = _parse_mesas_page(request.args.get("page"))
             try:
                 stats = _db.get_hierarchical_mesa_stats()
             except Exception as exc:
@@ -1512,14 +1613,19 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                     "mesas.html", level=2, unavailable=True,
                     breadcrumbs=breadcrumbs, rows=[],
                     page=1, total_pages=1, semaphore=None,
+                    dept_filter=None, dept_options=[],
                 )
 
-            rows = _build_mesas_level2_rows(stats, dept, mpio)
+            all_rows = _build_mesas_level2_rows(stats, dept, mpio)
+            page_rows, page, total_pages = _paginate_rows(
+                all_rows, page, MESAS_L2_PAGE_SIZE,
+            )
             return render_template(
                 "mesas.html", level=2, unavailable=False,
-                breadcrumbs=breadcrumbs, rows=rows,
-                page=1, total_pages=1,
-                semaphore=_hierarchical_global_semaphore(stats),
+                breadcrumbs=breadcrumbs, rows=page_rows,
+                page=page, total_pages=total_pages,
+                semaphore=_semaphore_from_level_rows(all_rows),
+                dept_filter=None, dept_options=[],
             )
 
         # ----------------------------------------------------------------
@@ -1528,12 +1634,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
 
         @app.route("/mesas/<dept>/<mpio>/<zona>/<puesto>")
         def mesas_level3_view(dept: str, mpio: str, zona: str, puesto: str) -> str:
-            try:
-                page = int(request.args.get("page", 1))
-            except (TypeError, ValueError):
-                page = 1
-            if page < 1:
-                page = 1
+            page = _parse_mesas_page(request.args.get("page"))
 
             breadcrumbs = _mesas_l3_breadcrumbs(dept, mpio, zona, puesto)
             try:
@@ -1544,13 +1645,15 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                     "mesas.html", level=3, unavailable=True,
                     breadcrumbs=breadcrumbs, rows=[],
                     page=1, total_pages=1, semaphore=None,
+                    dept_filter=None, dept_options=[],
                 )
 
-            total_pages = max(1, (total + 9) // 10) if total else 1
+            total_pages = max(1, (total + MESAS_L3_PAGE_SIZE - 1) // MESAS_L3_PAGE_SIZE) if total else 1
             return render_template(
                 "mesas.html", level=3, unavailable=False,
                 breadcrumbs=breadcrumbs, rows=rows,
                 page=page, total_pages=total_pages, semaphore=None,
+                dept_filter=None, dept_options=[],
             )
 
         # ----------------------------------------------------------------

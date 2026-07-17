@@ -124,8 +124,8 @@ class TestLevel1MunicipioTable:
 
         assert resp.status_code == 200
         html = resp.data.decode()
-        mun_idx = html.find(">Municipio<")
-        dept_idx = html.find(">Departamento<")
+        mun_idx = html.find("<th>Municipio</th>")
+        dept_idx = html.find("<th>Departamento</th>")
         assert mun_idx != -1
         assert dept_idx != -1
         assert mun_idx < dept_idx
@@ -426,3 +426,180 @@ class TestBreadcrumbs:
         assert resp.status_code == 200
         html = resp.data.decode()
         assert 'href="/mesas"' in html
+
+
+# ---------------------------------------------------------------------------
+# Level 1 pagination + department filter + DIVIPOLE puesto names
+# ---------------------------------------------------------------------------
+
+def _many_municipio_stats(n: int, dept: str = "01") -> dict:
+    """n municipio buckets under one dept for pagination tests."""
+    by_mpio = {}
+    for i in range(1, n + 1):
+        mpio = f"{i:03d}"
+        by_mpio[f"{dept}_{mpio}"] = _empty_bucket(
+            dept=dept, mpio=mpio, clean=1, total=1,
+        )
+    return {
+        "by_mpio": by_mpio,
+        "by_puesto": {},
+        "_global": _empty_bucket(clean=n, total=n),
+        "review_by_mesa": {},
+    }
+
+
+class TestLevel1PaginationAndDeptFilter:
+    def test_l1_paginates_when_more_than_page_size(self, prod_app):
+        stats = _many_municipio_stats(55)
+        with patch(
+            "src.modules.labeler.db.get_hierarchical_mesa_stats",
+            return_value=stats,
+        ):
+            resp = prod_app.test_client().get("/mesas")
+
+        assert resp.status_code == 200
+        html = resp.data.decode()
+        # Page 1 shows first 50 only
+        assert html.count('href="/mesas/01/') == 50
+        assert "page=2" in html
+        assert "Página 1 de 2" in html
+
+    def test_l1_page2_shows_remaining(self, prod_app):
+        stats = _many_municipio_stats(55)
+        with patch(
+            "src.modules.labeler.db.get_hierarchical_mesa_stats",
+            return_value=stats,
+        ):
+            resp = prod_app.test_client().get("/mesas?page=2")
+
+        assert resp.status_code == 200
+        html = resp.data.decode()
+        assert html.count('href="/mesas/01/') == 5
+        assert "Página 2 de 2" in html
+
+    def test_l1_dept_filter_limits_rows(self, prod_app):
+        stats = _hierarchical_stats_fixture()
+        stats["by_mpio"]["05_001"] = _empty_bucket(
+            dept="05", mpio="001", clean=2, total=2,
+        )
+        with patch(
+            "src.modules.labeler.db.get_hierarchical_mesa_stats",
+            return_value=stats,
+        ):
+            resp = prod_app.test_client().get("/mesas?dept=01")
+
+        assert resp.status_code == 200
+        html = resp.data.decode()
+        assert 'href="/mesas/01/001"' in html
+        assert 'href="/mesas/05/001"' not in html
+        assert 'name="dept"' in html
+        assert 'value="01"' in html
+
+    def test_l1_pagination_preserves_dept_filter(self, prod_app):
+        stats = _many_municipio_stats(55, dept="01")
+        with patch(
+            "src.modules.labeler.db.get_hierarchical_mesa_stats",
+            return_value=stats,
+        ):
+            resp = prod_app.test_client().get("/mesas?dept=01&page=2")
+
+        html = resp.data.decode()
+        assert "dept=01" in html
+        assert "page=1" in html  # back link keeps filter
+
+
+class TestLevel2PaginationAndPuestoNames:
+    def test_l2_paginates_many_puestos(self, prod_app):
+        stats = _hierarchical_stats_fixture()
+        puestos = {}
+        for i in range(1, 56):
+            key = f"01_{i:02d}"
+            puestos[key] = _empty_bucket(
+                dept="01", mpio="001", zona="01", puesto=f"{i:02d}",
+                clean=1, total=1,
+            )
+        stats["by_puesto"]["01_001"] = puestos
+        with patch(
+            "src.modules.labeler.db.get_hierarchical_mesa_stats",
+            return_value=stats,
+        ):
+            resp = prod_app.test_client().get("/mesas/01/001")
+
+        html = resp.data.decode()
+        assert "page=2" in html
+        assert "Página 1 de 2" in html
+
+    def test_puesto_name_from_divipole_not_raw_code(self, prod_app):
+        """DIVIPOLE nombre is shown instead of the puesto code when available."""
+        import src.modules.labeler.server as server_mod
+
+        fake_divipole = {
+            "01": {
+                "municipios": {
+                    "001": {
+                        "nombre": "MEDELLIN",
+                        "zonas": {
+                            "01": {
+                                "puestos": {
+                                    "01": {"nombre": "SEC. ESC. LA ESPERANZA No 2"},
+                                    "02": {"nombre": "INST.EDUC. LA CANDELARIA"},
+                                }
+                            }
+                        },
+                    }
+                }
+            }
+        }
+        with patch.object(server_mod, "_DIVIPOLE", fake_divipole), patch(
+            "src.modules.labeler.db.get_hierarchical_mesa_stats",
+            return_value=_hierarchical_stats_fixture(),
+        ):
+            resp = prod_app.test_client().get("/mesas/01/001")
+
+        html = resp.data.decode()
+        assert "SEC. ESC. LA ESPERANZA No 2" in html
+        assert "INST.EDUC. LA CANDELARIA" in html
+
+    def test_puesto_name_resolves_unpadded_codes(self, prod_app):
+        """mesa_results codes like '1' still resolve DIVIPOLE '01' names."""
+        import src.modules.labeler.server as server_mod
+
+        stats = {
+            "by_mpio": {
+                "1_1": _empty_bucket(dept="1", mpio="1", clean=1, total=1),
+            },
+            "by_puesto": {
+                "1_1": {
+                    "1_1": _empty_bucket(
+                        dept="1", mpio="1", zona="1", puesto="1",
+                        clean=1, total=1,
+                    ),
+                },
+            },
+            "_global": _empty_bucket(clean=1, total=1),
+            "review_by_mesa": {},
+        }
+        fake_divipole = {
+            "01": {
+                "municipios": {
+                    "001": {
+                        "nombre": "MEDELLIN",
+                        "zonas": {
+                            "01": {
+                                "puestos": {
+                                    "01": {"nombre": "COLEGIO EJEMPLO"},
+                                }
+                            }
+                        },
+                    }
+                }
+            }
+        }
+        with patch.object(server_mod, "_DIVIPOLE", fake_divipole), patch(
+            "src.modules.labeler.db.get_hierarchical_mesa_stats",
+            return_value=stats,
+        ):
+            resp = prod_app.test_client().get("/mesas/1/1")
+
+        html = resp.data.decode()
+        assert "COLEGIO EJEMPLO" in html
