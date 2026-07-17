@@ -1828,3 +1828,35 @@ def get_hierarchical_mesa_stats() -> dict:
             "ts": now,
         }
     return data
+
+
+def mesa_result_exists(mesa_key: str) -> bool | None:
+    """
+    Return True if a row with this mesa_key exists in mesa_results,
+    False if the lookup succeeded and found nothing, or None if the
+    lookup itself failed (Supabase unreachable/erroring).
+
+    Used as an anti-forgery guard before inserting a public mesa report
+    (SDD: public-mesa-report, Phase 1) — a POST body can carry any
+    mesa_key string, so it must be validated server-side against the
+    real table before it is trusted for a write into the shared
+    transversal_review_reports table.
+
+    Fail-closed: None is never treated as "exists" by callers — but it
+    is distinct from a confirmed False, so a lookup outage can be
+    reported to the citizen as "try again" (503) instead of the
+    misleading "that mesa doesn't exist" (400).
+    """
+    try:
+        resp = (
+            _client()
+            .table("mesa_results")
+            .select("mesa_key")
+            .eq("mesa_key", mesa_key)
+            .limit(1)
+            .execute()
+        )
+        return bool(resp.data)
+    except Exception as exc:
+        logger.error("mesa_result_exists lookup failed: %s", exc)
+        return None

@@ -290,6 +290,91 @@ class TestTransversalReports:
         assert result[0]["report_type"] == "enmienda"
         chain.eq.assert_called_with("mesa_key", "01_001_001_01_001")
 
+    def test_insert_rejects_invalid_source(self):
+        """SDD public-mesa-report: insert_transversal_reports validates
+        source/report_type/notes before ever touching the client."""
+        from src.modules.labeler import db
+
+        mock_client = _make_client(_make_chain([]))
+        with patch("src.modules.labeler.db._client", return_value=mock_client):
+            result = db.insert_transversal_reports(
+                "01_001_001_01_001",
+                [{"source": "bogus", "report_type": "otro", "notes": "n1"}],
+                "user-1",
+            )
+        assert result == []
+        mock_client.table.assert_not_called()
+
+    def test_insert_rejects_invalid_report_type(self):
+        from src.modules.labeler import db
+
+        mock_client = _make_client(_make_chain([]))
+        with patch("src.modules.labeler.db._client", return_value=mock_client):
+            result = db.insert_transversal_reports(
+                "01_001_001_01_001",
+                [{"source": "e14c", "report_type": "bogus", "notes": "n1"}],
+                "user-1",
+            )
+        assert result == []
+        mock_client.table.assert_not_called()
+
+    def test_insert_rejects_empty_notes(self):
+        from src.modules.labeler import db
+
+        mock_client = _make_client(_make_chain([]))
+        with patch("src.modules.labeler.db._client", return_value=mock_client):
+            result = db.insert_transversal_reports(
+                "01_001_001_01_001",
+                [{"source": "e14c", "report_type": "otro", "notes": "   "}],
+                "user-1",
+            )
+        assert result == []
+        mock_client.table.assert_not_called()
+
+    def test_insert_multiple_entries(self):
+        from src.modules.labeler import db
+
+        rows = [
+            {"id": "row-1", "mesa_key": "01_001_001_01_001", "source": "e14c",
+             "report_type": "otro", "notes": "n1", "fields": None,
+             "annotator": "user-1", "created_at": "2026-01-01T00:00:00Z"},
+            {"id": "row-2", "mesa_key": "01_001_001_01_001", "source": "e14d",
+             "report_type": "campos_vacios", "notes": "n2", "fields": None,
+             "annotator": "user-1", "created_at": "2026-01-01T00:00:01Z"},
+        ]
+        chain = _make_chain(rows)
+        mock_client = _make_client(chain)
+        with patch("src.modules.labeler.db._client", return_value=mock_client):
+            result = db.insert_transversal_reports(
+                "01_001_001_01_001",
+                [
+                    {"source": "e14c", "report_type": "otro", "notes": "n1"},
+                    {"source": "e14d", "report_type": "campos_vacios", "notes": "n2"},
+                ],
+                "user-1",
+            )
+        assert len(result) == 2
+
+    def test_insert_returns_empty_on_supabase_error(self):
+        """On any exception, insert_transversal_reports returns [] (fail-closed)."""
+        from src.modules.labeler import db
+
+        with patch("src.modules.labeler.db._client", side_effect=RuntimeError("no client")):
+            result = db.insert_transversal_reports(
+                "01_001_001_01_001",
+                [{"source": "e14c", "report_type": "otro", "notes": "n1"}],
+                "user-1",
+            )
+        assert result == []
+
+    def test_list_returns_empty_on_supabase_error(self):
+        """On any exception, list_transversal_reports returns [] (fail-closed)."""
+        from src.modules.labeler import db
+
+        with patch("src.modules.labeler.db._client", side_effect=RuntimeError("no client")):
+            result = db.list_transversal_reports("01_001_001_01_001")
+        assert result == []
+
     def test_insert_reports_batch(self):
         from src.modules.labeler import db
 
