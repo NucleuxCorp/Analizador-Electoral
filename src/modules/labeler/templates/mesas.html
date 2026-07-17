@@ -283,11 +283,20 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ mesa_key: mesaKey, notes: notes, g_recaptcha_response: token }),
       })
-        .then(function (r) { return r.json(); })
-        .then(function (d) {
+        .then(function (r) {
+          return r.json().then(function (d) { return { status: r.status, ok: r.ok, body: d }; });
+        })
+        .then(function (res) {
           btn.disabled = false;
-          if (d.ok === false) {
-            _showMesaReportMsg(btn, "Error: " + (d.error || "?"), "err");
+          // Require BOTH a 2xx HTTP status AND the route's own {ok:true} —
+          // a 401/403/503 body may carry no "ok" field at all (e.g. the
+          // session-expired auth-failure response), which must never be
+          // read as success.
+          if (!res.ok || res.body.ok !== true) {
+            var msg = (res.status === 401)
+              ? "Tu sesión expiró — iniciá sesión de nuevo para reportar."
+              : "Error: " + (res.body.error || res.status);
+            _showMesaReportMsg(btn, msg, "err");
             return;
           }
           _showMesaReportMsg(btn, "Reportado, ¡gracias!", "ok");
