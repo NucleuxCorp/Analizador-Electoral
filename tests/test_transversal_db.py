@@ -517,12 +517,37 @@ class TestExportTransversalDecisions:
 # ---------------------------------------------------------------------------
 
 class TestListRecentTransversalReports:
-    """list_recent_transversal_reports returns a global, bounded listing of
+    """list_recent_transversal_reports returns a paginated, global listing of
     transversal_review_reports (all mesas, all sources), newest first —
-    mirroring get_mesa_reports(limit=200)'s bounded/fail-closed conventions,
-    but pointed at transversal_review_reports instead of mesa_reports_view."""
+    mirroring get_mesa_results()'s page/per_page/.range() pagination
+    convention (design D7), but pointed at transversal_review_reports
+    instead of mesa_results."""
 
-    def test_returns_rows_desc_by_created_at_bounded_to_limit(self):
+    def test_default_page_1_calls_range_0_49(self):
+        """No page arg defaults to page=1, per_page=50 -> .range(0, 49)."""
+        from src.modules.labeler.db import list_recent_transversal_reports
+
+        chain = _make_chain([])
+        mock_client = _make_client(chain)
+
+        with patch("src.modules.labeler.db._client", return_value=mock_client):
+            list_recent_transversal_reports()
+
+        chain.range.assert_called_once_with(0, 49)
+
+    def test_page_2_calls_range_50_99(self):
+        """page=2 with per_page=50 must call .range(50, 99)."""
+        from src.modules.labeler.db import list_recent_transversal_reports
+
+        chain = _make_chain([])
+        mock_client = _make_client(chain)
+
+        with patch("src.modules.labeler.db._client", return_value=mock_client):
+            list_recent_transversal_reports(page=2)
+
+        chain.range.assert_called_once_with(50, 99)
+
+    def test_returns_rows_desc_by_created_at(self):
         from src.modules.labeler.db import list_recent_transversal_reports
 
         rows = [
@@ -537,14 +562,13 @@ class TestListRecentTransversalReports:
         mock_client = _make_client(chain)
 
         with patch("src.modules.labeler.db._client", return_value=mock_client):
-            result = list_recent_transversal_reports(limit=50)
+            result = list_recent_transversal_reports(page=1, per_page=50)
 
         assert [r["id"] for r in result] == ["row-2", "row-1"]
         assert [r["mesa_key"] for r in result] == ["01_001_01_01_2", "01_001_01_01_1"]
         mock_client.table.assert_called_once_with("transversal_review_reports")
         chain.eq.assert_not_called()
         chain.order.assert_called_once_with("created_at", desc=True)
-        chain.limit.assert_called_once_with(50)
 
     def test_returns_empty_list_when_no_rows(self):
         from src.modules.labeler.db import list_recent_transversal_reports
@@ -566,13 +590,64 @@ class TestListRecentTransversalReports:
 
         assert result == []
 
-    def test_default_limit_is_200(self):
+    def test_page_beyond_total_returns_empty(self):
+        """A page number past the total range still returns [] gracefully
+        (PostgREST just returns an empty rows list, no exception)."""
         from src.modules.labeler.db import list_recent_transversal_reports
 
         chain = _make_chain([])
         mock_client = _make_client(chain)
 
         with patch("src.modules.labeler.db._client", return_value=mock_client):
-            list_recent_transversal_reports()
+            result = list_recent_transversal_reports(page=999, per_page=50)
 
-        chain.limit.assert_called_once_with(200)
+        assert result == []
+        chain.range.assert_called_once_with(49900, 49949)
+
+
+# ---------------------------------------------------------------------------
+# count_recent_transversal_reports
+# ---------------------------------------------------------------------------
+
+class TestCountRecentTransversalReports:
+    """count_recent_transversal_reports returns the total row count for
+    'Reportes de usuarios' tab pagination, mirroring count_mesa_results()'s
+    count="exact" convention."""
+
+    def _make_count_client(self, count: int) -> MagicMock:
+        chain = MagicMock()
+        chain.select.return_value = chain
+        chain.execute.return_value = MagicMock(count=count, data=[])
+        client = MagicMock()
+        client.table.return_value = chain
+        return client
+
+    def test_returns_count(self):
+        from src.modules.labeler.db import count_recent_transversal_reports
+
+        mock_client = self._make_count_client(123)
+
+        with patch("src.modules.labeler.db._client", return_value=mock_client):
+            result = count_recent_transversal_reports()
+
+        assert result == 123
+        mock_client.table.assert_called_once_with("transversal_review_reports")
+
+    def test_no_rows_returns_zero(self):
+        from src.modules.labeler.db import count_recent_transversal_reports
+
+        mock_client = self._make_count_client(0)
+
+        with patch("src.modules.labeler.db._client", return_value=mock_client):
+            result = count_recent_transversal_reports()
+
+        assert result == 0
+
+    def test_error_returns_zero(self):
+        """On any exception, returns 0 (fail-closed)."""
+        from src.modules.labeler.db import count_recent_transversal_reports
+
+        with patch("src.modules.labeler.db._client", side_effect=RuntimeError("no client")):
+            result = count_recent_transversal_reports()
+
+        assert result == 0

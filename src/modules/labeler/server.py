@@ -2040,7 +2040,20 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
             amended_crops  = _db.get_amended_crops()
             reports        = _db.get_reports()
             mesa_reports   = _db.get_mesa_reports()
-            user_reports   = _db.list_recent_transversal_reports()
+
+            try:
+                user_reports_page = int(request.args.get("page", 1))
+            except (TypeError, ValueError):
+                user_reports_page = 1
+            if user_reports_page < 1:
+                user_reports_page = 1
+
+            user_reports       = _db.list_recent_transversal_reports(page=user_reports_page, per_page=50)
+            user_reports_total = _db.count_recent_transversal_reports()
+            user_reports_total_pages = (
+                max(1, (user_reports_total + 49) // 50) if user_reports_total else 1
+            )
+
             user_role      = getattr(g, "user_role", "")
             return render_template(
                 "admin.html",
@@ -2051,6 +2064,33 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 reports=reports,
                 mesa_reports=mesa_reports,
                 user_reports=user_reports,
+                user_reports_page=user_reports_page,
+                user_reports_total=user_reports_total,
+                user_reports_total_pages=user_reports_total_pages,
+                user_role=user_role,
+            )
+
+        # ----------------------------------------------------------------
+        # GET /admin/mesas/<mesa_key> — single-mesa detail (algorithm status
+        # + user reports), Phase A of mesa-findings-consolidation. View-only:
+        # no decision-confirmation state (transversal_review_decisions
+        # doesn't exist yet).
+        # ----------------------------------------------------------------
+
+        @app.route("/admin/mesas/<mesa_key>")
+        @require_auth
+        @require_role(ROLE_ADMIN, ROLE_MODERATOR)
+        def admin_mesa_detail_view(mesa_key: str) -> Response:
+            results = _db.get_mesa_results(mesa_key=mesa_key)
+            mesa_status = results[0] if results else None
+            reports = _db.list_transversal_reports(mesa_key)
+
+            user_role = getattr(g, "user_role", "")
+            return render_template(
+                "mesa_detail.html",
+                mesa_key=mesa_key,
+                mesa_status=mesa_status,
+                reports=reports,
                 user_role=user_role,
             )
 

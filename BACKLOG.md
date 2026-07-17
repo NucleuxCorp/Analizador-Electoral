@@ -91,6 +91,26 @@ python main.py cross-report --input data/cross_mesa_validation.jsonl
 
 ## Pendientes nuevos
 
+### Portar `transversal_review_decisions` de production a develop (2026-07-17)
+
+**Estado:** 🔴 Pendiente — bloqueante confirmado para `mesa-findings-consolidation` Fase B
+
+**Contexto:** El panel `/admin/transversal` (queue, decisiones aceptar/rechazar por campo, `transversal.js`/`transversal.html`) existe **solo en `origin/production`**, nunca se mergeó a `develop`. En la SDD `public-mesa-report` (2026-07-17) se portó a develop solo la tabla `transversal_review_reports` (reportes de texto libre) + `insert_transversal_reports()`/`list_transversal_reports()` en `db.py` — **no** se portó `transversal_review_decisions` (la tabla de decisiones con regla real de doble confirmación).
+
+**Qué falta portar** (verificado ausente en develop, cero matches en `db.py`/`server.py`):
+- Tabla `transversal_review_decisions` (SQL de producción, buscar en `scripts/deploy/`)
+- `db.py`: `get_transversal_decision_edit_window()`, `reopen_transversal_decisions()`, `upsert_transversal_decision()`, `get_transversal_decisions()`, `get_transversal_decided_slots()`
+- Regla de doble confirmación (mismo principio que `evaluate_agreement()` en `db.py:206` para etiquetado de dígitos, pero aplicada a decisiones por campo/mesa — 2 coinciden=confirmado, 1 sola o no coinciden=pendiente/necesita tercero)
+- Posiblemente la ruta admin y parte de `queue.py`/`transversal.js` si se decide portar también la UI, no solo la tabla — a definir en la propuesta SDD de esta tarea
+
+**Por qué importa:** Sin esto, la vista consolidada de hallazgos por mesa (`mesa-findings-consolidation`) no puede mostrar si las alertas de una mesa fueron **confirmadas y no descartadas** vía doble confirmación — solo puede mostrar estado de algoritmo (`mesa_results`) + reportes de usuario sin estado de confirmación (`transversal_review_reports`).
+
+**Cómo arrancar:** `/sdd-new transversal-decisions-port` — seguir el mismo patrón que `public-mesa-report` Fase 0 (puerto verbatim, mirroring de convenciones existentes en `db.py`). Contexto acumulado en Engram bajo `sdd/mesa-findings-consolidation/explore` y `sdd/public-mesa-report/*` (la sesión que hizo el primer port parcial).
+
+**Prioridad:** Media — no bloquea nada en producción hoy, pero es prerequisito para cualquier vista consolidada con estado de confirmación real.
+
+---
+
 ### Tachones — scoring y auditoría post-bugfix (2026-07-14)
 
 **Contexto:** SDD `tachones-actualizacion` reparó el import roto de `subcell_tachon.py` (archivado `grid_detector_v2` desde 2026-07-12). Desde esa fecha, Path A (`e14_worker._analyze_primary`) devolvía `extraction_error` visible; Path B (`cross_validator_cli._run_tachon_scan`) degradaba en silencio a `tachones.e14c = null`. El batch principal (115,691 mesas, 2026-07-05) es anterior al bug.
