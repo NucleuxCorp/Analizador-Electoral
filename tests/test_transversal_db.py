@@ -21,6 +21,7 @@ def _make_chain(rows: list[dict] | None = None) -> MagicMock:
     chain.insert.return_value = chain
     chain.eq.return_value = chain
     chain.order.return_value = chain
+    chain.limit.return_value = chain
     chain.execute.return_value = MagicMock(data=rows if rows is not None else [])
     return chain
 
@@ -213,3 +214,69 @@ class TestListTransversalReports:
             result = list_transversal_reports("01_001_01_01_1")
 
         assert result == []
+
+
+# ---------------------------------------------------------------------------
+# list_recent_transversal_reports
+# ---------------------------------------------------------------------------
+
+class TestListRecentTransversalReports:
+    """list_recent_transversal_reports returns a global, bounded listing of
+    transversal_review_reports (all mesas, all sources), newest first —
+    mirroring get_mesa_reports(limit=200)'s bounded/fail-closed conventions,
+    but pointed at transversal_review_reports instead of mesa_reports_view."""
+
+    def test_returns_rows_desc_by_created_at_bounded_to_limit(self):
+        from src.modules.labeler.db import list_recent_transversal_reports
+
+        rows = [
+            {"id": "row-2", "mesa_key": "01_001_01_01_2", "source": "e14c",
+             "report_type": "otro", "notes": "n2", "fields": None,
+             "annotator": "user-2", "created_at": "2026-01-02T00:00:00Z"},
+            {"id": "row-1", "mesa_key": "01_001_01_01_1", "source": "e14d",
+             "report_type": "campos_vacios", "notes": "n1", "fields": None,
+             "annotator": "user-1", "created_at": "2026-01-01T00:00:00Z"},
+        ]
+        chain = _make_chain(rows)
+        mock_client = _make_client(chain)
+
+        with patch("src.modules.labeler.db._client", return_value=mock_client):
+            result = list_recent_transversal_reports(limit=50)
+
+        assert [r["id"] for r in result] == ["row-2", "row-1"]
+        assert [r["mesa_key"] for r in result] == ["01_001_01_01_2", "01_001_01_01_1"]
+        mock_client.table.assert_called_once_with("transversal_review_reports")
+        chain.eq.assert_not_called()
+        chain.order.assert_called_once_with("created_at", desc=True)
+        chain.limit.assert_called_once_with(50)
+
+    def test_returns_empty_list_when_no_rows(self):
+        from src.modules.labeler.db import list_recent_transversal_reports
+
+        chain = _make_chain([])
+        mock_client = _make_client(chain)
+
+        with patch("src.modules.labeler.db._client", return_value=mock_client):
+            result = list_recent_transversal_reports()
+
+        assert result == []
+
+    def test_returns_empty_on_supabase_error(self):
+        """On any exception, list_recent_transversal_reports returns [] (fail-closed)."""
+        from src.modules.labeler.db import list_recent_transversal_reports
+
+        with patch("src.modules.labeler.db._client", side_effect=RuntimeError("no client")):
+            result = list_recent_transversal_reports()
+
+        assert result == []
+
+    def test_default_limit_is_200(self):
+        from src.modules.labeler.db import list_recent_transversal_reports
+
+        chain = _make_chain([])
+        mock_client = _make_client(chain)
+
+        with patch("src.modules.labeler.db._client", return_value=mock_client):
+            list_recent_transversal_reports()
+
+        chain.limit.assert_called_once_with(200)
