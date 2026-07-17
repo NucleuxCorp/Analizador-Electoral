@@ -246,6 +246,77 @@ class TestAuthLogin:
 
 
 # ---------------------------------------------------------------------------
+# POST /auth/login — role revalidation set (regression: ROLE_MODERATOR)
+# ---------------------------------------------------------------------------
+
+class TestAuthLoginRoleRevalidation:
+    def _mock_login_response(self, *, user_id: str, role: str):
+        mock_session = MagicMock()
+        mock_session.access_token = "fake-access-token"
+        mock_session.refresh_token = "fake-refresh-token"
+
+        mock_user = MagicMock()
+        mock_user.id = user_id
+        mock_user.email = "test@example.com"
+        mock_user.app_metadata = {"role": role}
+
+        mock_response = MagicMock()
+        mock_response.session = mock_session
+        mock_response.user = mock_user
+        return mock_response
+
+    def test_moderator_role_persists_across_login(self, client):
+        """
+        Regression: a user whose app_metadata.role == 'moderator' must keep
+        role == 'moderator' after the server.py:~1358 revalidation set runs,
+        instead of being silently reset to 'validator'. Redirect must match
+        the ROLE_ADMIN/ROLE_MODERATOR target (/admin/conflicts), consistent
+        with how both roles are already redirected together.
+        """
+        user_id = "moderator-user-id"
+        mock_response = self._mock_login_response(user_id=user_id, role="moderator")
+
+        mock_supabase = MagicMock()
+        mock_supabase.auth.sign_in_with_password.return_value = mock_response
+
+        from src.modules.labeler import auth as auth_module
+
+        with patch("src.modules.labeler.auth.init_supabase_client", return_value=mock_supabase):
+            resp = client.post(
+                "/auth/login",
+                json={"email": "moderator@example.com", "password": "correct-password"},
+            )
+
+        assert resp.status_code == 302
+        assert resp.headers.get("Location") in ("/admin/conflicts", "http://localhost/admin/conflicts")
+
+        cached_role, _ = auth_module._role_cache[user_id]
+        assert cached_role == "moderator"
+
+    def test_unknown_role_falls_back_to_validator(self, client):
+        """Unchanged behavior: an unrecognized role must still fall back to validator."""
+        user_id = "unknown-role-user-id"
+        mock_response = self._mock_login_response(user_id=user_id, role="totally-bogus-role")
+
+        mock_supabase = MagicMock()
+        mock_supabase.auth.sign_in_with_password.return_value = mock_response
+
+        from src.modules.labeler import auth as auth_module
+
+        with patch("src.modules.labeler.auth.init_supabase_client", return_value=mock_supabase):
+            resp = client.post(
+                "/auth/login",
+                json={"email": "unknown@example.com", "password": "correct-password"},
+            )
+
+        assert resp.status_code == 302
+        assert resp.headers.get("Location") in ("/work", "http://localhost/work")
+
+        cached_role, _ = auth_module._role_cache[user_id]
+        assert cached_role == "validator"
+
+
+# ---------------------------------------------------------------------------
 # POST /label — dev bypass mode so no JWT needed
 # ---------------------------------------------------------------------------
 

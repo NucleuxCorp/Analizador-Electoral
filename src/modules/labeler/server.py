@@ -1355,7 +1355,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                     role = ROLE_VALIDATOR
                 else:
                     role = app_meta["role"]
-                    if role not in {ROLE_ADMIN, ROLE_VALIDATOR, ROLE_REVIEWER, ROLE_READER}:
+                    if role not in {ROLE_ADMIN, ROLE_MODERATOR, ROLE_VALIDATOR, ROLE_REVIEWER, ROLE_READER}:
                         role = ROLE_VALIDATOR
 
                 # Prime the in-process cache so the first request after login is instant
