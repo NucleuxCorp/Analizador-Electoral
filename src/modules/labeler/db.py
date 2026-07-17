@@ -939,6 +939,8 @@ def _fetch_mesa_results_batched(select_cols: str, dept: str | None = None) -> li
 
     Shared by _get_mesa_stats_uncached and _get_hierarchical_mesa_stats_uncached
     so both stay in sync on the pagination strategy.
+
+    Always orders by mesa_key so OFFSET/RANGE pagination is stable.
     """
     _BATCH = 1000
     rows: list[dict] = []
@@ -947,6 +949,7 @@ def _fetch_mesa_results_batched(select_cols: str, dept: str | None = None) -> li
         q = (
             _client().table("mesa_results")
             .select(select_cols)
+            .order("mesa_key")
             .range(offset, offset + _BATCH - 1)
         )
         if dept is not None:
@@ -1641,14 +1644,6 @@ _hierarchical_stats_cache: dict = {}
 _HIERARCHICAL_STATS_TTL = 300  # seconds
 _HIERARCHICAL_STATS_CACHE_KEY = "hierarchical"
 
-_HIERARCHICAL_EMPTY_SHAPE: dict = {
-    "by_mpio": {},
-    "by_puesto": {},
-    "_global": {},
-    "review_by_mesa": {},
-}
-
-
 def _empty_hierarchical_bucket() -> dict:
     """A fresh per-bucket dict: the 5-status taxonomy + total + review counts."""
     bucket = {st: 0 for st in _MESA_STATUSES}
@@ -1665,6 +1660,31 @@ def _accumulate_status(bucket: dict, status: str) -> None:
     bucket["total"] += 1
 
 
+def _hierarchical_coords_from_row(row: dict) -> tuple[str, str, str, str] | None:
+    """Extract dept/mpio/zona/puesto from columns or mesa_key fallback."""
+    dept = row.get("dept")
+    mpio = row.get("mpio")
+    zona = row.get("zona")
+    puesto = row.get("puesto")
+    if dept and mpio and zona and puesto:
+        return str(dept), str(mpio), str(zona), str(puesto)
+    mk = (row.get("mesa_key") or "").strip()
+    parts = mk.split("_")
+    if len(parts) >= 5:
+        return parts[0], parts[1], parts[2], parts[3]
+    return None
+
+
+def _empty_hierarchical_shape() -> dict:
+    """Fresh empty result (no shared nested dicts)."""
+    return {
+        "by_mpio": {},
+        "by_puesto": {},
+        "_global": _empty_hierarchical_bucket(),
+        "review_by_mesa": {},
+    }
+
+
 def _get_hierarchical_mesa_stats_uncached() -> dict:
     """
     Build the by_mpio / by_puesto / _global / review_by_mesa aggregation
@@ -1679,46 +1699,61 @@ def _get_hierarchical_mesa_stats_uncached() -> dict:
     zero-row DIVIPOLE entries), since buckets are built strictly from
     mesa_results rows.
 
-    Returns the empty shape (all sub-dicts {}) on any exception (fail-closed).
+    Returns the empty shape on hard failure (fail-closed). Semaphore merge
+    failures never discard status aggregation.
     """
     try:
-        rows = _fetch_mesa_results_batched("dept, mpio, zona, puesto, mesa, overall_status")
+        # Prefer the same slim column set as get_mesa_stats + geo coords.
+        # Fall back to mesa_key parse if a wider select is rejected by PostgREST.
+        try:
+            rows = _fetch_mesa_results_batched(
+                "mesa_key, dept, mpio, zona, puesto, overall_status"
+            )
+        except Exception as fetch_exc:
+            logger.warning(
+                "hierarchical select with coords failed, falling back to mesa_key: %s",
+                fetch_exc,
+            )
+            rows = _fetch_mesa_results_batched("mesa_key, overall_status")
+    except Exception as exc:
+        logger.warning("_get_hierarchical_mesa_stats_uncached fetch failed: %s", exc)
+        return _empty_hierarchical_shape()
 
-        by_mpio: dict[str, dict] = {}
-        by_puesto: dict[str, dict[str, dict]] = {}
-        global_counts = _empty_hierarchical_bucket()
+    by_mpio: dict[str, dict] = {}
+    by_puesto: dict[str, dict[str, dict]] = {}
+    global_counts = _empty_hierarchical_bucket()
 
-        for row in rows:
-            dept = row.get("dept", "unknown")
-            mpio = row.get("mpio", "unknown")
-            zona = row.get("zona", "unknown")
-            puesto = row.get("puesto", "unknown")
-            status = row.get("overall_status", "unknown")
+    for row in rows:
+        coords = _hierarchical_coords_from_row(row)
+        if coords is None:
+            continue
+        dept, mpio, zona, puesto = coords
+        status = row.get("overall_status", "unknown")
 
-            mpio_key = f"{dept}_{mpio}"
-            if mpio_key not in by_mpio:
-                bucket = _empty_hierarchical_bucket()
-                bucket["dept"] = dept
-                bucket["mpio"] = mpio
-                by_mpio[mpio_key] = bucket
-            _accumulate_status(by_mpio[mpio_key], status)
+        mpio_key = f"{dept}_{mpio}"
+        if mpio_key not in by_mpio:
+            bucket = _empty_hierarchical_bucket()
+            bucket["dept"] = dept
+            bucket["mpio"] = mpio
+            by_mpio[mpio_key] = bucket
+        _accumulate_status(by_mpio[mpio_key], status)
 
-            puesto_bucket_map = by_puesto.setdefault(mpio_key, {})
-            puesto_key = f"{zona}_{puesto}"
-            if puesto_key not in puesto_bucket_map:
-                bucket = _empty_hierarchical_bucket()
-                bucket["dept"] = dept
-                bucket["mpio"] = mpio
-                bucket["zona"] = zona
-                bucket["puesto"] = puesto
-                puesto_bucket_map[puesto_key] = bucket
-            _accumulate_status(puesto_bucket_map[puesto_key], status)
+        puesto_bucket_map = by_puesto.setdefault(mpio_key, {})
+        puesto_key = f"{zona}_{puesto}"
+        if puesto_key not in puesto_bucket_map:
+            bucket = _empty_hierarchical_bucket()
+            bucket["dept"] = dept
+            bucket["mpio"] = mpio
+            bucket["zona"] = zona
+            bucket["puesto"] = puesto
+            puesto_bucket_map[puesto_key] = bucket
+        _accumulate_status(puesto_bucket_map[puesto_key], status)
 
-            _accumulate_status(global_counts, status)
+        _accumulate_status(global_counts, status)
 
-        # Merge in 🟡/🟢 review counts from the semaphore RPC, parsing
-        # mesa_key_mr as dept_mpio_zona_puesto_mesa (same format as mesa_key).
-        review_by_mesa: dict[str, dict] = {}
+    # Review counts are best-effort — never wipe status aggregation on RPC failure.
+    review_by_mesa: dict[str, dict] = {}
+    try:
         semaphore_data = _get_review_semaphore_uncached()
         for mesa_mr, info in semaphore_data.items():
             parts = mesa_mr.split("_")
@@ -1735,8 +1770,6 @@ def _get_hierarchical_mesa_stats_uncached() -> dict:
             mpio_key = f"{dept}_{mpio}"
             puesto_key = f"{zona}_{puesto}"
             if mpio_key not in by_mpio:
-                # Mesa not present in the mesa_results scan (e.g. RPC/table
-                # skew) — skip so _global stays the sum of its children.
                 continue
             targets = [global_counts, by_mpio[mpio_key]]
             if mpio_key in by_puesto and puesto_key in by_puesto[mpio_key]:
@@ -1747,16 +1780,15 @@ def _get_hierarchical_mesa_stats_uncached() -> dict:
                     bucket["revisada"] += 1
                 elif info.get("en_revision"):
                     bucket["en_revision"] += 1
-
-        return {
-            "by_mpio": by_mpio,
-            "by_puesto": by_puesto,
-            "_global": global_counts,
-            "review_by_mesa": review_by_mesa,
-        }
     except Exception as exc:
-        logger.warning("_get_hierarchical_mesa_stats_uncached failed: %s", exc)
-        return dict(_HIERARCHICAL_EMPTY_SHAPE)
+        logger.warning("hierarchical semaphore merge failed: %s", exc)
+
+    return {
+        "by_mpio": by_mpio,
+        "by_puesto": by_puesto,
+        "_global": global_counts,
+        "review_by_mesa": review_by_mesa,
+    }
 
 
 def get_hierarchical_mesa_stats() -> dict:
@@ -1774,15 +1806,25 @@ def get_hierarchical_mesa_stats() -> dict:
                                  "revisada_result": str | None}},
         }
 
-    Delegates to _get_hierarchical_mesa_stats_uncached() on a cache miss and
-    stores the result under a single fixed cache key (one global scan).
-    Returns the empty shape on any exception (fail-closed).
+    Delegates to _get_hierarchical_mesa_stats_uncached() on a cache miss.
+    Successful non-empty results are cached; empty/fail-closed results are not
+    (so a transient outage does not pin zeros for the full TTL).
     """
     now = time.monotonic()
     entry = _hierarchical_stats_cache.get(_HIERARCHICAL_STATS_CACHE_KEY)
     if entry is not None and (now - entry["ts"]) < _HIERARCHICAL_STATS_TTL:
         return entry["data"]
 
-    data = _get_hierarchical_mesa_stats_uncached()
-    _hierarchical_stats_cache[_HIERARCHICAL_STATS_CACHE_KEY] = {"data": data, "ts": now}
+    try:
+        data = _get_hierarchical_mesa_stats_uncached()
+    except Exception as exc:
+        logger.warning("get_hierarchical_mesa_stats failed: %s", exc)
+        return _empty_hierarchical_shape()
+
+    total = (data.get("_global") or {}).get("total", 0) or 0
+    if total > 0 or data.get("by_mpio"):
+        _hierarchical_stats_cache[_HIERARCHICAL_STATS_CACHE_KEY] = {
+            "data": data,
+            "ts": now,
+        }
     return data

@@ -1471,12 +1471,20 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 logger.warning("mesas_view (L1) get_hierarchical_mesa_stats failed: %s", exc)
                 stats = None
 
-            if stats is None:
-                return render_template(
-                    "mesas.html", level=1, unavailable=True,
-                    breadcrumbs=_mesas_l1_breadcrumbs(), rows=[],
-                    page=1, total_pages=1, semaphore=None,
-                )
+            # Empty hierarchical with known national data = backend failure, not "no mesas".
+            hier_total = ((stats or {}).get("_global") or {}).get("total", 0) or 0
+            if stats is None or (hier_total == 0 and not (stats or {}).get("by_mpio")):
+                try:
+                    flat = _db.get_mesa_stats() or {}
+                    flat_total = (flat.get("_global") or {}).get("total", 0) or 0
+                except Exception:
+                    flat_total = 0
+                if flat_total > 0 or stats is None:
+                    return render_template(
+                        "mesas.html", level=1, unavailable=True,
+                        breadcrumbs=_mesas_l1_breadcrumbs(), rows=[],
+                        page=1, total_pages=1, semaphore=None,
+                    )
 
             rows = _build_mesas_level1_rows(stats)
             return render_template(

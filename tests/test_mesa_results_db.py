@@ -25,6 +25,20 @@ def _make_chain(rows: list[dict] | None = None) -> MagicMock:
     return chain
 
 
+def _empty_global_bucket() -> dict:
+    """Match db._empty_hierarchical_bucket() for fail-closed assertions."""
+    return {
+        "clean": 0,
+        "known_anomaly": 0,
+        "warning": 0,
+        "discrepancy": 0,
+        "needs_review_large_delta": 0,
+        "total": 0,
+        "en_revision": 0,
+        "revisada": 0,
+    }
+
+
 def _make_client(chain: MagicMock | None = None) -> MagicMock:
     """Return a mock supabase client wired to the given chain."""
     client = MagicMock()
@@ -179,9 +193,10 @@ class TestGetMesaStatsAllDepts:
     """get_mesa_stats returns a dict keyed by dept code plus a _global key."""
 
     def _make_stats_client(self, rows: list[dict]) -> MagicMock:
-        """Return a client whose .table().select().limit().eq().execute() returns rows."""
+        """Return a client whose .table().select().order().range().eq().execute() returns rows."""
         chain = MagicMock()
         chain.select.return_value = chain
+        chain.order.return_value = chain
         chain.range.return_value = chain
         chain.limit.return_value = chain
         chain.eq.return_value = chain
@@ -256,6 +271,7 @@ class TestGetMesaStatsFiltered:
         rows = [{"dept": "01", "overall_status": "clean"}]
         chain = MagicMock()
         chain.select.return_value = chain
+        chain.order.return_value = chain
         chain.range.return_value = chain
         chain.limit.return_value = chain
         chain.eq.return_value = chain
@@ -350,6 +366,7 @@ class TestGetMesaStatsSupabaseUnavailable:
 
         chain = MagicMock()
         chain.select.return_value = chain
+        chain.order.return_value = chain
         chain.range.return_value = chain
         chain.limit.return_value = chain
         chain.eq.return_value = chain
@@ -385,6 +402,7 @@ class TestGetHierarchicalMesaStats:
         table_chain.select.return_value = table_chain
         table_chain.range.return_value = table_chain
         table_chain.eq.return_value = table_chain
+        table_chain.order.return_value = table_chain
         table_chain.execute.return_value = MagicMock(data=mesa_rows)
 
         rpc_chain = MagicMock()
@@ -539,7 +557,21 @@ class TestGetHierarchicalMesaStats:
         with patch("src.modules.labeler.db._client", side_effect=RuntimeError("no client")):
             result = db_module.get_hierarchical_mesa_stats()
 
-        assert result == {"by_mpio": {}, "by_puesto": {}, "_global": {}, "review_by_mesa": {}}
+        assert result["by_mpio"] == {}
+        assert result["by_puesto"] == {}
+        assert result["review_by_mesa"] == {}
+        assert result["_global"] == _empty_global_bucket()
+
+    def test_empty_result_is_not_cached(self):
+        """Fail-closed empty responses must not pin zeros for the full TTL."""
+        import src.modules.labeler.db as db_module
+
+        db_module._hierarchical_stats_cache.clear()
+
+        with patch("src.modules.labeler.db._client", side_effect=RuntimeError("no client")):
+            db_module.get_hierarchical_mesa_stats()
+
+        assert db_module._hierarchical_stats_cache == {}
 
 
 class TestGetMesaResultsHierarchicalFilters:
