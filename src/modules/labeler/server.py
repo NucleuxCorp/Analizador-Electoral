@@ -199,16 +199,33 @@ def _verify_recaptcha(response_token: str, action: str = "") -> bool:
 # ---------------------------------------------------------------------------
 
 _DIVIPOLE: dict = {}
+# Repo root (…/src/modules/labeler/server.py → parents[3]) — more reliable than cwd on Railway.
+_REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
-def _load_divipole(root: Path) -> None:
+def _load_divipole(root: Path | None = None) -> None:
+    """Load DIVIPOLE hierarchy for readable municipio/puesto names on /mesas.
+
+    Source of truth: ``data/divipole.json`` (Registraduría-derived codes + school names).
+    Shape: departamentos → municipios → zonas → puestos, each with ``nombre``.
+    """
     global _DIVIPOLE
-    path = root / "data" / "divipole.json"
-    if path.exists():
+    candidates = []
+    if root is not None:
+        candidates.append(Path(root) / "data" / "divipole.json")
+    candidates.append(_REPO_ROOT / "data" / "divipole.json")
+    candidates.append(Path.cwd() / "data" / "divipole.json")
+    for path in candidates:
+        if not path.is_file():
+            continue
         try:
             _DIVIPOLE = json.loads(path.read_text(encoding="utf-8")).get("departamentos", {})
-        except Exception:
-            _DIVIPOLE = {}
+            logger.info("DIVIPOLE loaded from %s (%s depts)", path, len(_DIVIPOLE))
+            return
+        except Exception as exc:
+            logger.warning("DIVIPOLE load failed %s: %s", path, exc)
+    _DIVIPOLE = {}
+    logger.warning("DIVIPOLE not found — municipio/puesto names will fall back to codes")
 
 
 # ---------------------------------------------------------------------------
@@ -522,13 +539,30 @@ def _pad_divipole_code(code: str, width: int) -> str:
 
 
 def _divipole_key_candidates(code: str, width: int) -> list[str]:
-    """Prefer zero-padded key, then raw — mesa_results codes are often unpadded."""
+    """Generate lookup keys for mesa_results codes that may differ in zero-padding.
+
+    Registraduría / mesa_results often use ``001`` for a zone stored as ``01`` in
+    divipole.json. Plain zfill(width) does not shrink longer strings, so we also
+    try int-normalized forms (``001`` → ``1`` → ``01``).
+    """
     raw = str(code or "").strip()
-    padded = _pad_divipole_code(raw, width)
     out: list[str] = []
-    for k in (padded, raw):
-        if k and k not in out:
-            out.append(k)
+
+    def add(key: str) -> None:
+        if key and key not in out:
+            out.append(key)
+
+    add(raw)
+    if raw.isdigit():
+        add(raw.zfill(width))
+        # Common DIVIPOLE widths in this project
+        for w in (2, 3):
+            add(raw.zfill(w))
+        bare = str(int(raw))  # strip leading zeros
+        add(bare)
+        add(bare.zfill(width))
+        for w in (2, 3):
+            add(bare.zfill(w))
     return out
 
 
@@ -2198,7 +2232,8 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 mesa_key, field, source, decision, g.user_id, notes=notes
             )
             if not ok:
-                window = _db.get_transversal_decision_edit_window(mesa_key)
+                # Edit lock is per-field (3 h from first decision on that field).
+                window = _db.get_transversal_decision_edit_window(mesa_key, field=field)
                 if window["decision_count"] > 0 and not window["editable"]:
                     return jsonify({"ok": False, "error": "edit_window_expired"}), 403
                 return jsonify({"ok": False, "error": "invalid_or_failed"}), 400
@@ -2210,9 +2245,10 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
         def api_transversal_decisions_reopen() -> Response:
             body = request.get_json(force=True, silent=True) or {}
             mesa_key = body.get("mesa_key")
+            field = body.get("field")  # optional: reopen one field only
             if not mesa_key:
                 return jsonify({"ok": False, "error": "missing_fields"}), 400
-            ok, err = _db.reopen_transversal_decisions(mesa_key)
+            ok, err = _db.reopen_transversal_decisions(mesa_key, field=field)
             if not ok:
                 code = 403 if err == "edit_window_expired" else 400
                 return jsonify({"ok": False, "error": err or "failed"}), code

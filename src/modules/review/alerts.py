@@ -54,19 +54,25 @@ def build_mesa_alert_package(
     auto: list[dict] = []
     human: list[dict] = []
 
+    def _decision_sources() -> list[dict]:
+        # Always offer accept/reject for every source (e14c/e14d/e14t).
+        # Image availability is orthogonal: missing pages should not hide the
+        # E14D/E14T decision slot (reviewers were stuck unable to reject them).
+        return [
+            {
+                "src": src,
+                "label": SOURCE_LABELS[src],
+                "color": SOURCE_COLORS[src],
+                "available": bool(avail(mk, src)),
+            }
+            for src in SOURCES
+        ]
+
     if TRANSVERSAL_REAL_BLANK_ONLY:
         for field in TOTAL_FIELDS:
             cls = field_class.get(field, "missing")
             if cls != REAL_BLANK_CLASS:
                 continue
-            sources = []
-            for src in SOURCES:
-                if avail(mk, src):
-                    sources.append({
-                        "src": src,
-                        "label": SOURCE_LABELS[src],
-                        "color": SOURCE_COLORS[src],
-                    })
             human.append({
                 "field": field,
                 "field_label": FIELD_LABELS[field],
@@ -74,7 +80,7 @@ def build_mesa_alert_package(
                 "msg": CLASS_MSG.get(cls, cls),
                 "stored": (index_row.get("stored_arrays") or {}).get(field),
                 "tier": "blank_confirm",
-                "sources": sources,
+                "sources": _decision_sources(),
                 "decision_key": field,
             })
     else:
@@ -92,18 +98,10 @@ def build_mesa_alert_package(
                 continue
             if cls not in HUMAN_CLASSES:
                 continue
-            sources = []
-            for src in SOURCES:
-                if avail(mk, src):
-                    sources.append({
-                        "src": src,
-                        "label": SOURCE_LABELS[src],
-                        "color": SOURCE_COLORS[src],
-                    })
             human.append({
                 **base,
                 "tier": "human",
-                "sources": sources,
+                "sources": _decision_sources(),
                 "decision_key": field,
             })
 

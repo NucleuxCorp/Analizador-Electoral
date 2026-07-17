@@ -135,7 +135,7 @@ class TestTransversalRoutesAuth:
             )
         assert resp.status_code == 200
         assert resp.get_json()["ok"] is True
-        mock_reopen.assert_called_once_with("01_001_026_08_011")
+        mock_reopen.assert_called_once_with("01_001_026_08_011", field=None)
 
     def test_post_transversal_report(self, client):
         with patch("src.modules.labeler.auth.decode_jwt", return_value={"sub": "mod-user"}), \

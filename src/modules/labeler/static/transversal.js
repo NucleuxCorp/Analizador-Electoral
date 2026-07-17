@@ -357,6 +357,17 @@ function renderMesaMain() {
 
 function decisionEditMeta() {
   return (mesaDetail && mesaDetail.decision_edit) || {
+    scope: 'field',
+    fields: {},
+    decision_count: 0,
+  };
+}
+
+/** Per-field 3 h window (from first decision on that field only). */
+function fieldEditMeta(field) {
+  const pkg = decisionEditMeta();
+  const fields = pkg.fields || {};
+  return fields[field] || {
     editable: true,
     editable_until: null,
     first_decision_at: null,
@@ -378,7 +389,6 @@ function renderAlerts(mesaKey) {
   const human = pkg.human || [];
   const auto = pkg.auto || [];
   const mesaDecisions = (mesaDetail && mesaDetail.decisions) || {};
-  const editMeta = decisionEditMeta();
 
   function isPending(h) {
     const fd = mesaDecisions[h.field] || {};
@@ -411,75 +421,66 @@ function renderAlerts(mesaKey) {
     return;
   }
 
-  if (pending === 0 && human.length) {
-    html += human.map((h) => {
-      const fd = mesaDecisions[h.field] || {};
-      return (h.sources || []).map((s) => {
-        const dec = fd[s.src];
-        if (!dec) return '';
-        const icon = dec === 'accepted' ? '✓' : '✗';
-        const color = dec === 'accepted' ? '#16a34a' : '#dc2626';
-        return `<div class="decided-row">
-          <span style="color:${color}">${icon}</span>
-          <span>${h.field_label} · ${s.label}</span>
-        </div>`;
-      }).join('');
-    }).join('');
-    if (editMeta.decision_count > 0 && editMeta.editable) {
-      html += `<button type="button" class="btn-reopen" onclick="reopenMesa('${mesaKey}')">Reabrir (editar de nuevo)</button>`;
-      html += `<div class="edit-locked">Editable hasta ${formatEditDeadline(editMeta.editable_until)}</div>`;
-    } else if (editMeta.decision_count > 0) {
-      html += '<div class="edit-locked">Cerrado — pasaron más de 3 h desde la primera decisión.</div>';
-    }
-    body.innerHTML = html;
-    return;
-  }
-
   const blankConfirm = human.every((h) => h.tier === 'blank_confirm' || h.class === 'confirmed_blank');
   const sectionLabel = blankConfirm
     ? `Blancos reales — confirmar (${pending} pendiente(s))`
     : `Revisión humana (${human.length} campo(s))`;
   html += `<div class="alert-section-label human">${sectionLabel}</div>`;
-  if (!editMeta.editable && editMeta.decision_count > 0) {
-    html += '<div class="edit-locked">Ventana de edición cerrada (3 h). No puedes guardar más cambios.</div>';
-  } else if (editMeta.editable_until) {
-    html += `<div class="edit-locked">Editable hasta ${formatEditDeadline(editMeta.editable_until)}</div>`;
-  }
+  html += '<div class="edit-locked">La ventana de 3 h aplica por campo (no por mesa).</div>';
+
   html += human.map((h) => {
     const fd = mesaDecisions[h.field] || {};
+    const fw = fieldEditMeta(h.field);
+    const locked = fw.decision_count > 0 && !fw.editable;
+    let fieldNote = '';
+    if (locked) {
+      fieldNote = '<div class="edit-locked">Campo cerrado (3 h desde su primera decisión).</div>';
+    } else if (fw.editable_until) {
+      fieldNote = `<div class="edit-locked">Este campo editable hasta ${formatEditDeadline(fw.editable_until)}</div>`;
+    }
     const srcRows = (h.sources || []).map((s) => {
       const dec = fd[s.src];
-      if (dec) {
-        const color = dec === 'accepted' ? '#16a34a' : '#dc2626';
-        return `<div class="decided-inline" style="color:${color}">${s.label}: ${dec === 'accepted' ? 'Aceptado' : 'Rechazado'}</div>`;
-      }
-      const disabled = (!editMeta.editable && editMeta.decision_count > 0) ? ' disabled' : '';
+      const disabled = locked ? ' disabled' : '';
+      const acceptCls = dec === 'accepted' ? ' is-current' : '';
+      const rejectCls = dec === 'rejected' ? ' is-current' : '';
+      const missing = s.available === false
+        ? '<span class="src-missing" title="Sin página renderizada; igual puedes aceptar o rechazar">sin imagen</span>'
+        : '';
       return `<div class="alert-actions">
         <span class="alert-src-dot" style="background:${s.color}"></span>
-        <span class="src-name">${s.label}</span>
-        <button type="button" class="btn-accept"${disabled} onclick="saveDecision('${mesaKey}','${h.field}','${s.src}','accepted')">✓</button>
-        <button type="button" class="btn-reject"${disabled} onclick="saveDecision('${mesaKey}','${h.field}','${s.src}','rejected')">✗</button>
+        <span class="src-name">${s.label}${missing ? ' ' + missing : ''}</span>
+        <button type="button" class="btn-accept${acceptCls}"${disabled}
+          onclick="saveDecision('${mesaKey}','${h.field}','${s.src}','accepted')"
+          title="${dec === 'accepted' ? 'Ya aceptado' : 'Aceptar'}">✓</button>
+        <button type="button" class="btn-reject${rejectCls}"${disabled}
+          onclick="saveDecision('${mesaKey}','${h.field}','${s.src}','rejected')"
+          title="${dec === 'rejected' ? 'Ya rechazado' : 'Rechazar'}">✗</button>
       </div>`;
     }).join('');
     const tierBadge = h.tier === 'blank_confirm'
       ? '<span class="alert-auto-badge">BLANCO</span>'
       : `<span class="alert-class">${h.class}</span>`;
+    const reopenBtn = (fw.decision_count > 0 && fw.editable)
+      ? `<button type="button" class="btn-reopen" onclick="reopenField('${mesaKey}','${h.field}')">Reabrir ${h.field_label}</button>`
+      : '';
     return `<div class="alert-item">
       <div class="alert-item-header human">
         <span class="alert-src-name">${h.field_label}</span>
         ${tierBadge}
       </div>
       <div class="alert-msg">${h.msg}</div>
+      ${fieldNote}
       ${srcRows}
+      ${reopenBtn}
     </div>`;
   }).join('');
   body.innerHTML = html;
 }
 
 async function saveDecision(mesaKey, field, src, decision) {
-  const editMeta = decisionEditMeta();
-  if (!editMeta.editable && editMeta.decision_count > 0) {
-    alert('Ventana de edición cerrada (3 h desde la primera decisión).');
+  const fw = fieldEditMeta(field);
+  if (fw.decision_count > 0 && !fw.editable) {
+    alert('Ventana de edición cerrada para este campo (3 h desde su primera decisión).');
     return;
   }
   const resp = await fetch('/api/transversal/decisions', {
@@ -490,9 +491,11 @@ async function saveDecision(mesaKey, field, src, decision) {
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({}));
     if (err.error === 'edit_window_expired') {
-      alert('Ventana de edición cerrada (3 h desde la primera decisión).');
+      alert('Ventana de edición cerrada para este campo (3 h desde su primera decisión).');
+    } else if (err.error === 'invalid_or_failed') {
+      alert('No se pudo guardar la decisión (campo/fuente inválidos o error de base de datos).');
     } else {
-      alert('Error al guardar decisión');
+      alert(`Error al guardar decisión${err.error ? ': ' + err.error : ''}`);
     }
     return;
   }
@@ -534,13 +537,53 @@ function updateNavStatus() {
   });
 }
 
-async function reopenMesa(mesaKey) {
-  const editMeta = decisionEditMeta();
-  if (!editMeta.editable) {
-    alert('Ya no puedes reabrir esta mesa (pasaron más de 3 h).');
+async function reopenField(mesaKey, field) {
+  const fw = fieldEditMeta(field);
+  if (fw.decision_count > 0 && !fw.editable) {
+    alert('Ya no puedes reabrir este campo (pasaron más de 3 h desde su primera decisión).');
     return;
   }
-  if (!confirm('¿Borrar tus decisiones en esta mesa y volver a revisar?')) return;
+  if (!confirm(`¿Borrar decisiones de ${field} en esta mesa y volver a revisar ese campo?`)) return;
+  const resp = await fetch('/api/transversal/decisions/reopen', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mesa_key: mesaKey, field }),
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    alert(err.error === 'edit_window_expired'
+      ? 'Ventana de edición cerrada para este campo (3 h).'
+      : 'No se pudo reabrir el campo.');
+    return;
+  }
+  if (mesaDetail.decisions && mesaDetail.decisions[field]) {
+    delete mesaDetail.decisions[field];
+  }
+  const refresh = await fetch(`/api/transversal/mesa/${encodeURIComponent(mesaKey)}`);
+  if (refresh.ok) {
+    const data = await refresh.json();
+    mesaDetail.decisions = data.decisions || {};
+    mesaDetail.decision_edit = data.decision_edit || decisionEditMeta();
+  }
+  const item = itemByKey[mesaKey];
+  if (item && mesaDetail.alerts) {
+    const wasDone = (item.pending_human_count || 0) === 0;
+    item.decision_progress = computeProgress(mesaDetail.alerts, mesaDetail.decisions || {});
+    item.pending_human_count = countPending(mesaDetail.alerts, mesaDetail.decisions || {});
+    if (wasDone && item.pending_human_count > 0) {
+      queueMeta.pending += 1;
+      queueMeta.done = Math.max(0, queueMeta.done - 1);
+    }
+  }
+  renderAlerts(mesaKey);
+  updateNavStatus();
+  updateActiveNav();
+  updateStatsBar();
+}
+
+/** @deprecated use reopenField — kept for any leftover callers */
+async function reopenMesa(mesaKey) {
+  if (!confirm('¿Borrar las decisiones de campos aún editables en esta mesa?')) return;
   const resp = await fetch('/api/transversal/decisions/reopen', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -549,22 +592,23 @@ async function reopenMesa(mesaKey) {
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({}));
     alert(err.error === 'edit_window_expired'
-      ? 'Ventana de edición cerrada (3 h).'
-      : 'No se pudo reabrir la mesa.');
+      ? 'Ningún campo tiene ventana de edición abierta (3 h).'
+      : 'No se pudo reabrir.');
     return;
   }
-  mesaDetail.decisions = {};
-  mesaDetail.decision_edit = {
-    editable: true,
-    editable_until: null,
-    first_decision_at: null,
-    decision_count: 0,
-  };
+  const refresh = await fetch(`/api/transversal/mesa/${encodeURIComponent(mesaKey)}`);
+  if (refresh.ok) {
+    const data = await refresh.json();
+    mesaDetail.decisions = data.decisions || {};
+    mesaDetail.decision_edit = data.decision_edit || decisionEditMeta();
+  } else {
+    mesaDetail.decisions = {};
+  }
   const item = itemByKey[mesaKey];
   if (item && mesaDetail.alerts) {
     const wasDone = (item.pending_human_count || 0) === 0;
-    item.decision_progress = computeProgress(mesaDetail.alerts, {});
-    item.pending_human_count = countPending(mesaDetail.alerts, {});
+    item.decision_progress = computeProgress(mesaDetail.alerts, mesaDetail.decisions || {});
+    item.pending_human_count = countPending(mesaDetail.alerts, mesaDetail.decisions || {});
     if (wasDone && item.pending_human_count > 0) {
       queueMeta.pending += 1;
       queueMeta.done = Math.max(0, queueMeta.done - 1);
@@ -791,6 +835,7 @@ window.selectMesaByKey = selectMesaByKey;
 window.goPrev = goPrev;
 window.goNext = goNext;
 window.saveDecision = saveDecision;
+window.reopenField = reopenField;
 window.reopenMesa = reopenMesa;
 window.toggleSidebar = toggleSidebar;
 window.toggleAlertPanel = toggleAlertPanel;

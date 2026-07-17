@@ -79,3 +79,27 @@ class TestBuildMesaAlertPackage:
     def test_real_blank_fields_helper(self):
         fc = {"VOTANTES": "partial", "URNA": "confirmed_blank", "SUMA_TOTAL": "has_digits"}
         assert real_blank_fields(fc) == ["URNA"]
+
+    def test_missing_image_still_offers_all_decision_sources(self):
+        """E14D/E14T without rendered pages must still get accept/reject slots."""
+        row = {
+            "mesa_key": "01_001_002_05_020",
+            "blank_fields": ["SUMA_TOTAL"],
+            "field_class": {
+                "VOTANTES": "has_digits",
+                "URNA": "has_digits",
+                "SUMA_TOTAL": "confirmed_blank",
+            },
+            "stored_arrays": {"SUMA_TOTAL": [None, None, None]},
+        }
+
+        def only_e14c(_mk: str, src: str) -> bool:
+            return src == "e14c"
+
+        pkg = build_mesa_alert_package(row, source_available=only_e14c)
+        sources = pkg["human"][0]["sources"]
+        assert [s["src"] for s in sources] == ["e14c", "e14d", "e14t"]
+        by_src = {s["src"]: s for s in sources}
+        assert by_src["e14c"]["available"] is True
+        assert by_src["e14d"]["available"] is False
+        assert by_src["e14t"]["available"] is False

@@ -1331,52 +1331,137 @@ def _parse_utc_ts(value: str) -> datetime:
     return datetime.fromisoformat(ts).astimezone(timezone.utc)
 
 
-def get_transversal_decision_edit_window(mesa_key: str) -> dict:
-    """Return edit window metadata for a mesa (3 h from first saved decision)."""
-    try:
-        rows = (
-            _client()
-            .table("transversal_review_decisions")
-            .select("created_at")
-            .eq("mesa_key", mesa_key)
-            .execute()
-            .data
-        ) or []
-    except Exception as exc:
-        logger.warning("get_transversal_decision_edit_window failed: %s", exc)
-        return {
-            "editable": True,
-            "editable_until": None,
-            "first_decision_at": None,
-            "decision_count": 0,
-        }
-    if not rows:
-        return {
-            "editable": True,
-            "editable_until": None,
-            "first_decision_at": None,
-            "decision_count": 0,
-        }
-    first = min(_parse_utc_ts(row["created_at"]) for row in rows if row.get("created_at"))
-    until = first + timedelta(hours=TRANSVERSAL_DECISION_EDIT_HOURS)
-    now = datetime.now(timezone.utc)
+def _empty_field_window() -> dict:
     return {
-        "editable": now < until,
+        "editable": True,
+        "editable_until": None,
+        "first_decision_at": None,
+        "decision_count": 0,
+    }
+
+
+def _field_window_from_rows(rows: list[dict], *, now: datetime | None = None) -> dict:
+    """Build one field's 3 h window from its decision rows (created_at)."""
+    if not rows:
+        return _empty_field_window()
+    stamps = [_parse_utc_ts(r["created_at"]) for r in rows if r.get("created_at")]
+    if not stamps:
+        return _empty_field_window()
+    first = min(stamps)
+    until = first + timedelta(hours=TRANSVERSAL_DECISION_EDIT_HOURS)
+    current = now or datetime.now(timezone.utc)
+    return {
+        "editable": current < until,
         "editable_until": until.isoformat(),
         "first_decision_at": first.isoformat(),
         "decision_count": len(rows),
     }
 
 
-def reopen_transversal_decisions(mesa_key: str) -> tuple[bool, str | None]:
-    """Delete all decisions for a mesa so the reviewer can decide again (within edit window)."""
-    window = get_transversal_decision_edit_window(mesa_key)
-    if window["decision_count"] == 0:
+def get_transversal_decision_edit_window(mesa_key: str, field: str | None = None) -> dict:
+    """Return edit window metadata scoped per field (3 h from first decision on that field).
+
+    When ``field`` is set, returns that field's window dict (legacy single-window shape).
+    When omitted, returns::
+
+        {
+          "scope": "field",
+          "fields": { "VOTANTES": {...}, "URNA": {...}, "SUMA_TOTAL": {...} },
+          "decision_count": <total slots decided on this mesa>,
+        }
+    """
+    try:
+        query = (
+            _client()
+            .table("transversal_review_decisions")
+            .select("field, created_at")
+            .eq("mesa_key", mesa_key)
+        )
+        if field is not None:
+            query = query.eq("field", field)
+        rows = (query.execute().data) or []
+    except Exception as exc:
+        logger.warning("get_transversal_decision_edit_window failed: %s", exc)
+        if field is not None:
+            return _empty_field_window()
+        return {
+            "scope": "field",
+            "fields": {f: _empty_field_window() for f in _TRANSVERSAL_FIELDS},
+            "decision_count": 0,
+        }
+
+    now = datetime.now(timezone.utc)
+    if field is not None:
+        return _field_window_from_rows(rows, now=now)
+
+    by_field: dict[str, list[dict]] = {f: [] for f in _TRANSVERSAL_FIELDS}
+    for row in rows:
+        f = row.get("field")
+        if f in by_field:
+            by_field[f].append(row)
+
+    fields = {
+        f: _field_window_from_rows(by_field[f], now=now) for f in _TRANSVERSAL_FIELDS
+    }
+    return {
+        "scope": "field",
+        "fields": fields,
+        "decision_count": sum(w["decision_count"] for w in fields.values()),
+    }
+
+
+def reopen_transversal_decisions(
+    mesa_key: str,
+    field: str | None = None,
+) -> tuple[bool, str | None]:
+    """Delete decisions so the reviewer can decide again.
+
+    Scope is **per field**: pass ``field`` to clear one field (within its 3 h window).
+    Without ``field``, clears every field that is still within its own window.
+    """
+    if field is not None:
+        if field not in _TRANSVERSAL_FIELDS:
+            return False, "invalid_field"
+        window = get_transversal_decision_edit_window(mesa_key, field=field)
+        if window["decision_count"] == 0:
+            return False, "no_decisions"
+        if not window["editable"]:
+            return False, "edit_window_expired"
+        try:
+            (
+                _client()
+                .table("transversal_review_decisions")
+                .delete()
+                .eq("mesa_key", mesa_key)
+                .eq("field", field)
+                .execute()
+            )
+            return True, None
+        except Exception as exc:
+            logger.warning("reopen_transversal_decisions failed: %s", exc)
+            return False, "db_error"
+
+    # Reopen all fields still inside their individual windows.
+    package = get_transversal_decision_edit_window(mesa_key)
+    fields_meta = package.get("fields") or {}
+    reopenable = [
+        f for f, w in fields_meta.items()
+        if w.get("decision_count", 0) > 0 and w.get("editable")
+    ]
+    if package.get("decision_count", 0) == 0:
         return False, "no_decisions"
-    if not window["editable"]:
+    if not reopenable:
         return False, "edit_window_expired"
     try:
-        _client().table("transversal_review_decisions").delete().eq("mesa_key", mesa_key).execute()
+        for f in reopenable:
+            (
+                _client()
+                .table("transversal_review_decisions")
+                .delete()
+                .eq("mesa_key", mesa_key)
+                .eq("field", f)
+                .execute()
+            )
         return True, None
     except Exception as exc:
         logger.warning("reopen_transversal_decisions failed: %s", exc)
@@ -1391,14 +1476,17 @@ def upsert_transversal_decision(
     reviewer_id: str,
     notes: str | None = None,
 ) -> bool:
-    """Upsert one transversal review decision. Returns False on validation/DB error."""
+    """Upsert one transversal review decision. Returns False on validation/DB error.
+
+    Edit window is **per field** (3 h from the first decision on that field only).
+    """
     if field not in _TRANSVERSAL_FIELDS:
         return False
     if source not in _TRANSVERSAL_SOURCES:
         return False
     if decision not in _TRANSVERSAL_DECISIONS:
         return False
-    window = get_transversal_decision_edit_window(mesa_key)
+    window = get_transversal_decision_edit_window(mesa_key, field=field)
     if window["decision_count"] > 0 and not window["editable"]:
         return False
     try:

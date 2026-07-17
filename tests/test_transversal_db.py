@@ -89,21 +89,74 @@ class TestTransversalDecisionEditWindow:
         chain = _make_chain([])
         with patch("src.modules.labeler.db._client", return_value=_make_client(chain)):
             window = db.get_transversal_decision_edit_window("01_001_026_08_011")
-        assert window["editable"] is True
+        assert window["scope"] == "field"
         assert window["decision_count"] == 0
-        assert window["first_decision_at"] is None
+        assert window["fields"]["SUMA_TOTAL"]["editable"] is True
+        assert window["fields"]["SUMA_TOTAL"]["first_decision_at"] is None
+
+    def test_window_is_per_field_not_mesa(self):
+        """Expired SUMA_TOTAL must not lock a fresh VOTANTES field."""
+        from datetime import datetime, timedelta, timezone
+        from src.modules.labeler import db
+
+        old = (datetime.now(timezone.utc) - timedelta(hours=4)).isoformat()
+        recent = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat()
+        rows = [
+            {"field": "SUMA_TOTAL", "created_at": old},
+            {"field": "SUMA_TOTAL", "created_at": old},
+            {"field": "VOTANTES", "created_at": recent},
+        ]
+        chain = _make_chain(rows)
+        with patch("src.modules.labeler.db._client", return_value=_make_client(chain)):
+            pkg = db.get_transversal_decision_edit_window("01_001_002_05_020")
+        assert pkg["scope"] == "field"
+        assert pkg["fields"]["SUMA_TOTAL"]["editable"] is False
+        assert pkg["fields"]["VOTANTES"]["editable"] is True
+        assert pkg["fields"]["URNA"]["editable"] is True  # no decisions yet
+
+        # Single-field query shape (DB would filter; mock returns only that field's rows)
+        with patch(
+            "src.modules.labeler.db._client",
+            return_value=_make_client(
+                _make_chain([{"field": "VOTANTES", "created_at": recent}])
+            ),
+        ):
+            vot = db.get_transversal_decision_edit_window(
+                "01_001_002_05_020", field="VOTANTES"
+            )
+        assert vot["editable"] is True
+        assert vot["decision_count"] == 1
+
+    def test_upsert_blocked_only_for_expired_field(self):
+        from datetime import datetime, timedelta, timezone
+        from src.modules.labeler import db
+
+        old = (datetime.now(timezone.utc) - timedelta(hours=4)).isoformat()
+        # First call: window check for SUMA_TOTAL (expired)
+        window_chain = _make_chain([{"field": "SUMA_TOTAL", "created_at": old}])
+        client = MagicMock()
+        client.table.return_value = window_chain
+        with patch("src.modules.labeler.db._client", return_value=client):
+            ok = db.upsert_transversal_decision(
+                "01_001_002_05_020", "SUMA_TOTAL", "e14d", "rejected", "uid",
+            )
+        assert ok is False
 
     def test_reopen_blocked_after_window(self):
         from datetime import datetime, timedelta, timezone
         from src.modules.labeler import db
 
         old = (datetime.now(timezone.utc) - timedelta(hours=4)).isoformat()
-        chain = _make_chain([{"created_at": old}])
+        chain = _make_chain([{"field": "SUMA_TOTAL", "created_at": old}])
         client = MagicMock()
         client.table.return_value = chain
         with patch("src.modules.labeler.db._client", return_value=client):
-            window = db.get_transversal_decision_edit_window("01_001_026_08_011")
-            ok, err = db.reopen_transversal_decisions("01_001_026_08_011")
+            window = db.get_transversal_decision_edit_window(
+                "01_001_026_08_011", field="SUMA_TOTAL"
+            )
+            ok, err = db.reopen_transversal_decisions(
+                "01_001_026_08_011", field="SUMA_TOTAL"
+            )
         assert window["editable"] is False
         assert ok is False
         assert err == "edit_window_expired"
@@ -113,7 +166,7 @@ class TestTransversalDecisionEditWindow:
         from src.modules.labeler import db
 
         recent = (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat()
-        select_chain = _make_chain([{"created_at": recent}])
+        select_chain = _make_chain([{"field": "SUMA_TOTAL", "created_at": recent}])
         delete_chain = MagicMock()
         delete_chain.delete.return_value = delete_chain
         delete_chain.eq.return_value = delete_chain
@@ -121,7 +174,9 @@ class TestTransversalDecisionEditWindow:
         client = MagicMock()
         client.table.side_effect = [select_chain, delete_chain]
         with patch("src.modules.labeler.db._client", return_value=client):
-            ok, err = db.reopen_transversal_decisions("01_001_026_08_011")
+            ok, err = db.reopen_transversal_decisions(
+                "01_001_026_08_011", field="SUMA_TOTAL"
+            )
         assert ok is True
         assert err is None
         delete_chain.delete.assert_called_once()

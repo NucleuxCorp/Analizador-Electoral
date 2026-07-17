@@ -35,7 +35,10 @@ data/**
 !data/.gitkeep
 !data/departamentos.json
 !data/divipole.json
+!data/divipole_meta.json
 !data/e14c_index.json
+!data/temis_divipol/
+!data/temis_divipol/**
 !data/urls/
 data/urls/**
 !data/urls/.gitkeep

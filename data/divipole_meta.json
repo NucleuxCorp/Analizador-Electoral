@@ -1,0 +1,25 @@
+{
+  "generated_at": "2026-07-17T09:54:29",
+  "source": "temis_divipol",
+  "temis_dir": "D:/Nucleux/tools/Analizador de Elecciones/data/temis_divipol",
+  "inputs": {
+    "departmentsTree": "departmentsTree.json",
+    "allCorporations": "allCorporations.json",
+    "allDepartments": null
+  },
+  "output": "D:/Nucleux/tools/Analizador de Elecciones/data/divipole.json",
+  "backup": "D:/Nucleux/tools/Analizador de Elecciones/data/divipole.bak_2026-07-17_09-54-29.json",
+  "counts": {
+    "departments": 34,
+    "municipalities": 1189,
+    "zones": 3013,
+    "stands": 14438,
+    "tables": 122020
+  },
+  "corporaciones": [
+    {
+      "codigo": "001",
+      "etiqueta": "PRESIDENTE"
+    }
+  ]
+}

@@ -648,6 +648,48 @@ class TestLevel2PaginationAndPuestoNames:
         assert "SEC. ESC. LA ESPERANZA No 2" in html
         assert "INST.EDUC. LA CANDELARIA" in html
 
+    def test_puesto_name_resolves_triple_padded_zona(self, prod_app):
+        """mesa_results zona '001' must resolve DIVIPOLE zona '01' (not only zfill)."""
+        import src.modules.labeler.server as server_mod
+
+        stats = {
+            "by_mpio": {
+                "01_001": _empty_bucket(dept="01", mpio="001", clean=1, total=1),
+            },
+            "by_puesto": {
+                "01_001": {
+                    "001_01": _empty_bucket(
+                        dept="01", mpio="001", zona="001", puesto="01",
+                        clean=1, total=1,
+                    ),
+                },
+            },
+            "_global": _empty_bucket(clean=1, total=1),
+            "review_by_mesa": {},
+        }
+        fake_divipole = {
+            "01": {
+                "municipios": {
+                    "001": {
+                        "nombre": "MEDELLIN",
+                        "zonas": {
+                            "01": {
+                                "puestos": {
+                                    "01": {"nombre": "COLEGIO TRIPLE PAD"},
+                                }
+                            }
+                        },
+                    }
+                }
+            }
+        }
+        with patch.object(server_mod, "_DIVIPOLE", fake_divipole), patch(
+            "src.modules.labeler.db.get_hierarchical_mesa_stats",
+            return_value=stats,
+        ):
+            resp = prod_app.test_client().get("/mesas/01/001")
+        assert "COLEGIO TRIPLE PAD" in resp.data.decode()
+
     def test_puesto_name_resolves_unpadded_codes(self, prod_app):
         """mesa_results codes like '1' still resolve DIVIPOLE '01' names."""
         import src.modules.labeler.server as server_mod

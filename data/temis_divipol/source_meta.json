@@ -1,0 +1,9 @@
+{
+  "fetched_at": "2026-07-17T09:54:05",
+  "mode": "local_seed",
+  "note": "Remote Temis endpoints timed out; seeded from local data/departmentsTree.json and data/CorpIndexAndMap.json",
+  "files": {
+    "departmentsTree.json": 4644524,
+    "allCorporations.json": 273
+  }
+}
