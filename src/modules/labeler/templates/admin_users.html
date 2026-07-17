@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Usuarios — Admin — Analizador E-14</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: monospace;
+      background: #0d1018;
+      color: #e6edf3;
+      min-height: 100vh;
+      padding: 24px 16px;
+    }
+    .topbar {
+      display: flex; align-items: center; justify-content: space-between;
+      max-width: 1100px; margin: 0 auto 24px;
+      border-bottom: 1px solid #1e2a3a; padding-bottom: 14px;
+    }
+    .topbar h1 { font-size: 1rem; color: #7ec8e3; }
+    .topbar .links { display: flex; gap: 12px; font-size: .72rem; }
+    .topbar .links a { color: #556; text-decoration: none; }
+    .topbar .links a:hover { color: #aaa; }
+    .wrap { max-width: 1100px; margin: 0 auto; }
+
+    .empty { color: #445; font-size: .82rem; padding: 32px 0; text-align: center; }
+
+    table { width: 100%; border-collapse: collapse; font-size: .78rem; }
+    th {
+      text-align: left; padding: 7px 10px; background: #141a26;
+      color: #556; font-weight: normal; border-bottom: 1px solid #1e2a3a;
+      text-transform: uppercase; letter-spacing: .05em; font-size: .65rem;
+    }
+    td { padding: 8px 10px; border-bottom: 1px solid #141a26; vertical-align: top; }
+    tr:hover td { background: #12182a; }
+    .mono { font-family: monospace; }
+    .muted { color: #556; }
+
+    .badge {
+      display: inline-block; border-radius: 4px; font-size: .62rem;
+      padding: 2px 7px; font-weight: bold; text-transform: uppercase;
+    }
+    .badge-admin     { background: #3a1010; color: #ef5350; }
+    .badge-moderator { background: #3a2008; color: #ff9100; }
+    .badge-validator { background: #0d2a3a; color: #7ec8e3; }
+    .badge-reviewer  { background: #2a1a3a; color: #ce93d8; }
+    .badge-reader    { background: #141a26; color: #778; }
+
+    .bool-yes { color: #66bb6a; font-weight: bold; }
+    .bool-no  { color: #ef5350; font-weight: bold; }
+
+    select.role-select {
+      background: #141a26; border: 1px solid #2a3a5a; color: #e6edf3;
+      border-radius: 4px; padding: 3px 6px; font-size: .72rem; font-family: monospace;
+    }
+    .btn-role-save {
+      background: #1a2436; border: 1px solid #2a3a5a; color: #7ec8e3;
+      border-radius: 4px; font-size: .68rem; padding: 3px 10px; cursor: pointer;
+      font-family: monospace; margin-left: 6px;
+    }
+    .btn-role-save:hover { background: #2a3a5a; }
+    .btn-role-save:disabled { opacity: .4; cursor: default; }
+    .row-msg { font-size: .65rem; margin-left: 6px; }
+    .row-msg.ok  { color: #66bb6a; }
+    .row-msg.err { color: #ef5350; }
+  </style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>⚙ Usuarios</h1>
+  <div class="links">
+    <a href="/admin/conflicts">Panel</a>
+    <a href="/">Inicio</a>
+    <form action="/auth/logout" method="post" style="margin:0;">
+      <button type="submit" style="background:none;border:none;color:#556;cursor:pointer;font-family:monospace;font-size:.72rem;padding:0;">Cerrar sesión</button>
+    </form>
+  </div>
+</div>
+
+<div class="wrap">
+  {% if not users %}
+    <div class="empty">No hay usuarios registrados.</div>
+  {% else %}
+  <table>
+    <thead>
+      <tr>
+        <th>Email</th>
+        <th>Rol</th>
+        <th>Confirmado</th>
+        <th>Creado</th>
+        <th>Último ingreso</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for u in users %}
+      <tr id="user-row-{{ u.id }}">
+        <td class="mono">{{ u.email or '—' }}</td>
+        <td>
+          <span class="badge badge-{{ u.role }}">{{ u.role }}</span>
+        </td>
+        <td>
+          {% if u.email_confirmed_at %}<span class="bool-yes">&#x2713;</span>{% else %}<span class="bool-no">&#x2717;</span>{% endif %}
+        </td>
+        <td class="muted" style="font-size:.68rem;white-space:nowrap;">{{ (u.created_at or '—')[:16] }}</td>
+        <td class="muted" style="font-size:.68rem;white-space:nowrap;">{{ (u.last_sign_in_at or '—')[:16] }}</td>
+        <td>
+          {% if u.role == 'admin' %}
+          <span class="muted" style="font-size:.65rem;">cuenta admin — inmutable</span>
+          {% else %}
+          <select class="role-select" id="role-select-{{ u.id }}">
+            {% for r in non_admin_roles %}
+            <option value="{{ r }}" {% if r == u.role %}selected{% endif %}>{{ r }}</option>
+            {% endfor %}
+          </select>
+          <button class="btn-role-save" onclick="changeRole('{{ u.id }}')">Guardar</button>
+          <span class="row-msg" id="row-msg-{{ u.id }}"></span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+
+<script>
+function changeRole(userId) {
+  var select = document.getElementById('role-select-' + userId);
+  var btn = event.target;
+  var msg = document.getElementById('row-msg-' + userId);
+  var role = select.value;
+
+  btn.disabled = true;
+  msg.textContent = '';
+  msg.className = 'row-msg';
+
+  fetch('/admin/users/role', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({user_id: userId, role: role})
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    btn.disabled = false;
+    if (d.ok) {
+      msg.textContent = 'OK';
+      msg.className = 'row-msg ok';
+    } else {
+      msg.textContent = d.error || 'error';
+      msg.className = 'row-msg err';
+    }
+  })
+  .catch(function() {
+    btn.disabled = false;
+    msg.textContent = 'error de red';
+    msg.className = 'row-msg err';
+  });
+}
+</script>
+</body>
+</html>

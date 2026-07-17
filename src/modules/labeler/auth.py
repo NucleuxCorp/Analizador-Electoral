@@ -34,6 +34,9 @@ ROLE_VALIDATOR = "validator"
 ROLE_REVIEWER  = "reviewer"
 ROLE_READER    = "reader"
 _VALID_ROLES   = frozenset({ROLE_ADMIN, ROLE_MODERATOR, ROLE_VALIDATOR, ROLE_REVIEWER, ROLE_READER})
+# Roles assignable via the admin user-roles panel — ROLE_ADMIN is intentionally
+# excluded so admin accounts can never be promoted/demoted through that surface.
+NON_ADMIN_ROLES = frozenset(_VALID_ROLES - {ROLE_ADMIN})
 _ROLE_CACHE_TTL = 60.0
 _role_cache: dict[str, tuple[str, float]] = {}  # user_id → (role, expires_at)
 
@@ -175,6 +178,17 @@ def _get_user_role(user_id: str) -> str:
 
     _role_cache[user_id] = (role, now + _ROLE_CACHE_TTL)
     return role
+
+
+def evict_role_cache(user_id: str) -> None:
+    """
+    Remove user_id's cached role, if present.
+
+    Call after a role change so the new role is resolved (cache miss →
+    Supabase Admin API read) on the target's next request, instead of
+    serving the stale cached value for up to _ROLE_CACHE_TTL seconds.
+    """
+    _role_cache.pop(user_id, None)
 
 
 def resolve_user_role() -> None:
