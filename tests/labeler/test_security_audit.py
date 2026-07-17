@@ -62,6 +62,8 @@ ROUTES = [
     ("POST", "/admin/users/role",       True,  ["admin"],                         False, "admin role change"),
     # ── Vulnerable: @require_auth only, no @require_role ──
     ("POST", "/feedback",               True,  None,                              False, "VULNERABILITY: missing @require_role"),
+    # ── Auth-only, any role — intentional (public per-mesa citizen report) ──
+    ("POST", "/api/mesa-report",        True,  None,                              False, "public mesa report — any authenticated role, mesa_result_exists() anti-forgery guard"),
 ]
 
 # ---------------------------------------------------------------------------
@@ -205,6 +207,8 @@ class TestPhase2_PrivilegeEscalation:
         m.get_mesa_semaphore_stats.return_value = {}
         m.get_public_stats.return_value = {"open_mesas": 0, "reviewed_mesas": 0, "total_mesas": 0}
         m.check_mesa_already_reported.return_value = False
+        m.mesa_result_exists.return_value = True
+        m.insert_transversal_reports.return_value = [{"id": "row-1"}]
         # Chainable supabase client mock — every method returns self, execute returns empty data
         mc = MagicMock()
         mc.table.return_value = mc
