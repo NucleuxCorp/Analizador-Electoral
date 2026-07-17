@@ -37,6 +37,11 @@ from flask import Flask, Response, g, jsonify, redirect, render_template, reques
 logger = logging.getLogger("labeler")
 
 
+def _strip_crlf(value: str) -> str:
+    """Strip CR/LF from a value before it is written to logs (log-injection guard)."""
+    return (value or "").replace("\r", "").replace("\n", "")
+
+
 def _error_response(message: str, status: int = 400) -> Response:
     """Return JSON error + log + Sentry capture for business-logic 4xx errors."""
     logger.warning("error %s: %s", status, message)
@@ -1222,6 +1227,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
         from src.modules.labeler.auth import require_auth, resolve_user_role, require_role
         from src.modules.labeler.auth import ROLE_ADMIN, ROLE_MODERATOR, ROLE_VALIDATOR, ROLE_REVIEWER, ROLE_READER
         from src.modules.labeler.auth import _role_cache, _ROLE_CACHE_TTL
+        from src.modules.labeler.auth import NON_ADMIN_ROLES, evict_role_cache
         import src.modules.labeler.db as _db
 
         # Register role resolver — runs after _check_maintenance_mode, sets g.user_role
@@ -1490,7 +1496,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                     role = ROLE_VALIDATOR
                 else:
                     role = app_meta["role"]
-                    if role not in {ROLE_ADMIN, ROLE_VALIDATOR, ROLE_REVIEWER, ROLE_READER}:
+                    if role not in {ROLE_ADMIN, ROLE_MODERATOR, ROLE_VALIDATOR, ROLE_REVIEWER, ROLE_READER}:
                         role = ROLE_VALIDATOR
 
                 # Prime the in-process cache so the first request after login is instant
@@ -2266,6 +2272,122 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 return jsonify({"ok": False, "error": "Invalid id"}), 400
             _db.hide_mark(table, record_id)
             return jsonify({"ok": True})
+
+        # ----------------------------------------------------------------
+        # GET /admin/users — list registered Supabase Auth users (admin only)
+        # ----------------------------------------------------------------
+
+        @app.route("/admin/users")
+        @require_auth
+        @require_role(ROLE_ADMIN)
+        def admin_users_view() -> Response:
+            try:
+                raw_users = _db._client().auth.admin.list_users()
+                unavailable = False
+            except Exception as exc:
+                logger.error("admin_users_view: list_users failed: %s", exc)
+                raw_users = []
+                unavailable = True
+
+            users = []
+            for u in raw_users:
+                app_meta = getattr(u, "app_metadata", None) or {}
+                role = app_meta.get("role", ROLE_VALIDATOR)
+                if role not in {ROLE_ADMIN, ROLE_MODERATOR, ROLE_VALIDATOR, ROLE_REVIEWER, ROLE_READER}:
+                    role = ROLE_VALIDATOR
+                users.append({
+                    "id": getattr(u, "id", ""),
+                    "email": getattr(u, "email", "") or "",
+                    "role": role,
+                    "email_confirmed_at": getattr(u, "email_confirmed_at", None),
+                    "created_at": getattr(u, "created_at", None),
+                    "last_sign_in_at": getattr(u, "last_sign_in_at", None),
+                })
+
+            return render_template(
+                "admin_users.html",
+                users=users,
+                non_admin_roles=sorted(NON_ADMIN_ROLES),
+                unavailable=unavailable,
+            )
+
+        # ----------------------------------------------------------------
+        # POST /admin/users/role — reassign a non-admin user's role (admin only)
+        #
+        # Guardrails (spec: admin-user-management):
+        #   - Self role-change is rejected independently of the admin-immutability
+        #     check (own guard clause, own test).
+        #   - Target's CURRENT role is re-read server-side (never trusted from the
+        #     request body) — if it resolves to ROLE_ADMIN, the request is rejected
+        #     and no write occurs, whether the target is a peer admin or (were the
+        #     self-check ever bypassed) the acting admin themself.
+        #   - Only app_metadata.role is ever written — the write payload is built
+        #     from scratch server-side; the request body is never forwarded.
+        # ----------------------------------------------------------------
+
+        @app.route("/admin/users/role", methods=["POST"])
+        @require_auth
+        @require_role(ROLE_ADMIN)
+        def admin_users_role_view() -> Response:
+            body = request.get_json(force=True, silent=True) or {}
+            target_id = body.get("user_id", "")
+            new_role = body.get("role", "")
+
+            if not target_id:
+                return jsonify({"ok": False, "error": "missing user_id"}), 400
+
+            # Self role-change guard — independent of the admin-immutability check below.
+            if target_id == g.user_id:
+                return jsonify({"ok": False, "error": "cannot change your own role"}), 403
+
+            if new_role not in NON_ADMIN_ROLES:
+                return jsonify({"ok": False, "error": "invalid role"}), 400
+
+            admin_client = _db._client()
+            try:
+                current_resp = admin_client.auth.admin.get_user_by_id(target_id)
+                current_user = current_resp.user if current_resp else None
+            except Exception as exc:
+                logger.error("admin_users_role_view: get_user_by_id failed target=%s: %s", target_id, exc)
+                return jsonify({"ok": False, "error": "user not found"}), 400
+
+            if current_user is None:
+                return jsonify({"ok": False, "error": "user not found"}), 400
+
+            current_app_meta = getattr(current_user, "app_metadata", None) or {}
+            current_role = current_app_meta.get("role", ROLE_VALIDATOR)
+
+            # Admin-immutability guardrail — server-side re-read, never trusted from request.
+            if current_role == ROLE_ADMIN:
+                return jsonify({"ok": False, "error": "cannot modify an admin account"}), 403
+
+            try:
+                admin_client.auth.admin.update_user_by_id(
+                    target_id, {"app_metadata": {"role": new_role}}
+                )
+            except Exception as exc:
+                logger.error("admin_users_role_view: update_user_by_id failed target=%s: %s", target_id, exc)
+                return jsonify({"ok": False, "error": "role change failed"}), 400
+
+            # The write already committed — cache eviction and the audit log are
+            # best-effort follow-ups and must never turn a successful write into
+            # an apparent failure (or a 500) for the caller.
+            try:
+                evict_role_cache(target_id)
+            except Exception as exc:
+                logger.error("admin_users_role_view: evict_role_cache failed target=%s: %s", target_id, exc)
+
+            try:
+                actor_email = _strip_crlf(session.get("user_email", ""))
+                target_email = _strip_crlf(getattr(current_user, "email", "") or "")
+                logger.info(
+                    "role-change actor=%s (%s) target=%s (%s) old=%s new=%s",
+                    g.user_id, actor_email, target_id, target_email, current_role, new_role,
+                )
+            except Exception as exc:
+                logger.error("admin_users_role_view: audit log failed target=%s: %s", target_id, exc)
+
+            return jsonify({"ok": True, "role": new_role})
 
         # ----------------------------------------------------------------
         # GET /debug/sentry-test (admin only) — raises a controlled exception
