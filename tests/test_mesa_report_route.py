@@ -141,6 +141,20 @@ class TestForgedMesaKeyRejected:
         mock_exists.assert_called_once_with(VALID_PAYLOAD["mesa_key"])
         mock_insert.assert_not_called()
 
+    def test_lookup_outage_returns_503_not_unknown_mesa(self, client, mock_auth):
+        """When mesa_result_exists() can't verify (Supabase outage), the
+        citizen must see a retry-appropriate 503 — never the misleading
+        'that mesa doesn't exist' 400 used for a genuine forgery."""
+        _inject_session(client)
+        with patch("src.modules.labeler.db.mesa_result_exists", return_value=None) as mock_exists, \
+             patch("src.modules.labeler.db.insert_transversal_reports") as mock_insert:
+            resp = client.post("/api/mesa-report", json=VALID_PAYLOAD, headers={"Accept": "application/json"})
+        assert resp.status_code == 503
+        body = resp.get_json(silent=True) or {}
+        assert body.get("error") == "service_unavailable"
+        mock_exists.assert_called_once_with(VALID_PAYLOAD["mesa_key"])
+        mock_insert.assert_not_called()
+
 
 # ---------------------------------------------------------------------------
 # RED — 2.4 reCAPTCHA failure rejected

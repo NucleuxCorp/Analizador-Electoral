@@ -1427,9 +1427,11 @@ def get_hierarchical_mesa_stats() -> dict:
     return data
 
 
-def mesa_result_exists(mesa_key: str) -> bool:
+def mesa_result_exists(mesa_key: str) -> bool | None:
     """
-    Return True if a row with this mesa_key exists in mesa_results.
+    Return True if a row with this mesa_key exists in mesa_results,
+    False if the lookup succeeded and found nothing, or None if the
+    lookup itself failed (Supabase unreachable/erroring).
 
     Used as an anti-forgery guard before inserting a public mesa report
     (SDD: public-mesa-report, Phase 1) — a POST body can carry any
@@ -1437,8 +1439,10 @@ def mesa_result_exists(mesa_key: str) -> bool:
     real table before it is trusted for a write into the shared
     transversal_review_reports table.
 
-    Fail-closed: returns False on any exception, so a lookup failure
-    never lets a forged/unverifiable mesa_key through.
+    Fail-closed: None is never treated as "exists" by callers — but it
+    is distinct from a confirmed False, so a lookup outage can be
+    reported to the citizen as "try again" (503) instead of the
+    misleading "that mesa doesn't exist" (400).
     """
     try:
         resp = (
@@ -1451,8 +1455,8 @@ def mesa_result_exists(mesa_key: str) -> bool:
         )
         return bool(resp.data)
     except Exception as exc:
-        logger.warning("mesa_result_exists failed: %s", exc)
-        return False
+        logger.error("mesa_result_exists lookup failed: %s", exc)
+        return None
 
 
 # ---------------------------------------------------------------------------

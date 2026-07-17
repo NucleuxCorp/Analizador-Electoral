@@ -2225,7 +2225,12 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
             notes = (body.get("notes", "") or "").strip()
             if not notes:
                 return jsonify({"ok": False, "error": "notes_required"}), 400
-            if not mesa_key or not _db.mesa_result_exists(mesa_key):
+            if not mesa_key:
+                return jsonify({"ok": False, "error": "unknown_mesa"}), 400
+            exists = _db.mesa_result_exists(mesa_key)
+            if exists is None:
+                return jsonify({"ok": False, "error": "service_unavailable"}), 503
+            if not exists:
                 return jsonify({"ok": False, "error": "unknown_mesa"}), 400
             inserted = _db.insert_transversal_reports(
                 mesa_key,

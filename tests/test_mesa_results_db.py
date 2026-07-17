@@ -699,12 +699,14 @@ class TestMesaResultExists:
 
         assert result is False
 
-    def test_returns_false_on_supabase_error(self):
-        """On any exception, returns False (fail-closed — a forged mesa_key
-        must never be treated as valid because the lookup failed)."""
+    def test_returns_none_on_supabase_error(self):
+        """On any exception, returns None (fail-closed but DISTINCT from a
+        confirmed False) — a forged mesa_key must never be treated as
+        valid, but a lookup outage must also not be reported to the
+        citizen as "that mesa doesn't exist"."""
         from src.modules.labeler.db import mesa_result_exists
 
         with patch("src.modules.labeler.db._client", side_effect=RuntimeError("no client")):
             result = mesa_result_exists("01_001_01_01_1")
 
-        assert result is False
+        assert result is None
