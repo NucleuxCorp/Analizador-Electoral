@@ -1427,6 +1427,34 @@ def get_hierarchical_mesa_stats() -> dict:
     return data
 
 
+def mesa_result_exists(mesa_key: str) -> bool:
+    """
+    Return True if a row with this mesa_key exists in mesa_results.
+
+    Used as an anti-forgery guard before inserting a public mesa report
+    (SDD: public-mesa-report, Phase 1) — a POST body can carry any
+    mesa_key string, so it must be validated server-side against the
+    real table before it is trusted for a write into the shared
+    transversal_review_reports table.
+
+    Fail-closed: returns False on any exception, so a lookup failure
+    never lets a forged/unverifiable mesa_key through.
+    """
+    try:
+        resp = (
+            _client()
+            .table("mesa_results")
+            .select("mesa_key")
+            .eq("mesa_key", mesa_key)
+            .limit(1)
+            .execute()
+        )
+        return bool(resp.data)
+    except Exception as exc:
+        logger.warning("mesa_result_exists failed: %s", exc)
+        return False
+
+
 # ---------------------------------------------------------------------------
 # transversal_review_reports — structured mesa reports (ported from production)
 # ---------------------------------------------------------------------------

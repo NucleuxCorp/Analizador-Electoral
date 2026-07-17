@@ -654,3 +654,57 @@ class TestCountMesaResults:
             result = count_mesa_results(dept="01")
 
         assert result == 0
+
+
+# ---------------------------------------------------------------------------
+# mesa_result_exists (SDD: public-mesa-report, Phase 1 — anti-forgery guard)
+# ---------------------------------------------------------------------------
+
+class TestMesaResultExists:
+    """mesa_result_exists(mesa_key) confirms a mesa_key is real before any
+    write to transversal_review_reports (threat: mesa_key forgery)."""
+
+    def _make_exists_chain(self, rows: list[dict] | None) -> MagicMock:
+        chain = MagicMock()
+        chain.select.return_value = chain
+        chain.eq.return_value = chain
+        chain.limit.return_value = chain
+        chain.execute.return_value = MagicMock(data=rows if rows is not None else [])
+        return chain
+
+    def test_returns_true_when_mesa_key_exists(self):
+        from src.modules.labeler.db import mesa_result_exists
+
+        chain = self._make_exists_chain([{"mesa_key": "01_001_01_01_1"}])
+        mock_client = MagicMock()
+        mock_client.table.return_value = chain
+
+        with patch("src.modules.labeler.db._client", return_value=mock_client):
+            result = mesa_result_exists("01_001_01_01_1")
+
+        assert result is True
+        mock_client.table.assert_called_once_with("mesa_results")
+        chain.eq.assert_called_once_with("mesa_key", "01_001_01_01_1")
+        chain.limit.assert_called_once_with(1)
+
+    def test_returns_false_when_mesa_key_missing(self):
+        from src.modules.labeler.db import mesa_result_exists
+
+        chain = self._make_exists_chain([])
+        mock_client = MagicMock()
+        mock_client.table.return_value = chain
+
+        with patch("src.modules.labeler.db._client", return_value=mock_client):
+            result = mesa_result_exists("99_999_99_99_9")
+
+        assert result is False
+
+    def test_returns_false_on_supabase_error(self):
+        """On any exception, returns False (fail-closed — a forged mesa_key
+        must never be treated as valid because the lookup failed)."""
+        from src.modules.labeler.db import mesa_result_exists
+
+        with patch("src.modules.labeler.db._client", side_effect=RuntimeError("no client")):
+            result = mesa_result_exists("01_001_01_01_1")
+
+        assert result is False

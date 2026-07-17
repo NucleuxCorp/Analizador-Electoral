@@ -2205,6 +2205,38 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
             return jsonify({"ok": True})
 
         # ----------------------------------------------------------------
+        # POST /api/mesa-report — public per-mesa citizen report
+        # (SDD: public-mesa-report). Any authenticated role may submit;
+        # mesa_key is verified server-side against mesa_results before
+        # any write into the shared transversal_review_reports table
+        # (anti-forgery guard — the client-supplied mesa_key is never
+        # trusted directly).
+        # ----------------------------------------------------------------
+
+        @app.route("/api/mesa-report", methods=["POST"])
+        @require_auth
+        def mesa_report_prod() -> Response:
+            import src.modules.labeler.db as _db
+            body = request.get_json(force=True, silent=True) or {}
+            recaptcha_token = body.get("g_recaptcha_response", "")
+            if not _verify_recaptcha(recaptcha_token, "mesa_report"):
+                return jsonify({"ok": False, "error": "Verificación de seguridad fallada."}), 403
+            mesa_key = (body.get("mesa_key", "") or "").strip()
+            notes = (body.get("notes", "") or "").strip()
+            if not notes:
+                return jsonify({"ok": False, "error": "notes_required"}), 400
+            if not mesa_key or not _db.mesa_result_exists(mesa_key):
+                return jsonify({"ok": False, "error": "unknown_mesa"}), 400
+            inserted = _db.insert_transversal_reports(
+                mesa_key,
+                [{"source": "e14c", "report_type": "otro", "notes": notes}],
+                g.user_id,
+            )
+            if not inserted:
+                return jsonify({"ok": False, "error": "insert_failed"}), 500
+            return jsonify({"ok": True, "reports": inserted})
+
+        # ----------------------------------------------------------------
         # GET /admin/feedback — list feedback reports (admin + moderator)
         # ----------------------------------------------------------------
 
