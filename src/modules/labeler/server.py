@@ -2017,6 +2017,16 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 return jsonify({"error": str(exc)}), 500
 
         # ----------------------------------------------------------------
+        # GET /admin, /admin/ — redirect to the admin panel landing page.
+        # Auth/role enforcement happens on the target route itself.
+        # ----------------------------------------------------------------
+
+        @app.route("/admin")
+        @app.route("/admin/")
+        def admin_root_redirect() -> Response:
+            return redirect("/admin/conflicts", 302)
+
+        # ----------------------------------------------------------------
         # GET /admin/conflicts (production — admin and moderator)
         # ----------------------------------------------------------------
 
