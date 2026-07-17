@@ -1520,6 +1520,8 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 "mesas.html", level=3, unavailable=False,
                 breadcrumbs=breadcrumbs, rows=rows,
                 page=page, total_pages=total_pages, semaphore=None,
+                sin_actas=(total == 0),
+                logged_in=bool(session.get("access_token")),
             )
 
         # ----------------------------------------------------------------
