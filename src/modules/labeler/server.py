@@ -42,6 +42,21 @@ def _strip_crlf(value: str) -> str:
     return (value or "").replace("\r", "").replace("\n", "")
 
 
+def _fmt_admin_timestamp(value) -> str:
+    """
+    Format a Supabase Auth timestamp field for display.
+
+    The real gotrue SDK parses these fields into `datetime.datetime` objects,
+    but tests (and possibly other callers) may pass plain ISO strings — accept
+    both so template rendering never breaks on a live user list.
+    """
+    if not value:
+        return ""
+    if hasattr(value, "isoformat"):
+        value = value.isoformat()
+    return str(value)[:16].replace("T", " ")
+
+
 def _error_response(message: str, status: int = 400) -> Response:
     """Return JSON error + log + Sentry capture for business-logic 4xx errors."""
     logger.warning("error %s: %s", status, message)
@@ -2300,8 +2315,8 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                     "email": getattr(u, "email", "") or "",
                     "role": role,
                     "email_confirmed_at": getattr(u, "email_confirmed_at", None),
-                    "created_at": getattr(u, "created_at", None),
-                    "last_sign_in_at": getattr(u, "last_sign_in_at", None),
+                    "created_at": _fmt_admin_timestamp(getattr(u, "created_at", None)),
+                    "last_sign_in_at": _fmt_admin_timestamp(getattr(u, "last_sign_in_at", None)),
                 })
 
             return render_template(
