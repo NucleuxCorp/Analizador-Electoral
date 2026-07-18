@@ -112,6 +112,50 @@
     {% endif %}
   </section>
 
+  <section>
+    <h2>Estado de decisiones</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Campo</th>
+          <th>E14C</th>
+          <th>E14D</th>
+          <th>E14T</th>
+          <th>Ventana de edición</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for field in ["VOTANTES", "URNA", "SUMA_TOTAL"] %}
+        {% set field_decisions = decisions.get(field, {}) if decisions else {} %}
+        {% set field_window = edit_window.fields.get(field) if edit_window and edit_window.fields else None %}
+        <tr>
+          <td class="mono">{{ field }}</td>
+          {% for source in ["e14c", "e14d", "e14t"] %}
+          {% set d = field_decisions.get(source) %}
+          <td class="mono">
+            {%- if d == "accepted" -%}
+              Aceptado
+            {%- elif d == "rejected" -%}
+              Rechazado
+            {%- else -%}
+              —
+            {%- endif -%}
+          </td>
+          {% endfor %}
+          <td class="muted" style="font-size:.68rem;">
+            {%- if field_window -%}
+              {%- if field_window.editable -%}Editable{%- else -%}Cerrado{%- endif -%}
+              ({{ field_window.decision_count }})
+            {%- else -%}
+              —
+            {%- endif -%}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
 </div>
 </body>
 </html>
