@@ -1588,6 +1588,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                     "mesas_remaining": 0,
                     "total_anomalias": 0,
                     "total_universe": 122_020,
+                    "mesas_sin_e14c": 0,
                 }
             semaphore_data = _build_semaphore_data()
             semaphore_global = semaphore_data["global"] if semaphore_data else None
@@ -1602,6 +1603,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 mesas_remaining=public_stats["mesas_remaining"],
                 total_anomalias=public_stats["total_anomalias"],
                 total_universe=public_stats["total_universe"],
+                mesas_sin_e14c=public_stats["mesas_sin_e14c"],
                 semaphore_global=semaphore_global,
             )
 

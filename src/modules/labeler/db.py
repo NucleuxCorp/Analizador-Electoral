@@ -832,6 +832,7 @@ _PUBLIC_STATS_ZEROS: dict = {
     "mesas_remaining": TOTAL_UNIVERSE,
     "total_anomalias": 0,
     "total_universe": TOTAL_UNIVERSE,
+    "mesas_sin_e14c": 0,
 }
 
 # All valid overall_status values (5-level taxonomy, design D3).
@@ -1071,14 +1072,17 @@ def get_public_stats() -> dict:
     Reuses the ``_mesa_stats_cache`` with key ``"public_stats"`` and the same
     ``_MESA_STATS_TTL`` (5-minute) TTL as ``get_mesa_stats()``.
 
-    The function issues exactly one COUNT-only Supabase query per cache period
-    (for ``mesas_all_three``), and reads ``mesas_analyzed`` / ``total_anomalias``
-    from the already-cached ``get_mesa_stats()`` result (zero extra I/O on a
-    warm cache).
+    The function issues up to two COUNT-only Supabase queries per cache
+    period: one via ``get_mesa_stats()`` (for ``mesas_analyzed`` /
+    ``total_anomalias``) and one via ``count_mesa_results(source_missing=
+    "e14c")`` (for ``mesas_sin_e14c``, national scope — includes dept
+    88/exterior). ``mesas_all_three`` is a hardcoded disk-audit constant, not
+    a query.
 
     Returns:
         Dict with keys: ``mesas_all_three``, ``mesas_analyzed``,
-        ``mesas_remaining``, ``total_anomalias``, ``total_universe``.
+        ``mesas_remaining``, ``total_anomalias``, ``total_universe``,
+        ``mesas_sin_e14c``.
         Returns ``_PUBLIC_STATS_ZEROS`` on any exception — never re-raises.
     """
     cache_key = "public_stats"
@@ -1102,12 +1106,17 @@ def get_public_stats() -> dict:
         # mesas_all_three: known constant from disk audit (2026-07-04).
         mesas_all_three: int = MESAS_ALL_THREE
 
+        # mesas_sin_e14c: national COUNT, literal source_missing="e14c" — never
+        # derived from request input (no new public filterable surface).
+        mesas_sin_e14c: int = count_mesa_results(source_missing="e14c")
+
         result = {
             "mesas_all_three": mesas_all_three,
             "mesas_analyzed": mesas_analyzed,
             "mesas_remaining": max(0, TOTAL_UNIVERSE - mesas_analyzed),
             "total_anomalias": total_anomalias,
             "total_universe": TOTAL_UNIVERSE,
+            "mesas_sin_e14c": mesas_sin_e14c,
         }
         _mesa_stats_cache[cache_key] = {"data": result, "ts": now}
         return result

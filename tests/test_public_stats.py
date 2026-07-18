@@ -66,6 +66,7 @@ ZEROS_DICT = {
     "mesas_remaining": 122_020,
     "total_anomalias": 0,
     "total_universe": 122_020,
+    "mesas_sin_e14c": 0,
 }
 
 
@@ -120,7 +121,7 @@ class TestGetPublicStatsHappyPath:
 
         assert set(result.keys()) == {
             "mesas_all_three", "mesas_analyzed", "mesas_remaining",
-            "total_anomalias", "total_universe",
+            "total_anomalias", "total_universe", "mesas_sin_e14c",
         }
 
     def test_happy_path_mesas_all_three_is_constant(self):
@@ -190,6 +191,32 @@ class TestGetPublicStatsHappyPath:
 
         assert result["total_universe"] == 122_020
 
+    def test_happy_path_mesas_sin_e14c_is_distinct_count(self):
+        """mesas_sin_e14c reflects count_mesa_results(), not the mesas_all_three constant."""
+        from src.modules.labeler.db import get_public_stats, MESAS_ALL_THREE
+
+        stats = _global_stats()
+
+        with patch("src.modules.labeler.db.get_mesa_stats", return_value=stats), \
+             patch("src.modules.labeler.db.count_mesa_results", return_value=4_321) as mock_count:
+            result = get_public_stats()
+
+        assert result["mesas_sin_e14c"] == 4_321
+        assert result["mesas_all_three"] == MESAS_ALL_THREE
+        assert mock_count.call_count == 1
+
+    def test_happy_path_mesas_sin_e14c_uses_hardcoded_national_scope(self):
+        """count_mesa_results() is called with source_missing='e14c' only — no dept filter."""
+        from src.modules.labeler.db import get_public_stats
+
+        stats = _global_stats()
+
+        with patch("src.modules.labeler.db.get_mesa_stats", return_value=stats), \
+             patch("src.modules.labeler.db.count_mesa_results", return_value=0) as mock_count:
+            get_public_stats()
+
+        mock_count.assert_called_once_with(source_missing="e14c")
+
 
 # ---------------------------------------------------------------------------
 # Phase 1.3 — test_cache_hit
@@ -216,6 +243,24 @@ class TestGetPublicStatsCacheHit:
         # get_mesa_stats should be called only once (cache hit on second call)
         assert mock_stats.call_count == 1
 
+    def test_cache_hit_no_second_count_mesa_results_call(self):
+        """Calling get_public_stats() twice within TTL issues count_mesa_results() only once."""
+        from src.modules.labeler.db import get_public_stats
+
+        chain = _make_count_chain(500)
+        mock_client = _make_client(chain)
+        stats = _global_stats()
+        now = time.monotonic()
+
+        with patch("src.modules.labeler.db._client", return_value=mock_client), \
+             patch("src.modules.labeler.db.get_mesa_stats", return_value=stats), \
+             patch("src.modules.labeler.db.count_mesa_results", return_value=100) as mock_count, \
+             patch("time.monotonic", side_effect=[now, now + 1, now + 1]):
+            get_public_stats()
+            get_public_stats()
+
+        assert mock_count.call_count == 1
+
 
 # ---------------------------------------------------------------------------
 # Phase 1.4 — test_cache_miss_after_ttl
@@ -241,6 +286,24 @@ class TestGetPublicStatsCacheMissAfterTTL:
 
         assert mock_stats.call_count == 2
 
+    def test_cache_miss_after_ttl_issues_second_count_mesa_results_call(self):
+        """Advancing time past TTL causes a second count_mesa_results() call."""
+        from src.modules.labeler.db import get_public_stats
+
+        chain = _make_count_chain(500)
+        mock_client = _make_client(chain)
+        stats = _global_stats()
+        now = time.monotonic()
+
+        with patch("src.modules.labeler.db._client", return_value=mock_client), \
+             patch("src.modules.labeler.db.get_mesa_stats", return_value=stats), \
+             patch("src.modules.labeler.db.count_mesa_results", return_value=100) as mock_count, \
+             patch("time.monotonic", side_effect=[now, now + 301, now + 301]):
+            get_public_stats()
+            get_public_stats()
+
+        assert mock_count.call_count == 2
+
 
 # ---------------------------------------------------------------------------
 # Phase 1.5 — test_supabase_exception_returns_zeros
@@ -254,6 +317,18 @@ class TestGetPublicStatsException:
         from src.modules.labeler.db import get_public_stats
 
         with patch("src.modules.labeler.db._client", side_effect=RuntimeError("no client")):
+            result = get_public_stats()
+
+        assert result == ZEROS_DICT
+
+    def test_count_mesa_results_exception_returns_zeros(self):
+        """When count_mesa_results() itself raises, returns zeros dict (fail-closed)."""
+        from src.modules.labeler.db import get_public_stats
+
+        stats = _global_stats()
+
+        with patch("src.modules.labeler.db.get_mesa_stats", return_value=stats), \
+             patch("src.modules.labeler.db.count_mesa_results", side_effect=RuntimeError("down")):
             result = get_public_stats()
 
         assert result == ZEROS_DICT
@@ -324,6 +399,7 @@ class TestHomeViewInjectsStats:
             "mesas_remaining": 121_020,
             "total_anomalias": 100,
             "total_universe": 122_020,
+            "mesas_sin_e14c": 3_670,
         }
         with patch("src.modules.labeler.db.get_public_stats", return_value=known):
             client = prod_app.test_client()
@@ -333,6 +409,50 @@ class TestHomeViewInjectsStats:
         html = resp.data.decode()
         # The template should render these values somewhere in the page
         assert "500" in html or "122.020" in html or "1.000" in html
+        assert "3.670" in html or "3670" in html
+        assert "Mesas sin acta oficial E14C" in html
+
+    def test_home_view_renders_dash_when_mesas_sin_e14c_is_zero(self, prod_app):
+        """mesas_sin_e14c == 0 renders '—' for the new card, not the literal '0'."""
+        known = {
+            "mesas_all_three": 500,
+            "mesas_analyzed": 1000,
+            "mesas_remaining": 121_020,
+            "total_anomalias": 100,
+            "total_universe": 122_020,
+            "mesas_sin_e14c": 0,
+        }
+        with patch("src.modules.labeler.db.get_public_stats", return_value=known):
+            client = prod_app.test_client()
+            resp = client.get("/")
+
+        assert resp.status_code == 200
+        html = resp.data.decode()
+        assert 'id="counter-sin-e14c" data-target="0">—<' in html
+
+    def test_home_view_new_counter_script_omits_localstorage_floor(self, prod_app):
+        """The counter-sin-e14c IIFE does not reuse the analyzed counter's LS floor."""
+        known = {
+            "mesas_all_three": 500,
+            "mesas_analyzed": 1000,
+            "mesas_remaining": 121_020,
+            "total_anomalias": 100,
+            "total_universe": 122_020,
+            "mesas_sin_e14c": 3_670,
+        }
+        with patch("src.modules.labeler.db.get_public_stats", return_value=known):
+            client = prod_app.test_client()
+            resp = client.get("/")
+
+        html = resp.data.decode()
+        assert 'getElementById("counter-sin-e14c")' in html
+
+        scripts = html.split("<script>")[1:]
+        sin_e14c_script = next(
+            (s for s in scripts if 'getElementById("counter-sin-e14c")' in s), None
+        )
+        assert sin_e14c_script is not None
+        assert "mesas_analyzed_v1" not in sin_e14c_script
 
 
 # ---------------------------------------------------------------------------
@@ -359,6 +479,42 @@ class TestHomeViewExceptionFallback:
         assert resp.status_code == 200
         html = resp.data.decode()
         assert "—" in html
+
+
+# ---------------------------------------------------------------------------
+# Security tripwire — no new public filterable surface (defense-in-depth)
+# ---------------------------------------------------------------------------
+
+class TestNoPublicFilterableSurface:
+    """home_view() ignores mesa-filter query params; /admin/mesas/data stays auth-gated."""
+
+    def test_home_view_ignores_source_missing_query_params(self, prod_app):
+        """GET / with mesa-filter query params renders the same counter as plain GET /."""
+        known = {
+            "mesas_all_three": 500,
+            "mesas_analyzed": 1000,
+            "mesas_remaining": 121_020,
+            "total_anomalias": 100,
+            "total_universe": 122_020,
+            "mesas_sin_e14c": 3_670,
+        }
+        with patch("src.modules.labeler.db.get_public_stats", return_value=known):
+            client = prod_app.test_client()
+            plain = client.get("/")
+            filtered = client.get(
+                "/?source=e14c&dept=88&mesa_key=X&mpio=001&zona=01&puesto=001"
+            )
+
+        assert plain.status_code == 200
+        assert filtered.status_code == 200
+        assert plain.data == filtered.data
+
+    def test_admin_mesas_data_source_param_still_requires_auth(self, prod_app):
+        """GET /admin/mesas/data?source=e14c unauthenticated is rejected, not filtered."""
+        client = prod_app.test_client()
+        resp = client.get("/admin/mesas/data?source=e14c")
+
+        assert resp.status_code != 200
 
 
 # ---------------------------------------------------------------------------

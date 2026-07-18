@@ -266,6 +266,12 @@
         <div class="stat-label">Anomalías detectadas</div>
       </div>
 
+      <div class="stat-card">
+        <div class="stat-value" id="counter-sin-e14c" data-target="{{ mesas_sin_e14c }}">{{ "—" if mesas_sin_e14c == 0 else mesas_sin_e14c | format_number }}</div>
+        <div class="stat-label">Mesas sin acta oficial E14C</div>
+        <div class="stat-sublabel">escrutinio oficial aún no publicado</div>
+      </div>
+
     </div>
 
     {% if semaphore_global %}
@@ -319,6 +325,38 @@
       } else {
         el.textContent = fmt(finalVal);
         localStorage.setItem(LS_KEY, finalVal);
+      }
+    }
+
+    requestAnimationFrame(step);
+  })();
+  </script>
+
+  <script>
+  (function () {
+    var el = document.getElementById("counter-sin-e14c");
+    if (!el) return;
+    var finalVal = parseInt(el.getAttribute("data-target"), 10);
+    if (!finalVal || finalVal <= 0) return;
+
+    function fmt(n) {
+      return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+    }
+
+    var duration = 3000;
+    var startTime = null;
+
+    function easeOut(t) { return 1 - Math.pow(1 - t, 3); }
+
+    function step(ts) {
+      if (!startTime) startTime = ts;
+      var progress = Math.min((ts - startTime) / duration, 1);
+      var current = Math.round(0 + finalVal * easeOut(progress));
+      el.textContent = fmt(current);
+      if (progress < 1) {
+        requestAnimationFrame(step);
+      } else {
+        el.textContent = fmt(finalVal);
       }
     }
 
