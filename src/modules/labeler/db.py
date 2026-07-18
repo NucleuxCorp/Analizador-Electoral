@@ -848,14 +848,15 @@ def get_mesa_results(
     zona: str | None = None,
     puesto: str | None = None,
     mesa_key: str | None = None,
+    source_missing: str | None = None,
     page: int = 1,
     per_page: int = 50,
 ) -> list[dict]:
     """
     Fetch a paginated slice of mesa_results rows.
 
-    Applies optional dept, overall_status, mpio, zona, puesto and/or exact
-    mesa_key filters. Pagination is zero-based via
+    Applies optional dept, overall_status, mpio, zona, puesto, exact
+    mesa_key, and/or source_missing filters. Pagination is zero-based via
     PostgREST .range(offset, offset+per_page-1). Returns [] on any exception
     (fail-closed).
 
@@ -868,6 +869,10 @@ def get_mesa_results(
                   or None.
         mesa_key: Exact mesa_key to filter on (mesa detail lookup,
                   mesa-findings-consolidation Phase 3), or None.
+        source_missing: One of "any", "e14c", "e14t", "e14d", or None. Filters
+                  on source_status->>{source}.neq.ok. Rows with source_status
+                  IS NULL (pre-backfill) do NOT match — they read as
+                  "unknown", not "missing".
         page:     1-based page number (page=1 → offset 0).
         per_page: Number of rows per page. 50 for the admin route (design D7),
                   10 for the public Level-3 mesa drill-down page.
@@ -890,6 +895,14 @@ def get_mesa_results(
             query = query.eq("puesto", puesto)
         if mesa_key is not None:
             query = query.eq("mesa_key", mesa_key)
+        if source_missing == "any":
+            query = query.or_(
+                "source_status->>e14c.neq.ok,"
+                "source_status->>e14t.neq.ok,"
+                "source_status->>e14d.neq.ok"
+            )
+        elif source_missing in ("e14c", "e14t", "e14d"):
+            query = query.neq(f"source_status->>{source_missing}", "ok")
         response = query.range(offset, offset + per_page - 1).execute()
         return response.data or []
     except Exception as exc:
@@ -903,6 +916,7 @@ def count_mesa_results(
     zona: str | None = None,
     puesto: str | None = None,
     status: str | None = None,
+    source_missing: str | None = None,
 ) -> int:
     """
     Return the count of mesa_results rows matching the given filters.
@@ -916,6 +930,8 @@ def count_mesa_results(
         zona:     Zona code to filter on, or None.
         puesto:   Puesto de votación code to filter on, or None.
         status:   overall_status value to filter on, or None for all.
+        source_missing: One of "any", "e14c", "e14t", "e14d", or None. See
+                  get_mesa_results() for the exact PostgREST semantics.
 
     Returns:
         Matching row count, or 0 on error.
@@ -932,6 +948,14 @@ def count_mesa_results(
             query = query.eq("puesto", puesto)
         if status is not None:
             query = query.eq("overall_status", status)
+        if source_missing == "any":
+            query = query.or_(
+                "source_status->>e14c.neq.ok,"
+                "source_status->>e14t.neq.ok,"
+                "source_status->>e14d.neq.ok"
+            )
+        elif source_missing in ("e14c", "e14t", "e14d"):
+            query = query.neq(f"source_status->>{source_missing}", "ok")
         response = query.execute()
         return response.count or 0
     except Exception as exc:

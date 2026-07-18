@@ -2783,11 +2783,16 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
             try:
                 dept = request.args.get("dept") or None
                 status = request.args.get("status") or None
+                source_missing = request.args.get("source") or None
                 try:
                     page = int(request.args.get("page", 1))
                 except (TypeError, ValueError):
                     page = 1
-                rows = _db.get_mesa_results(dept=dept, status=status, page=page)
+                rows = _db.get_mesa_results(
+                    dept=dept, status=status, source_missing=source_missing, page=page
+                )
+                for row in rows:
+                    row["dept_name"] = _DEPT_NAMES.get(row.get("dept"), row.get("dept"))
                 stats = _db.get_mesa_stats()
                 total = (stats.get("_global") or {}).get("total", 0)
                 return jsonify({"rows": rows, "page": page, "total": total})

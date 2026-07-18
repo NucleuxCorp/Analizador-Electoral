@@ -45,6 +45,7 @@ Safe to re-run:
 | `add_mesa_key_to_reports.sql` | Migration | `mesa_key` on reports |
 | `add_mesa_report_type.sql` | Migration | `report_type` column |
 | `fix_mesa_reports_view.sql` | Migration | `mesa_reports_view` + backfill |
+| `add_mesa_source_status.sql` | Migration | `source_status` JSONB + GIN index on `mesa_results` |
 
 ### 4. Panel transversal (`/admin/transversal`)
 

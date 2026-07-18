@@ -581,6 +581,13 @@
         <option value="arith_failed">Arith failed</option>
         <option value="tachon_suspicious">Tachon suspicious</option>
       </select>
+      <select id="mesas-filter-source">
+        <option value="">All sources</option>
+        <option value="any">Any missing</option>
+        <option value="e14c">E14C missing</option>
+        <option value="e14t">E14T missing</option>
+        <option value="e14d">E14D missing</option>
+      </select>
       <button class="btn-filter" onclick="filterMesas()">Filtrar</button>
     </div>
 
@@ -720,6 +727,7 @@ var _mesasState = {
   dept: '',
   status: '',
   flag: '',
+  source: '',
   total: 0,
   loaded: false,
 };
@@ -736,6 +744,7 @@ function filterMesas() {
   _mesasState.dept   = document.getElementById('mesas-filter-dept').value.trim();
   _mesasState.status = document.getElementById('mesas-filter-status').value;
   _mesasState.flag   = document.getElementById('mesas-filter-flag').value;
+  _mesasState.source = document.getElementById('mesas-filter-source').value;
   _fetchMesas(1);
 }
 
@@ -771,6 +780,7 @@ function _fetchMesas(page) {
   if (_mesasState.dept)   params.set('dept',   _mesasState.dept);
   if (_mesasState.status) params.set('status', _mesasState.status);
   if (_mesasState.flag)   params.set('flag',   _mesasState.flag);
+  if (_mesasState.source) params.set('source', _mesasState.source);
   params.set('page', page);
 
   document.getElementById('mesas-loading').style.display = 'block';
@@ -824,7 +834,7 @@ function _renderMesasTable(rows) {
     var cls = _statusClass(r.overall_status);
     html += '<tr class="' + _escHtml(cls) + '">';
     html += '<td class="mono" style="font-size:.68rem;">' + _escHtml(r.mesa_key) + '</td>';
-    html += '<td>' + _escHtml(r.dept_code || r.dept) + '</td>';
+    html += '<td>' + _escHtml(r.dept_name || r.dept) + '</td>';
     html += '<td><span class="badge" style="' + _statusBadgeStyle(r.overall_status) + '">' + _escHtml(r.overall_status) + '</span></td>';
     html += '<td>' + _bool(r.cross_discrepancy) + '</td>';
     html += '<td>' + _bool(r.arith_failed) + '</td>';

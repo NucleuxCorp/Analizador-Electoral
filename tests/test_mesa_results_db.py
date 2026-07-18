@@ -574,6 +574,53 @@ class TestGetHierarchicalMesaStats:
         assert db_module._hierarchical_stats_cache == {}
 
 
+# ---------------------------------------------------------------------------
+# T1a-7 (RED) — get_mesa_results(source_missing=...)
+# (fix-mesa-source-status-classification: T8)
+# ---------------------------------------------------------------------------
+
+class TestGetMesaResultsSourceMissingFilter:
+    """get_mesa_results accepts source_missing kwarg building PostgREST filters."""
+
+    def test_source_missing_any_calls_or(self):
+        from src.modules.labeler.db import get_mesa_results
+
+        chain = _make_chain([])
+        mock_client = _make_client(chain)
+
+        with patch("src.modules.labeler.db._client", return_value=mock_client):
+            get_mesa_results(source_missing="any", page=1, per_page=50)
+
+        chain.or_.assert_called_once_with(
+            "source_status->>e14c.neq.ok,"
+            "source_status->>e14t.neq.ok,"
+            "source_status->>e14d.neq.ok"
+        )
+
+    def test_source_missing_e14c_calls_neq(self):
+        from src.modules.labeler.db import get_mesa_results
+
+        chain = _make_chain([])
+        mock_client = _make_client(chain)
+
+        with patch("src.modules.labeler.db._client", return_value=mock_client):
+            get_mesa_results(source_missing="e14c", page=1, per_page=50)
+
+        chain.neq.assert_called_once_with("source_status->>e14c", "ok")
+
+    def test_source_missing_none_no_or_no_neq(self):
+        from src.modules.labeler.db import get_mesa_results
+
+        chain = _make_chain([])
+        mock_client = _make_client(chain)
+
+        with patch("src.modules.labeler.db._client", return_value=mock_client):
+            get_mesa_results(page=1, per_page=50)
+
+        chain.or_.assert_not_called()
+        chain.neq.assert_not_called()
+
+
 class TestGetMesaResultsHierarchicalFilters:
     """get_mesa_results accepts mpio/zona/puesto keyword filters."""
 

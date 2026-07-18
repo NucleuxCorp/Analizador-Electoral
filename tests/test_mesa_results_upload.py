@@ -211,6 +211,35 @@ class TestClassifyCritical:
 
 
 # ---------------------------------------------------------------------------
+# T1b-8 (RED) — _derive_has_missing_fields() source-completeness fix
+# (fix-mesa-source-status-classification: T4)
+# ---------------------------------------------------------------------------
+
+class TestDeriveHasMissingFieldsSourceStatus:
+    def test_two_sources_agree_but_e14c_missing_is_known_anomaly(self):
+        """sources_ok=2 with 2 present sources agreeing, but e14c not 'ok',
+        must still classify as known_anomaly, not clean."""
+        from scripts.upload_mesa_results import compute_overall_status
+
+        row = _make_row(sources_ok=2, e14c_status="no-descargado", e14t_status="ok", e14d_status="ok")
+        assert compute_overall_status(row) == "known_anomaly"
+
+    def test_sources_ok_1_still_missing_fields_regression(self):
+        """Pre-existing sources_ok < 2 behavior is preserved."""
+        from scripts.upload_mesa_results import _derive_has_missing_fields
+
+        row = _make_row(sources_ok=1)
+        assert _derive_has_missing_fields(row) is True
+
+    def test_all_three_sources_ok_no_other_anomaly_is_clean(self):
+        """All 3 sources 'ok', no other anomaly signal, stays clean."""
+        from scripts.upload_mesa_results import compute_overall_status
+
+        row = _make_row()
+        assert compute_overall_status(row) == "clean"
+
+
+# ---------------------------------------------------------------------------
 # T1b-2 (RED) — build_row and discover_files tests
 # ---------------------------------------------------------------------------
 
@@ -276,6 +305,32 @@ class TestBuildRow:
         assert result is not None
         assert result["e14t_arith_ok"] is None
         assert result["e14d_arith_ok"] is None
+
+
+# ---------------------------------------------------------------------------
+# T1b-9 (RED) — source_status verbatim persistence
+# (fix-mesa-source-status-classification: T6)
+# ---------------------------------------------------------------------------
+
+class TestBuildRowSourceStatus:
+    def test_source_status_verbatim_values(self):
+        """source_status carries the raw status string per source, None for absent."""
+        from scripts.upload_mesa_results import build_row
+
+        raw = _make_row(e14c_status="extraction_error", e14t_status="ok")
+        raw["sources"]["e14d"] = None
+
+        result = build_row(raw)
+        assert result["source_status"] == {"e14c": "extraction_error", "e14t": "ok", "e14d": None}
+
+    def test_has_missing_fields_present_regardless_of_source_status(self):
+        """has_missing_fields stays a bool in build_row() output, additive to source_status."""
+        from scripts.upload_mesa_results import build_row
+
+        raw = _make_row()
+        result = build_row(raw)
+        assert isinstance(result["has_missing_fields"], bool)
+        assert "source_status" in result
 
 
 class TestDiscoverFiles:

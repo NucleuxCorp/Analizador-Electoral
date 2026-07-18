@@ -77,6 +77,8 @@ def _derive_has_missing_fields(row: dict) -> bool:
 
     Conditions:
       - sources_ok_count < 2 (fewer than 2 sources available), OR
+      - Any of e14c/e14t/e14d has sources.{k}.status != "ok" (absent source counts
+        as not ok), OR
       - Any present source has URNA=0 while sum_votes > 0 (URNA_NO_DILIGENCIADA pattern).
     """
     sources_ok_count: int = (row.get("congruencia") or {}).get("sources_ok", 0)
@@ -84,6 +86,9 @@ def _derive_has_missing_fields(row: dict) -> bool:
         return True
 
     sources = row.get("sources") or {}
+    if any((sources.get(k) or {}).get("status") != "ok" for k in _SOURCES):
+        return True
+
     aritmetica = row.get("aritmetica") or {}
     for src_key in _SOURCES:
         src = sources.get(src_key)
@@ -248,6 +253,7 @@ def build_row(jsonl_row: dict) -> dict:
         "cross_discrepancy": bool(cong_summary.get("cross_discrepancy")),
         "tachon_suspicious": tachon_suspicious,
         "has_missing_fields": has_missing_fields,
+        "source_status": {k: _src_status(k) for k in _SOURCES},
         "overall_status": overall_status,
         "raw_data": jsonl_row,
     }

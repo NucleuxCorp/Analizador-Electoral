@@ -152,6 +152,58 @@ class TestMesasDataRoute:
         data = resp.get_json()
         assert data["page"] == 5
 
+    # -----------------------------------------------------------------------
+    # T2-3 (RED): source_missing filter + dept_name resolution
+    # (fix-mesa-source-status-classification: T10)
+    # -----------------------------------------------------------------------
+
+    def test_source_arg_forwarded_as_source_missing(self, prod_app, auth_client):
+        """dept + source query params are forwarded to get_mesa_results as
+        dept and source_missing kwargs."""
+        stats = {"_global": {"total": 0}}
+
+        with patch("src.modules.labeler.auth.decode_jwt", return_value={"sub": "admin-test-user"}), \
+             patch("src.modules.labeler.auth._get_user_role", return_value="admin"), \
+             patch("src.modules.labeler.db.get_mesa_results", return_value=[]) as mock_results, \
+             patch("src.modules.labeler.db.get_mesa_stats", return_value=stats):
+            resp = auth_client.get("/admin/mesas/data?dept=05&source=e14c")
+
+        assert resp.status_code == 200
+        _, kwargs = mock_results.call_args
+        assert kwargs.get("dept") == "05"
+        assert kwargs.get("source_missing") == "e14c"
+
+    def test_dept_name_resolved_for_known_code(self, prod_app, auth_client):
+        """Rows get a dept_name field resolved via _DEPT_NAMES for a known code."""
+        rows = [{"mesa_key": "05_001_01_01_1", "dept": "05", "overall_status": "clean"}]
+        stats = {"_global": {"total": 1}}
+
+        with patch("src.modules.labeler.auth.decode_jwt", return_value={"sub": "admin-test-user"}), \
+             patch("src.modules.labeler.auth._get_user_role", return_value="admin"), \
+             patch("src.modules.labeler.server._DEPT_NAMES", {"05": "ANTIOQUIA"}), \
+             patch("src.modules.labeler.db.get_mesa_results", return_value=rows), \
+             patch("src.modules.labeler.db.get_mesa_stats", return_value=stats):
+            resp = auth_client.get("/admin/mesas/data?dept=05")
+
+        data = resp.get_json()
+        assert data["rows"][0]["dept_name"] == "ANTIOQUIA"
+
+    def test_dept_name_falls_back_to_raw_code_for_unknown(self, prod_app, auth_client):
+        """A dept code absent from _DEPT_NAMES falls back to the raw code, no 500."""
+        rows = [{"mesa_key": "99_001_01_01_1", "dept": "99", "overall_status": "clean"}]
+        stats = {"_global": {"total": 1}}
+
+        with patch("src.modules.labeler.auth.decode_jwt", return_value={"sub": "admin-test-user"}), \
+             patch("src.modules.labeler.auth._get_user_role", return_value="admin"), \
+             patch("src.modules.labeler.server._DEPT_NAMES", {"05": "ANTIOQUIA"}), \
+             patch("src.modules.labeler.db.get_mesa_results", return_value=rows), \
+             patch("src.modules.labeler.db.get_mesa_stats", return_value=stats):
+            resp = auth_client.get("/admin/mesas/data?dept=99")
+
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["rows"][0]["dept_name"] == "99"
+
 
 # ---------------------------------------------------------------------------
 # T2-2 (RED): GET /admin/mesas/stats
