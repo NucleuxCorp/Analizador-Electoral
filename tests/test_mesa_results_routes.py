@@ -206,6 +206,16 @@ class TestMesasStatsRoute:
 
 _MESA_KEY = "01_001_001_01_001"
 
+_EMPTY_EDIT_WINDOW = {
+    "scope": "field",
+    "fields": {
+        "VOTANTES": {"editable": True, "editable_until": None, "first_decision_at": None, "decision_count": 0},
+        "URNA": {"editable": True, "editable_until": None, "first_decision_at": None, "decision_count": 0},
+        "SUMA_TOTAL": {"editable": True, "editable_until": None, "first_decision_at": None, "decision_count": 0},
+    },
+    "decision_count": 0,
+}
+
 
 class TestAdminMesaDetailRoute:
     """GET /admin/mesas/<mesa_key> merges mesa_results + transversal reports."""
@@ -236,7 +246,9 @@ class TestAdminMesaDetailRoute:
         with patch("src.modules.labeler.auth.decode_jwt", return_value={"sub": "admin-test-user"}), \
              patch("src.modules.labeler.auth._get_user_role", return_value="admin"), \
              patch("src.modules.labeler.db.get_mesa_results", return_value=[status_row]) as mock_results, \
-             patch("src.modules.labeler.db.list_transversal_reports", return_value=reports) as mock_reports:
+             patch("src.modules.labeler.db.list_transversal_reports", return_value=reports) as mock_reports, \
+             patch("src.modules.labeler.db.get_transversal_decisions", return_value={}), \
+             patch("src.modules.labeler.db.get_transversal_decision_edit_window", return_value=_EMPTY_EDIT_WINDOW):
             resp = auth_client.get(f"/admin/mesas/{_MESA_KEY}")
 
         assert resp.status_code == 200
@@ -256,7 +268,9 @@ class TestAdminMesaDetailRoute:
         with patch("src.modules.labeler.auth.decode_jwt", return_value={"sub": "admin-test-user"}), \
              patch("src.modules.labeler.auth._get_user_role", return_value="admin"), \
              patch("src.modules.labeler.db.get_mesa_results", return_value=[status_row]), \
-             patch("src.modules.labeler.db.list_transversal_reports", return_value=[]):
+             patch("src.modules.labeler.db.list_transversal_reports", return_value=[]), \
+             patch("src.modules.labeler.db.get_transversal_decisions", return_value={}), \
+             patch("src.modules.labeler.db.get_transversal_decision_edit_window", return_value=_EMPTY_EDIT_WINDOW):
             resp = auth_client.get(f"/admin/mesas/{_MESA_KEY}")
 
         assert resp.status_code == 200
@@ -269,7 +283,9 @@ class TestAdminMesaDetailRoute:
         with patch("src.modules.labeler.auth.decode_jwt", return_value={"sub": "admin-test-user"}), \
              patch("src.modules.labeler.auth._get_user_role", return_value="admin"), \
              patch("src.modules.labeler.db.get_mesa_results", return_value=[]), \
-             patch("src.modules.labeler.db.list_transversal_reports", return_value=[]):
+             patch("src.modules.labeler.db.list_transversal_reports", return_value=[]), \
+             patch("src.modules.labeler.db.get_transversal_decisions", return_value={}), \
+             patch("src.modules.labeler.db.get_transversal_decision_edit_window", return_value=_EMPTY_EDIT_WINDOW):
             resp = auth_client.get("/admin/mesas/99_999_999_99_999")
 
         assert resp.status_code in (200, 404)
@@ -288,7 +304,9 @@ class TestAdminMesaDetailRoute:
         with patch("src.modules.labeler.auth.decode_jwt", return_value={"sub": "admin-test-user"}), \
              patch("src.modules.labeler.auth._get_user_role", return_value="admin"), \
              patch("src.modules.labeler.db.get_mesa_results", return_value=[status_row]), \
-             patch("src.modules.labeler.db.list_transversal_reports", return_value=reports):
+             patch("src.modules.labeler.db.list_transversal_reports", return_value=reports), \
+             patch("src.modules.labeler.db.get_transversal_decisions", return_value={}), \
+             patch("src.modules.labeler.db.get_transversal_decision_edit_window", return_value=_EMPTY_EDIT_WINDOW):
             resp = auth_client.get(f"/admin/mesas/{_MESA_KEY}")
 
         assert resp.status_code == 200
@@ -296,3 +314,154 @@ class TestAdminMesaDetailRoute:
         assert "confirmado" not in body
         assert "pendiente" not in body
         assert "disputado" not in body
+
+    # -----------------------------------------------------------------
+    # mesa-detail-decision-status — read-only decision-confirmation matrix
+    # -----------------------------------------------------------------
+
+    def test_admin_mesa_detail_route_renders_decisions_present(self, prod_app, auth_client):
+        """Decisions on some fields/sources render as Aceptado/Rechazado."""
+        status_row = {
+            "mesa_key": _MESA_KEY, "dept": "01", "mpio": "001", "zona": "01",
+            "puesto": "001", "mesa": "001", "overall_status": "clean",
+        }
+        decisions = {
+            _MESA_KEY: {
+                "VOTANTES": {"e14c": "accepted", "e14d": "rejected"},
+                "URNA": {"e14t": "accepted"},
+            }
+        }
+        edit_window = {
+            "scope": "field",
+            "fields": {
+                "VOTANTES": {"editable": True, "editable_until": "2026-07-17T13:00:00+00:00",
+                             "first_decision_at": "2026-07-17T10:00:00+00:00", "decision_count": 2},
+                "URNA": {"editable": False, "editable_until": "2026-07-16T13:00:00+00:00",
+                         "first_decision_at": "2026-07-16T10:00:00+00:00", "decision_count": 1},
+                "SUMA_TOTAL": {"editable": True, "editable_until": None,
+                               "first_decision_at": None, "decision_count": 0},
+            },
+            "decision_count": 3,
+        }
+        with patch("src.modules.labeler.auth.decode_jwt", return_value={"sub": "admin-test-user"}), \
+             patch("src.modules.labeler.auth._get_user_role", return_value="admin"), \
+             patch("src.modules.labeler.db.get_mesa_results", return_value=[status_row]), \
+             patch("src.modules.labeler.db.list_transversal_reports", return_value=[]), \
+             patch("src.modules.labeler.db.get_transversal_decisions", return_value=decisions) as mock_decisions, \
+             patch("src.modules.labeler.db.get_transversal_decision_edit_window", return_value=edit_window) as mock_window:
+            resp = auth_client.get(f"/admin/mesas/{_MESA_KEY}")
+
+        assert resp.status_code == 200
+        mock_decisions.assert_called_once_with(_MESA_KEY)
+        mock_window.assert_called_once_with(_MESA_KEY)
+        body = resp.get_data(as_text=True)
+        assert "Aceptado" in body
+        assert "Rechazado" in body
+
+    def test_admin_mesa_detail_route_zero_decisions_clean_empty_state(self, prod_app, auth_client):
+        """No decisions registered anywhere — matrix renders without errors."""
+        status_row = {
+            "mesa_key": _MESA_KEY, "dept": "01", "mpio": "001", "zona": "01",
+            "puesto": "001", "mesa": "001", "overall_status": "clean",
+        }
+        with patch("src.modules.labeler.auth.decode_jwt", return_value={"sub": "admin-test-user"}), \
+             patch("src.modules.labeler.auth._get_user_role", return_value="admin"), \
+             patch("src.modules.labeler.db.get_mesa_results", return_value=[status_row]), \
+             patch("src.modules.labeler.db.list_transversal_reports", return_value=[]), \
+             patch("src.modules.labeler.db.get_transversal_decisions", return_value={}), \
+             patch("src.modules.labeler.db.get_transversal_decision_edit_window", return_value=_EMPTY_EDIT_WINDOW):
+            resp = auth_client.get(f"/admin/mesas/{_MESA_KEY}")
+
+        assert resp.status_code == 200
+        body = resp.get_data(as_text=True)
+        assert "Aceptado" not in body
+        assert "Rechazado" not in body
+
+    def test_admin_mesa_detail_route_decisions_section_independent_of_status(self, prod_app, auth_client):
+        """Decisions present while mesa_status is None — both sections still render safely."""
+        decisions = {_MESA_KEY: {"VOTANTES": {"e14c": "accepted"}}}
+        edit_window = {
+            "scope": "field",
+            "fields": {
+                "VOTANTES": {"editable": True, "editable_until": "2026-07-17T13:00:00+00:00",
+                             "first_decision_at": "2026-07-17T10:00:00+00:00", "decision_count": 1},
+                "URNA": {"editable": True, "editable_until": None, "first_decision_at": None, "decision_count": 0},
+                "SUMA_TOTAL": {"editable": True, "editable_until": None, "first_decision_at": None, "decision_count": 0},
+            },
+            "decision_count": 1,
+        }
+        with patch("src.modules.labeler.auth.decode_jwt", return_value={"sub": "admin-test-user"}), \
+             patch("src.modules.labeler.auth._get_user_role", return_value="admin"), \
+             patch("src.modules.labeler.db.get_mesa_results", return_value=[]), \
+             patch("src.modules.labeler.db.list_transversal_reports", return_value=[]), \
+             patch("src.modules.labeler.db.get_transversal_decisions", return_value=decisions), \
+             patch("src.modules.labeler.db.get_transversal_decision_edit_window", return_value=edit_window):
+            resp = auth_client.get(f"/admin/mesas/{_MESA_KEY}")
+
+        assert resp.status_code == 200
+        body = resp.get_data(as_text=True)
+        assert "No hay resultado de algoritmo registrado" in body
+        assert "Aceptado" in body
+
+    def test_admin_mesa_detail_route_edit_window_display(self, prod_app, auth_client):
+        """A field within its 3h window shows editable+count; past window shows closed."""
+        status_row = {
+            "mesa_key": _MESA_KEY, "dept": "01", "mpio": "001", "zona": "01",
+            "puesto": "001", "mesa": "001", "overall_status": "clean",
+        }
+        decisions = {
+            _MESA_KEY: {
+                "VOTANTES": {"e14c": "accepted"},
+                "URNA": {"e14c": "rejected"},
+            }
+        }
+        edit_window = {
+            "scope": "field",
+            "fields": {
+                # within window (first decision 1h ago, 3h window)
+                "VOTANTES": {"editable": True, "editable_until": "2026-07-17T14:00:00+00:00",
+                             "first_decision_at": "2026-07-17T11:00:00+00:00", "decision_count": 1},
+                # past window (first decision 10h ago)
+                "URNA": {"editable": False, "editable_until": "2026-07-17T04:00:00+00:00",
+                         "first_decision_at": "2026-07-17T01:00:00+00:00", "decision_count": 1},
+                "SUMA_TOTAL": {"editable": True, "editable_until": None, "first_decision_at": None, "decision_count": 0},
+            },
+            "decision_count": 2,
+        }
+        with patch("src.modules.labeler.auth.decode_jwt", return_value={"sub": "admin-test-user"}), \
+             patch("src.modules.labeler.auth._get_user_role", return_value="admin"), \
+             patch("src.modules.labeler.db.get_mesa_results", return_value=[status_row]), \
+             patch("src.modules.labeler.db.list_transversal_reports", return_value=[]), \
+             patch("src.modules.labeler.db.get_transversal_decisions", return_value=decisions), \
+             patch("src.modules.labeler.db.get_transversal_decision_edit_window", return_value=edit_window):
+            resp = auth_client.get(f"/admin/mesas/{_MESA_KEY}")
+
+        assert resp.status_code == 200
+        body = resp.get_data(as_text=True)
+        assert "Editable" in body
+        assert "Cerrado" in body
+
+    def test_admin_mesa_detail_route_decisions_no_write_markup(self, prod_app, auth_client):
+        """The decision-status section is strictly read-only: no form/button markup."""
+        status_row = {
+            "mesa_key": _MESA_KEY, "dept": "01", "mpio": "001", "zona": "01",
+            "puesto": "001", "mesa": "001", "overall_status": "clean",
+        }
+        decisions = {_MESA_KEY: {"VOTANTES": {"e14c": "accepted"}}}
+        with patch("src.modules.labeler.auth.decode_jwt", return_value={"sub": "admin-test-user"}), \
+             patch("src.modules.labeler.auth._get_user_role", return_value="admin"), \
+             patch("src.modules.labeler.db.get_mesa_results", return_value=[status_row]), \
+             patch("src.modules.labeler.db.list_transversal_reports", return_value=[]), \
+             patch("src.modules.labeler.db.get_transversal_decisions", return_value=decisions), \
+             patch("src.modules.labeler.db.get_transversal_decision_edit_window", return_value=_EMPTY_EDIT_WINDOW):
+            resp = auth_client.get(f"/admin/mesas/{_MESA_KEY}")
+
+        assert resp.status_code == 200
+        body = resp.get_data(as_text=True)
+        marker = "Estado de decisiones"
+        assert marker in body
+        decisions_section = body.split(marker, 1)[1]
+        # Stop at the next top-level </section> so we only inspect this section.
+        decisions_section = decisions_section.split("</section>", 1)[0]
+        assert "<form" not in decisions_section
+        assert "<button" not in decisions_section

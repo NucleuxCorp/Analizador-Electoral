@@ -1882,9 +1882,10 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
 
         # ----------------------------------------------------------------
         # GET /admin/mesas/<mesa_key> — single-mesa detail (algorithm status
-        # + user reports), Phase A of mesa-findings-consolidation. View-only:
-        # no decision-confirmation state (transversal_review_decisions
-        # doesn't exist yet).
+        # + user reports + decision-confirmation status), Phase A of
+        # mesa-findings-consolidation plus mesa-detail-decision-status.
+        # View-only: renders transversal_review_decisions state (field x
+        # source matrix + per-field edit window); no write path/route here.
         # ----------------------------------------------------------------
 
         @app.route("/admin/mesas/<mesa_key>")
@@ -1894,6 +1895,8 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
             results = _db.get_mesa_results(mesa_key=mesa_key)
             mesa_status = results[0] if results else None
             reports = _db.list_transversal_reports(mesa_key)
+            decisions = _db.get_transversal_decisions(mesa_key).get(mesa_key, {})
+            edit_window = _db.get_transversal_decision_edit_window(mesa_key)
 
             user_role = getattr(g, "user_role", "")
             return render_template(
@@ -1901,6 +1904,8 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 mesa_key=mesa_key,
                 mesa_status=mesa_status,
                 reports=reports,
+                decisions=decisions,
+                edit_window=edit_window,
                 user_role=user_role,
             )
 
