@@ -5,5 +5,12 @@
   "files": {
     "departmentsTree.json": 4644524,
     "allCorporations.json": 273
+  },
+  "allDepartments": {
+    "added_at": "2026-07-17T10:03:01",
+    "source": "C:\\Users\\Administrador\\Downloads\\allDepartments (1).json",
+    "bytes": 3320,
+    "departments": 34,
+    "note": "Level: department code+name only (no municipios/puestos). Hierarchy is in departmentsTree.json"
   }
 }

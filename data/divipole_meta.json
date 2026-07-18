@@ -1,14 +1,14 @@
 {
-  "generated_at": "2026-07-17T09:54:29",
+  "generated_at": "2026-07-18T12:02:45",
   "source": "temis_divipol",
   "temis_dir": "D:/Nucleux/tools/Analizador de Elecciones/data/temis_divipol",
   "inputs": {
     "departmentsTree": "departmentsTree.json",
     "allCorporations": "allCorporations.json",
-    "allDepartments": null
+    "allDepartments": "allDepartments.json"
   },
   "output": "D:/Nucleux/tools/Analizador de Elecciones/data/divipole.json",
-  "backup": "D:/Nucleux/tools/Analizador de Elecciones/data/divipole.bak_2026-07-17_09-54-29.json",
+  "backup": "D:/Nucleux/tools/Analizador de Elecciones/data/divipole.bak_2026-07-18_12-02-44.json",
   "counts": {
     "departments": 34,
     "municipalities": 1189,
