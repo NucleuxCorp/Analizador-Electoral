@@ -1844,14 +1844,19 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
             except ValueError as exc:
                 return _error_response(str(exc), 400)
 
-            # Validate assignment ownership: check an active assignment row exists
+            # Validate assignment ownership: check an active (non-expired) assignment
+            # row exists. The `expires_at > now()` filter is defense-in-depth: even
+            # if release_expired_assignments() has not yet purged a stale row, an
+            # expired lease must never be accepted as proof of ownership here.
             try:
                 _cli = _db._client()
+                now_iso = datetime.now(tz=timezone.utc).isoformat()
                 asgn_resp = (
                     _cli.table("assignments")
                     .select("crop_id")
                     .eq("crop_id", crop_id)
                     .eq("annotator_id", g.user_id)
+                    .gt("expires_at", now_iso)
                     .execute()
                 )
                 if not asgn_resp.data:
@@ -2317,7 +2322,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
 
         @app.route("/api/transversal/decisions/export")
         @require_auth
-        @require_role(ROLE_ADMIN, ROLE_MODERATOR)
+        @require_role(ROLE_ADMIN)
         def api_transversal_decisions_export() -> Response:
             payload = _db.export_transversal_decisions()
             dataset = payload.get("project", "transversal_review_E14C_conflictivas")

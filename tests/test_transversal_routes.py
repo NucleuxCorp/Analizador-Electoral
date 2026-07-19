@@ -92,14 +92,21 @@ class TestTransversalRoutesAuth:
         assert resp.status_code == 200
         assert b"Revisi" in resp.data
 
-    def test_moderator_export_200(self, client):
+    def test_moderator_export_403(self, client):
+        """Export is admin-only: moderators must be rejected with 403."""
+        with patch("src.modules.labeler.auth.decode_jwt", return_value={"sub": "mod-user"}), \
+             patch("src.modules.labeler.auth._get_user_role", return_value="moderator"):
+            resp = client.get("/api/transversal/decisions/export")
+        assert resp.status_code == 403
+
+    def test_admin_export_200(self, client):
         export_payload = {
             "generated": "2026-07-14T12:00:00Z",
             "project": "transversal_review_E14C_conflictivas",
             "decisions": {},
         }
-        with patch("src.modules.labeler.auth.decode_jwt", return_value={"sub": "mod-user"}), \
-             patch("src.modules.labeler.auth._get_user_role", return_value="moderator"), \
+        with patch("src.modules.labeler.auth.decode_jwt", return_value={"sub": "admin-user"}), \
+             patch("src.modules.labeler.auth._get_user_role", return_value="admin"), \
              patch("src.modules.labeler.db.export_transversal_decisions", return_value=export_payload):
             resp = client.get("/api/transversal/decisions/export")
         assert resp.status_code == 200
