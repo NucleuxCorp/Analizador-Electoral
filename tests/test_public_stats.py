@@ -66,7 +66,7 @@ ZEROS_DICT = {
     "mesas_remaining": 122_020,
     "total_anomalias": 0,
     "total_universe": 122_020,
-    "mesas_sin_e14c": 0,
+    "mesas_sin_e14c": 3_688,
 }
 
 
@@ -191,31 +191,24 @@ class TestGetPublicStatsHappyPath:
 
         assert result["total_universe"] == 122_020
 
-    def test_happy_path_mesas_sin_e14c_is_distinct_count(self):
-        """mesas_sin_e14c reflects count_mesa_results(), not the mesas_all_three constant."""
-        from src.modules.labeler.db import get_public_stats, MESAS_ALL_THREE
+    def test_happy_path_mesas_sin_e14c_is_precomputed_constant(self):
+        """mesas_sin_e14c is the MESAS_SIN_E14C constant, not a live query.
+
+        2026-07-19: a live count(*) WHERE source_status->>'e14c' <> 'ok' (and
+        even the inverse = 'ok' equality) forces a full Postgres Seq Scan on
+        production Supabase regardless of indexing, taking 10-14s and
+        routinely hitting the statement_timeout. Switched to the same
+        precomputed-constant pattern as mesas_all_three.
+        """
+        from src.modules.labeler.db import get_public_stats, MESAS_ALL_THREE, MESAS_SIN_E14C
 
         stats = _global_stats()
 
-        with patch("src.modules.labeler.db.get_mesa_stats", return_value=stats), \
-             patch("src.modules.labeler.db.count_mesa_results", return_value=4_321) as mock_count:
+        with patch("src.modules.labeler.db.get_mesa_stats", return_value=stats):
             result = get_public_stats()
 
-        assert result["mesas_sin_e14c"] == 4_321
+        assert result["mesas_sin_e14c"] == MESAS_SIN_E14C
         assert result["mesas_all_three"] == MESAS_ALL_THREE
-        assert mock_count.call_count == 1
-
-    def test_happy_path_mesas_sin_e14c_uses_hardcoded_national_scope(self):
-        """count_mesa_results() is called with source_missing='e14c' only — no dept filter."""
-        from src.modules.labeler.db import get_public_stats
-
-        stats = _global_stats()
-
-        with patch("src.modules.labeler.db.get_mesa_stats", return_value=stats), \
-             patch("src.modules.labeler.db.count_mesa_results", return_value=0) as mock_count:
-            get_public_stats()
-
-        mock_count.assert_called_once_with(source_missing="e14c")
 
 
 # ---------------------------------------------------------------------------
@@ -243,31 +236,13 @@ class TestGetPublicStatsCacheHit:
         # get_mesa_stats should be called only once (cache hit on second call)
         assert mock_stats.call_count == 1
 
-    def test_cache_hit_no_second_count_mesa_results_call(self):
-        """Calling get_public_stats() twice within TTL issues count_mesa_results() only once."""
-        from src.modules.labeler.db import get_public_stats
-
-        chain = _make_count_chain(500)
-        mock_client = _make_client(chain)
-        stats = _global_stats()
-        now = time.monotonic()
-
-        with patch("src.modules.labeler.db._client", return_value=mock_client), \
-             patch("src.modules.labeler.db.get_mesa_stats", return_value=stats), \
-             patch("src.modules.labeler.db.count_mesa_results", return_value=100) as mock_count, \
-             patch("time.monotonic", side_effect=[now, now + 1, now + 1]):
-            get_public_stats()
-            get_public_stats()
-
-        assert mock_count.call_count == 1
-
 
 # ---------------------------------------------------------------------------
 # Phase 1.4 — test_cache_miss_after_ttl
 # ---------------------------------------------------------------------------
 
 class TestGetPublicStatsCacheMissAfterTTL:
-    """After 300 seconds the cache is stale and a fresh query is issued."""
+    """After 1800 seconds the cache is stale and a fresh query is issued."""
 
     def test_cache_miss_after_ttl_issues_second_query(self):
         """Advancing time past TTL causes a second Supabase query."""
@@ -280,29 +255,11 @@ class TestGetPublicStatsCacheMissAfterTTL:
 
         with patch("src.modules.labeler.db._client", return_value=mock_client), \
              patch("src.modules.labeler.db.get_mesa_stats", return_value=stats) as mock_stats, \
-             patch("time.monotonic", side_effect=[now, now + 301, now + 301]):
+             patch("time.monotonic", side_effect=[now, now + 1801, now + 1801]):
             get_public_stats()
             get_public_stats()
 
         assert mock_stats.call_count == 2
-
-    def test_cache_miss_after_ttl_issues_second_count_mesa_results_call(self):
-        """Advancing time past TTL causes a second count_mesa_results() call."""
-        from src.modules.labeler.db import get_public_stats
-
-        chain = _make_count_chain(500)
-        mock_client = _make_client(chain)
-        stats = _global_stats()
-        now = time.monotonic()
-
-        with patch("src.modules.labeler.db._client", return_value=mock_client), \
-             patch("src.modules.labeler.db.get_mesa_stats", return_value=stats), \
-             patch("src.modules.labeler.db.count_mesa_results", return_value=100) as mock_count, \
-             patch("time.monotonic", side_effect=[now, now + 301, now + 301]):
-            get_public_stats()
-            get_public_stats()
-
-        assert mock_count.call_count == 2
 
 
 # ---------------------------------------------------------------------------
@@ -317,18 +274,6 @@ class TestGetPublicStatsException:
         from src.modules.labeler.db import get_public_stats
 
         with patch("src.modules.labeler.db._client", side_effect=RuntimeError("no client")):
-            result = get_public_stats()
-
-        assert result == ZEROS_DICT
-
-    def test_count_mesa_results_exception_returns_zeros(self):
-        """When count_mesa_results() itself raises, returns zeros dict (fail-closed)."""
-        from src.modules.labeler.db import get_public_stats
-
-        stats = _global_stats()
-
-        with patch("src.modules.labeler.db.get_mesa_stats", return_value=stats), \
-             patch("src.modules.labeler.db.count_mesa_results", side_effect=RuntimeError("down")):
             result = get_public_stats()
 
         assert result == ZEROS_DICT

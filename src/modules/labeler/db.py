@@ -813,8 +813,15 @@ def retract_recent_marks(user_id: str, crop_id: str) -> None:
 # Module-level TTL cache for get_mesa_stats.
 # Structure: { cache_key: {"data": dict, "ts": float} }
 # Cache key is the dept param (or None for global).
+#
+# 1800s (30min), not 300s: a cache miss pays for a full 122k-row pagination
+# of mesa_results, which measured 30-40s on this Supabase instance (2026-07-19
+# — full-table scans here are I/O-bound regardless of query shape, see
+# MESAS_SIN_E14C). These are aggregate homepage stats, not real-time data;
+# a longer TTL trades staleness (up to 30min old) for making that 30-40s
+# cold-cache hit rare instead of guaranteed once every 5 minutes.
 _mesa_stats_cache: dict = {}
-_MESA_STATS_TTL = 300  # seconds
+_MESA_STATS_TTL = 1800  # seconds
 
 # Total universe of mesas for the Colombia 2026 presidential election.
 # Verified against data/allMviewGetProgressByCorporations.json:
@@ -825,6 +832,18 @@ TOTAL_UNIVERSE: int = 122_020
 # Limiting factor for mesas_all_three (E14T/E14D both have 122,019).
 MESAS_ALL_THREE: int = 118_543
 
+# Mesas with sources.e14c.status != "ok" (no-descargado/extraction_error),
+# counted 2026-07-19 from the same local data/cross_mesa_validation_*.jsonl
+# files that were uploaded to mesa_results (source of truth for source_status).
+# A precomputed constant, not a live COUNT: `count(*) WHERE
+# source_status->>'e14c' <> 'ok'` (and even the inverse `= 'ok'` equality)
+# forces a full Postgres Seq Scan on this Supabase instance regardless of
+# indexing — 'ok' matches ~97% of rows so a seq scan is the genuinely
+# correct query plan, but scanning the full 122k-row/249MB table here takes
+# 10-14s and routinely hits the statement_timeout. Refresh this value after
+# re-running scripts/upload_mesa_results.py against a full dataset.
+MESAS_SIN_E14C: int = 3_688
+
 # Zeros dict returned by get_public_stats() on any exception (fail-closed).
 _PUBLIC_STATS_ZEROS: dict = {
     "mesas_all_three": MESAS_ALL_THREE,
@@ -832,7 +851,7 @@ _PUBLIC_STATS_ZEROS: dict = {
     "mesas_remaining": TOTAL_UNIVERSE,
     "total_anomalias": 0,
     "total_universe": TOTAL_UNIVERSE,
-    "mesas_sin_e14c": 0,
+    "mesas_sin_e14c": MESAS_SIN_E14C,
 }
 
 # All valid overall_status values (5-level taxonomy, design D3).
@@ -1115,18 +1134,11 @@ def get_public_stats() -> dict:
         # mesas_all_three: known constant from disk audit (2026-07-04).
         mesas_all_three: int = MESAS_ALL_THREE
 
-        # mesas_sin_e14c: national COUNT, literal source_missing="e14c" — never
-        # derived from request input (no new public filterable surface).
-        # Isolated in its own try/except: an unindexed JSONB arrow-expression
-        # COUNT can time out server-side (PostgREST count=exact does a full
-        # scan without a functional index on source_status->>'e14c'). A
-        # failure here must not zero out the OTHER stats that already work
-        # (mesas_analyzed, total_anomalias, etc.) — degrade only this field.
-        try:
-            mesas_sin_e14c: int = count_mesa_results(source_missing="e14c")
-        except Exception as exc:
-            logger.warning("mesas_sin_e14c count failed: %s", exc)
-            mesas_sin_e14c = 0
+        # mesas_sin_e14c: precomputed constant (see MESAS_SIN_E14C) — same
+        # pattern as mesas_all_three. A live COUNT/pagination that touches
+        # source_status across all 122k rows was timing out regardless of
+        # approach on this Supabase instance (see MESAS_SIN_E14C docstring).
+        mesas_sin_e14c: int = MESAS_SIN_E14C
 
         result = {
             "mesas_all_three": mesas_all_three,
