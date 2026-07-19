@@ -1582,14 +1582,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
             try:
                 public_stats = _db.get_public_stats()
             except Exception:
-                public_stats = {
-                    "mesas_all_three": 0,
-                    "mesas_analyzed": 0,
-                    "mesas_remaining": 0,
-                    "total_anomalias": 0,
-                    "total_universe": 122_020,
-                    "mesas_sin_e14c": 0,
-                }
+                public_stats = dict(_db._PUBLIC_STATS_ZEROS)
             semaphore_data = _build_semaphore_data()
             semaphore_global = semaphore_data["global"] if semaphore_data else None
             return render_template(
