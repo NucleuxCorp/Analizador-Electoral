@@ -46,7 +46,6 @@ Safe to re-run:
 | `add_mesa_report_type.sql` | Migration | `report_type` column |
 | `fix_mesa_reports_view.sql` | Migration | `mesa_reports_view` + backfill |
 | `add_mesa_source_status.sql` | Migration | `source_status` JSONB + GIN index on `mesa_results` |
-| `add_source_status_e14c_index.sql` | Migration | Functional B-tree index on `(source_status->>'e14c')` — required for the public home "mesas sin E14C" counter to COUNT without timing out |
 
 ### 4. Panel transversal (`/admin/transversal`)
 
