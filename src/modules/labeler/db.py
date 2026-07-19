@@ -972,7 +972,17 @@ def _fetch_mesa_results_batched(select_cols: str, dept: str | None = None) -> li
     Shared by _get_mesa_stats_uncached and _get_hierarchical_mesa_stats_uncached
     so both stay in sync on the pagination strategy.
 
-    Always orders by mesa_key so OFFSET/RANGE pagination is stable.
+    No ORDER BY: both callers only aggregate/count rows into dicts keyed by
+    dept/mpio/puesto, so row order is irrelevant. An explicit
+    `.order("mesa_key")` was here for OFFSET-pagination stability, but on
+    this table size it makes Postgres sort (or scan a bloated index) on
+    every page, and cost grows with offset until later pages hit the
+    statement timeout entirely (confirmed 2026-07-19: with .order(), page 86
+    at offset 86000 times out after ~9s; without it, all 123 pages complete
+    in under a second each). This endpoint is a periodically-cached read
+    (get_mesa_stats() TTL) against a table that isn't concurrently written
+    during normal operation, so the small risk of a skipped/duplicated row
+    under a mid-pagination write is an acceptable trade for not timing out.
     """
     _BATCH = 1000
     rows: list[dict] = []
@@ -981,7 +991,6 @@ def _fetch_mesa_results_batched(select_cols: str, dept: str | None = None) -> li
         q = (
             _client().table("mesa_results")
             .select(select_cols)
-            .order("mesa_key")
             .range(offset, offset + _BATCH - 1)
         )
         if dept is not None:
@@ -1108,7 +1117,16 @@ def get_public_stats() -> dict:
 
         # mesas_sin_e14c: national COUNT, literal source_missing="e14c" — never
         # derived from request input (no new public filterable surface).
-        mesas_sin_e14c: int = count_mesa_results(source_missing="e14c")
+        # Isolated in its own try/except: an unindexed JSONB arrow-expression
+        # COUNT can time out server-side (PostgREST count=exact does a full
+        # scan without a functional index on source_status->>'e14c'). A
+        # failure here must not zero out the OTHER stats that already work
+        # (mesas_analyzed, total_anomalias, etc.) — degrade only this field.
+        try:
+            mesas_sin_e14c: int = count_mesa_results(source_missing="e14c")
+        except Exception as exc:
+            logger.warning("mesas_sin_e14c count failed: %s", exc)
+            mesas_sin_e14c = 0
 
         result = {
             "mesas_all_three": mesas_all_three,
