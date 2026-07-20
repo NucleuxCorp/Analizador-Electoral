@@ -279,11 +279,12 @@
           <th>Labels recibidos</th>
           <th>Acta</th>
           <th>PDF</th>
+          <th>Resolver</th>
         </tr>
       </thead>
       <tbody>
         {% for c in conflicts %}
-        <tr>
+        <tr id="conflict-row-{{ c.crop_id }}">
           <td>
             {% if c.crop_id %}
             <img class="crop-thumb"
@@ -311,6 +312,13 @@
             {% if c.crop_id %}
             <a class="pdf-link" href="/pdf?v={{ c.crop_id }}" target="_blank">Ver acta</a>
             {% endif %}
+          </td>
+          <td>
+            <form class="resolve-form" onsubmit="return resolveConflict(event, '{{ c.crop_id }}');">
+              <input type="text" class="resolve-input" maxlength="6"
+                     placeholder="valor" autocomplete="off" required>
+              <button type="submit">Confirmar</button>
+            </form>
           </td>
         </tr>
         {% endfor %}
@@ -716,6 +724,44 @@ function hideRecord(table, id, rowId) {
     btn.disabled = false;
     btn.textContent = 'Ocultar';
   });
+}
+
+function resolveConflict(evt, cropId) {
+  evt.preventDefault();
+  var form = evt.target;
+  var input = form.querySelector('.resolve-input');
+  var btn = form.querySelector('button');
+  var value = input.value.trim();
+  if (!value) return false;
+
+  input.disabled = true;
+  btn.disabled = true;
+  btn.textContent = '…';
+
+  fetch('/admin/resolve', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({crop_id: cropId, value: value})
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    if (d.ok) {
+      var row = document.getElementById('conflict-row-' + cropId);
+      if (row) row.style.display = 'none';
+    } else {
+      input.disabled = false;
+      btn.disabled = false;
+      btn.textContent = 'Confirmar';
+      alert('Error al resolver: ' + (d.error || 'desconocido'));
+    }
+  })
+  .catch(function() {
+    input.disabled = false;
+    btn.disabled = false;
+    btn.textContent = 'Confirmar';
+    alert('Error de red al resolver.');
+  });
+  return false;
 }
 
 // ---------------------------------------------------------------------------

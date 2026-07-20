@@ -2372,6 +2372,49 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
             return jsonify({"ok": True})
 
         # ----------------------------------------------------------------
+        # POST /admin/resolve — admin/moderator conflict resolution
+        # ----------------------------------------------------------------
+
+        @app.route("/admin/resolve", methods=["POST"])
+        @require_auth
+        @require_role(ROLE_ADMIN, ROLE_MODERATOR)
+        def admin_resolve_view() -> Response:
+            from flask import g
+            body = request.get_json(force=True, silent=True) or {}
+            crop_id = body.get("crop_id", "")
+            raw_value = body.get("value", "")
+
+            if not crop_id:
+                return _error_response("crop_id is required", 400)
+
+            try:
+                label_human, amended = _parse_value_token(raw_value)
+            except ValueError as exc:
+                return _error_response(str(exc), 400)
+
+            try:
+                crop = _db.get_crop_details(crop_id)
+            except Exception:
+                return _error_response("Crop not found", 404)
+            if crop.get("status") != "disputed":
+                return _error_response("Crop is not in disputed status", 409)
+
+            try:
+                _db.write_label(
+                    crop_id=crop_id,
+                    annotator_id=g.user_id,
+                    label_human=label_human,
+                    amended=amended,
+                    is_admin=True,
+                    vuelta=crop.get("vuelta") or app.config["MODULE"],
+                )
+                _db.evaluate_agreement(crop_id)
+            except Exception as exc:
+                return _error_response(f"Resolution failed: {exc}", 500)
+
+            return jsonify({"ok": True})
+
+        # ----------------------------------------------------------------
         # POST /admin/hide — soft-delete a fraud/feedback/report record (admin only)
         # ----------------------------------------------------------------
 
