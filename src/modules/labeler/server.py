@@ -1944,7 +1944,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
 
         @app.route("/image/<crop_id>")
         @require_auth
-        @require_role(ROLE_VALIDATOR, ROLE_REVIEWER, ROLE_ADMIN)
+        @require_role(ROLE_VALIDATOR, ROLE_REVIEWER, ROLE_ADMIN, ROLE_MODERATOR)
         def image_view(crop_id: str) -> Response:
             # Sanitize: allow only safe characters
             if not crop_id.replace("-", "").replace("_", "").isalnum():
