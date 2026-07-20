@@ -901,8 +901,11 @@ _STATE: Optional[SessionState] = None
 
 import re as _re
 
-# Accepted value tokens: "", "0"–"9", "E<digit>", "*", "-", "."
-_VALUE_TOKEN_PATTERN = _re.compile(r'^(|[0-9]{1,5}|E[0-9]{1,5}|\*|-|\.|\+|/{1,3})$')
+# Accepted value tokens: "", 1-5 digits, "E"+1-5 digits (amended-OCR prefix),
+# or one zero-variant glyph jurors use as a handwritten cross-out/zero mark:
+# * - . + x X, or 1-3 slashes (/, //, ///  are 3 distinct glyphs, not a length
+# range). Keep in sync with ZERO_VARIANTS in db.py.
+_VALUE_TOKEN_PATTERN = _re.compile(r'^(|[0-9]{1,5}|E[0-9]{1,5}|\*|-|\.|\+|x|X|/{1,3})$')
 
 # ---------------------------------------------------------------------------
 # Report glyph validation — single canonical source shared with label.html JS
