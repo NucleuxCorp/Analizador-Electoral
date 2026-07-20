@@ -80,6 +80,17 @@
       width: 52px; height: 52px; object-fit: contain;
       background: #0a1020; border: 1px solid #1e2a3a; border-radius: 4px;
     }
+    .crop-thumb.zoomable { cursor: zoom-in; }
+    .crop-lightbox {
+      display: none; position: fixed; inset: 0; z-index: 999;
+      background: rgba(0,0,0,.85);
+      align-items: center; justify-content: center; cursor: zoom-out;
+    }
+    .crop-lightbox.open { display: flex; }
+    .crop-lightbox img {
+      max-width: 90vw; max-height: 90vh; object-fit: contain;
+      background: #0a1020; border: 1px solid #2a3a5a; border-radius: 6px;
+    }
     .field-badge {
       display: inline-block; background: #1a2436; border: 1px solid #2a3a5a;
       border-radius: 4px; padding: 2px 8px; font-size: .7rem; color: #7ec8e3;
@@ -287,10 +298,11 @@
         <tr id="conflict-row-{{ c.crop_id }}">
           <td>
             {% if c.crop_id %}
-            <img class="crop-thumb"
+            <img class="crop-thumb zoomable"
                  src="/crop-image/{{ c.crop_id }}"
                  alt="{{ c.crop_id }}"
-                 onerror="this.style.display='none'">
+                 onerror="this.style.display='none'"
+                 onclick="openCropPreview('/crop-image/{{ c.crop_id }}')">
             {% endif %}
           </td>
           <td>
@@ -685,6 +697,10 @@
   </div>
 </div>
 
+<div id="crop-lightbox" class="crop-lightbox" onclick="closeCropPreview()">
+  <img id="crop-lightbox-img" src="" alt="preview">
+</div>
+
 <script>
 function toggleMesaCard(idx) {
   var body = document.getElementById('mrbody-' + idx);
@@ -725,6 +741,20 @@ function hideRecord(table, id, rowId) {
     btn.textContent = 'Ocultar';
   });
 }
+
+function openCropPreview(url) {
+  document.getElementById('crop-lightbox-img').src = url;
+  document.getElementById('crop-lightbox').classList.add('open');
+}
+
+function closeCropPreview() {
+  document.getElementById('crop-lightbox').classList.remove('open');
+  document.getElementById('crop-lightbox-img').src = '';
+}
+
+document.addEventListener('keydown', function(evt) {
+  if (evt.key === 'Escape') closeCropPreview();
+});
 
 function resolveConflict(evt, cropId) {
   evt.preventDefault();
