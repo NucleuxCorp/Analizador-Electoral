@@ -704,7 +704,7 @@ def write_informe(
         n = counts.get(cls, 0)
         if n:
             lines.append(f"| {cls} | {n:,} | {_pct(n, total)} |")
-    for cls, n in sorted(counts.items()):
+    for cls, n in sorted((k, v) for k, v in counts.items() if k is not None):
         if cls not in order:
             lines.append(f"| {cls} | {n:,} | {_pct(n, total)} |")
     lines.append(f"| **Total** | **{total:,}** | **100%** |")
