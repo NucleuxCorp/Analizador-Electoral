@@ -1,8 +1,11 @@
 # Herramientas convertidor-pdf-md
-# Ignorar PDFs de entrada y Markdown generado (no versionar contenido)
+# Ignorar PDFs de entrada, Markdown y CSV generado (no versionar contenido)
 pdfs/*.pdf
 md/*.md
+csv/
+csv/*/
 
 # Mantener las carpetas vacias con .gitkeep
 !pdfs/.gitkeep
 !md/.gitkeep
+!csv/.gitkeep
