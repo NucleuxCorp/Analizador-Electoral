@@ -147,7 +147,7 @@ class TestMaintenanceMode:
         assert "<h1" in body
 
     def test_landing_reuses_existing_tutorial_embed(self, client, monkeypatch):
-        """The landing page must reuse the existing Loom tutorial iframe."""
+        """The landing page must reuse the existing YouTube tutorial iframe."""
         monkeypatch.setenv("MAINTENANCE_MODE", "true")
 
         resp = client.get("/", headers={"Accept": "text/html"})
@@ -155,4 +155,4 @@ class TestMaintenanceMode:
 
         assert resp.status_code == 503
         assert '<iframe' in body
-        assert "loom.com/embed/40f6d1a46315479f969c1f6296b1624b" in body
+        assert "youtube.com/embed/8BqoRI5P1jw" in body
