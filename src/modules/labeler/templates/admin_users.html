@@ -13,7 +13,7 @@
       if (["POST", "PUT", "PATCH", "DELETE"].indexOf(method) !== -1) {
         init.headers = Object.assign({}, init.headers, { "X-CSRFToken": token });
       }
-      return origFetch.call(this, init);
+      return origFetch.call(this, input, init);
     };
   })();
   </script>
