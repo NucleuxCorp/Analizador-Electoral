@@ -33,6 +33,21 @@ except ImportError:
     print("tqdm is required: pip install tqdm", file=sys.stderr)
     sys.exit(1)
 
+# Optional Playwright fallback (e14c-verification-dual-mode). `http_fallback.py`
+# ships as a sibling file inside this same distribution bundle — import-guarded
+# so a citizen who never installs Playwright simply runs urllib-only with a
+# clear degradation message (see PlaywrightFetcher's own single degradation
+# path). See README.md for the optional `pip install playwright` step.
+try:
+    from http_fallback import PlaywrightFetcher
+except ImportError:
+    PlaywrightFetcher = None
+
+# Canonical folder-as-source-of-truth extraction (e14c-url-builder-folder-
+# source-of-truth, ADR-1/ADR-5). Ships as a required sibling file in this
+# same distribution bundle (unlike the optional Playwright fallback above).
+from e14c_paths import build_e14c_url
+
 # ---------------------------------------------------------------------------
 # Script directory — informe.md is written here, not inside the PDFs folder
 # ---------------------------------------------------------------------------
@@ -127,6 +142,28 @@ def load_index(
         flush=True,
     )
     return by_hash, by_filename, known_dif, meta
+
+
+def load_by_location(index_path: Path) -> dict[str, str]:
+    """Load the `by_location` bridge map (Phase 2 of
+    e14c-url-builder-folder-source-of-truth: `dept/mpio/zona/puesto` strings
+    keyed by filename, baked into `hash_index_e14c.json` by
+    `scripts/build_hash_index.py`). Used as the flat-folder fallback in
+    `build_url()`/`organize_pdfs()` when no `zona_XX/puesto_XX` folder
+    ancestors exist to derive from directly.
+
+    Returns {} when the index is missing, unreadable, or predates this key
+    (older index snapshot) — callers must treat that as "no fallback
+    available", never as license to revert to filename-position parsing.
+    """
+    if not index_path.exists():
+        return {}
+    try:
+        with open(index_path, encoding="utf-8") as f:
+            data = json.load(f)
+        return data.get("by_location", {})
+    except Exception:
+        return {}
 
 
 # ---------------------------------------------------------------------------
@@ -379,23 +416,60 @@ _DEPT_NAMES: dict[str, str] = {
 }
 
 
-def _parse_dept_parts(filename: str) -> tuple[str, str, str, str] | None:
-    """Extract (dept, mpio, zona, puesto) from E14C filename, or None if not parseable."""
-    stem = Path(filename).stem
-    parts = stem.split("_", 5)
-    if len(parts) > 4:
-        return parts[0], parts[1], parts[2], parts[3]
-    return None
+def _parse_dept_parts(
+    filename: str, by_location: dict[str, str] | None = None
+) -> tuple[str, str, str, str] | None:
+    """Extract (dept, mpio, zona, puesto) for `organize_pdfs`'s flat->folder move.
+
+    This is the OPPOSITE direction from `build_url()`'s folder-derivation:
+    the destination folder structure doesn't exist yet (that's what this
+    function is computing), so there is no `zona_XX/puesto_XX` ancestor
+    folder to read `zona`/`puesto` from. Per design.md ADR-5 this instead
+    consumes the `by_location` bridge map (Phase 2, baked into
+    `hash_index_e14c.json` by `scripts/build_hash_index.py`), which already
+    holds the folder-derived truth for this filename from when it was first
+    downloaded into its `zona_XX/puesto_XX` folder.
+
+    Returns None (caller must SKIP, never misfile via the old buggy
+    filename-position split) when `by_location` has no entry for `filename` —
+    e.g. the shipped index predates this key, or `filename` is one of the
+    rare missing-flat-prefix anomalies.
+    """
+    if not by_location:
+        return None
+    location = by_location.get(filename)
+    if not location:
+        return None
+    loc_parts = location.split("/")
+    if len(loc_parts) != 4:
+        return None
+    dept, mpio, zona, puesto = loc_parts
+    return dept, mpio, zona, puesto
 
 
 def organize_pdfs(folder: Path) -> tuple[int, int, int]:
     """
     Move PDFs into {folder}/{dept}/{mpio}/{zona}/{puesto}/ structure.
     Saves organizacion_log.json next to the script.
+
+    Destinations are derived from the `by_location` bridge map
+    (`hash_index_e14c.json`, Phase 2) rather than the flat filename's
+    underscore split — see `_parse_dept_parts` for why (design.md ADR-5).
+    Files with no `by_location` entry are skipped (counted in
+    `skipped_no_pattern`), never misfiled.
+
     Returns (moved, skipped_no_pattern, skipped_conflict).
     """
     log_path = SCRIPT_DIR / ORG_LOG_FILENAME
     pdfs = scan_folder(folder)
+    by_location = load_by_location(SCRIPT_DIR / INDEX_FILENAME)
+    if not by_location:
+        print(
+            "  AVISO: 'by_location' no encontrado en "
+            f"{INDEX_FILENAME} (indice desactualizado o ausente). "
+            "Ningun archivo sera organizado sin esa informacion — no se usa "
+            "el parseo de nombre antiguo (evita destinos incorrectos)."
+        )
 
     log: dict = {
         "organized_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
@@ -408,7 +482,7 @@ def organize_pdfs(folder: Path) -> tuple[int, int, int]:
     skipped_conflict = 0
 
     for pdf in pdfs:
-        parsed = _parse_dept_parts(pdf.name)
+        parsed = _parse_dept_parts(pdf.name, by_location)
         if not parsed:
             skipped_no_pattern += 1
             continue
@@ -529,21 +603,180 @@ _SSL_CTX = ssl.create_default_context()
 _SSL_CTX.check_hostname = False
 _SSL_CTX.verify_mode = ssl.CERT_NONE
 
+# ---------------------------------------------------------------------------
+# Dual-mode transport (e14c-verification-dual-mode, ADR-3): urllib primary,
+# Playwright fallback once the server starts fingerprint-blocking script
+# traffic. Local `_RATE` counter, mirroring verify_e14c.py's name/semantics
+# (design.md ADR-3). The citizen loop is sequential — no threading.Lock
+# needed here (unlike verify_e14c.py's ThreadPoolExecutor-driven version).
+# ---------------------------------------------------------------------------
+_RATE = {"consecutive_fails": 0}
+_FALLBACK = {"active": False, "fetcher": None, "since": 0}
+
+# Retry-to-urllib cadence — a dedicated constant (spec: "Retry-to-urllib
+# Cadence"), deliberately decoupled from the checkpoint-save cadence below,
+# though both share the same value (50) per design.md ADR-5.
+_FALLBACK_REPROBE_EVERY = 50
+
+
+def _get_fallback_fetcher():
+    """Lazily create the single PlaywrightFetcher instance for this run.
+    Returns None when Playwright isn't installed (import-guarded above)."""
+    if PlaywrightFetcher is None:
+        return None
+    if _FALLBACK["fetcher"] is None:
+        _FALLBACK["fetcher"] = PlaywrightFetcher(BASE_URL)
+    return _FALLBACK["fetcher"]
+
+
+def _fetch_urllib(url: str, head_only: bool) -> tuple[bytes | None, int, str]:
+    """Primary transport. Returns (body, size, error).
+    `body` is None for HEAD-only requests — only `size` is needed there."""
+    time.sleep(0.3)
+    try:
+        if head_only:
+            req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": "Mozilla/5.0"})
+            resp = urllib.request.urlopen(req, context=_SSL_CTX, timeout=15)
+            cl = resp.headers.get("Content-Length")
+            resp.close()
+            return None, (int(cl) if cl else 0), ""
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        resp = urllib.request.urlopen(req, context=_SSL_CTX, timeout=60)
+        chunks = []
+        while chunk := resp.read(CHUNK):
+            chunks.append(chunk)
+        resp.close()
+        body = b"".join(chunks)
+        return body, len(body), ""
+    except Exception as exc:
+        return None, -1, str(exc)
+
+
+def _fetch_playwright(url: str, head_only: bool) -> tuple[bytes | None, int, str]:
+    """Fallback transport via the single lazily-created PlaywrightFetcher.
+    HEAD is emulated by a GET whose body length gives the size (same
+    trade-off as verify_e14c.py's fallback transport)."""
+    fetcher = _get_fallback_fetcher()
+    if fetcher is None:
+        return None, -1, "fallback_unavailable"
+    body, err = fetcher.fetch(url)
+    if err:
+        return None, -1, err
+    if head_only:
+        return None, len(body), ""
+    return body, len(body), ""
+
+
+def _transport_request(url: str, head_only: bool) -> tuple[bytes | None, int, str]:
+    """Route a single request through urllib (primary) or the Playwright
+    fallback (once activated), reusing the module-level `_RATE` consecutive-
+    failure counter — same `>= 3` threshold and every-50 urllib re-probe
+    cadence as verify_e14c.py (design.md ADR-3). No locking: this loop is
+    sequential.
+    """
+    global _RATE
+
+    if _RATE["consecutive_fails"] >= 3 and not _FALLBACK["active"]:
+        if PlaywrightFetcher is not None:
+            print(
+                "  Bloqueo detectado. Activando respaldo con navegador "
+                "(urllib -> Playwright)...",
+                flush=True,
+            )
+            _FALLBACK["active"] = True
+            _FALLBACK["since"] = 0
+        _RATE["consecutive_fails"] = 0
+
+    if not _FALLBACK["active"]:
+        body, size, err = _fetch_urllib(url, head_only)
+        _RATE["consecutive_fails"] = 0 if not err else _RATE["consecutive_fails"] + 1
+        return body, size, err
+
+    _FALLBACK["since"] += 1
+    if _FALLBACK["since"] % _FALLBACK_REPROBE_EVERY == 0:
+        body, size, err = _fetch_urllib(url, head_only)
+        if not err:
+            _FALLBACK["active"] = False
+            _RATE["consecutive_fails"] = 0
+            return body, size, err
+        _FALLBACK["since"] = 0
+
+    body, size, err = _fetch_playwright(url, head_only)
+    _RATE["consecutive_fails"] = 0 if not err else _RATE["consecutive_fails"] + 1
+    return body, size, err
+
 
 def _head_content_length(url: str) -> tuple[int, str]:
     """
-    HTTP HEAD request → (Content-Length, error_message).
+    HTTP HEAD request (urllib primary, Playwright fallback once blocked) →
+    (Content-Length, error_message).
     Returns (0, "") when the header is absent but the request succeeds.
     Returns (-1, error_str) on any network or HTTP failure.
     """
-    time.sleep(0.3)
-    try:
-        req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": "Mozilla/5.0"})
-        resp = urllib.request.urlopen(req, context=_SSL_CTX, timeout=15)
-        cl = resp.headers.get("Content-Length")
-        return (int(cl), "") if cl else (0, "")
-    except Exception as exc:
-        return (-1, str(exc))
+    _body, size, err = _transport_request(url, head_only=True)
+    return size, err
+
+
+# ---------------------------------------------------------------------------
+# Incremental checkpoint for online runs (e14c-verification-dual-mode ADR-5)
+#
+# `run_verification_online`, `verify_size_online` and `run_both_online`
+# previously wrote only a final report — a long run interrupted midway had
+# to restart from zero. Each writes/reads its own section of
+# `{folder}/.verify_checkpoint.json` (keyed by mode: "online" | "size" |
+# "both"), shape `{ok: [...], dif: [...], err: [...]}` keyed by PDF path,
+# saved every `_FALLBACK_REPROBE_EVERY` (50) files processed — the same
+# tunable used for the urllib re-probe cadence above, so both new behaviors
+# share one dial. "ok"/"dif" paths are skipped on resume; "err" paths are
+# retried.
+# ---------------------------------------------------------------------------
+CHECKPOINT_FILENAME = ".verify_checkpoint.json"
+CHECKPOINT_EVERY = _FALLBACK_REPROBE_EVERY
+
+
+def _checkpoint_path(folder: Path) -> Path:
+    return folder / CHECKPOINT_FILENAME
+
+
+def _load_checkpoint(folder: Path, mode: str) -> dict:
+    """Load the `mode` section of the checkpoint file.
+    Returns {"ok": set(), "dif": set(), "err": set()}."""
+    path = _checkpoint_path(folder)
+    data: dict = {}
+    if path.exists():
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            data = {}
+    section = data.get(mode, {}) if isinstance(data, dict) else {}
+    cp = {
+        "ok": set(section.get("ok", [])),
+        "dif": set(section.get("dif", [])),
+        "err": set(section.get("err", [])),
+    }
+    if cp["ok"] or cp["dif"] or cp["err"]:
+        print(
+            f"  Checkpoint ({mode}): {len(cp['ok'])} OK, {len(cp['dif'])} DIF, "
+            f"{len(cp['err'])} ERR — se omiten completados, se reintentan errores",
+            flush=True,
+        )
+    return cp
+
+
+def _save_checkpoint(folder: Path, mode: str, cp: dict) -> None:
+    """Persist the `mode` section, preserving any other mode already
+    recorded in the same checkpoint file."""
+    path = _checkpoint_path(folder)
+    data: dict = {}
+    if path.exists():
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            data = {}
+    if not isinstance(data, dict):
+        data = {}
+    data[mode] = {k: sorted(v) for k, v in cp.items()}
+    path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
 
 
 def write_report_size(results: list[dict], folder: Path) -> Path:
@@ -646,35 +879,48 @@ def write_report_size(results: list[dict], folder: Path) -> Path:
     return timestamped_path
 
 
-def build_url(filename: str) -> str | None:
-    """Reconstruct Registraduría download URL from an E14C filename."""
-    stem = Path(filename).stem
-    parts = stem.split("_", 5)
-    if len(parts) > 5 and parts[4] == "E14":
-        dept, mpio, zona, puesto = parts[0], parts[1], parts[2], parts[3]
-        url_fn = "_".join(parts[4:]) + ".pdf"
-        return f"{BASE_URL}/docs/E14/{dept}/{mpio}/{zona}/{puesto}/{url_fn}"
-    return None
+def build_url(pdf_path: Path, by_location: dict[str, str] | None = None) -> str | None:
+    """Reconstruct the Registraduría download URL for pdf_path.
+
+    Folder-derives dept/mpio/zona/puesto via the canonical `e14c_paths`
+    module (design.md ADR-1) when `pdf_path` carries `zona_XX/puesto_XX`
+    folder ancestors. When run against a FLAT folder (no such ancestors —
+    e.g. a fresh, un-organized `PDFs-V2/` drop), falls back to the
+    `by_location` bridge map (Phase 2, `hash_index_e14c.json`) keyed by
+    filename (design.md ADR-5). Returns None (URL_NO_CONSTRUIBLE) when
+    neither source resolves — never emits a wrong/guessed URL.
+    """
+    url = build_e14c_url(BASE_URL, pdf_path)
+    if url is not None:
+        return url
+
+    if not by_location:
+        return None
+    location = by_location.get(pdf_path.name)
+    if not location:
+        return None
+    loc_parts = location.split("/")
+    if len(loc_parts) != 4:
+        return None
+    dept, mpio, zona, puesto = loc_parts
+
+    stem_parts = pdf_path.stem.split("_", 5)
+    if len(stem_parts) <= 5 or stem_parts[4] != "E14":
+        return None
+    url_fn = "_".join(stem_parts[4:]) + ".pdf"
+    return f"{BASE_URL}/docs/E14/{dept}/{mpio}/{zona}/{puesto}/{url_fn}"
 
 
 def download_and_hash(url: str) -> tuple[str, bytes, str]:
     """
-    Download PDF from url and compute SHA-256.
+    Download PDF from url (urllib primary, Playwright fallback once blocked
+    — e14c-verification-dual-mode) and compute SHA-256.
     Returns (sha256_hex, content_bytes, error_message). On success error_message is "".
     """
-    time.sleep(0.3)
-    try:
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        resp = urllib.request.urlopen(req, context=_SSL_CTX, timeout=60)
-        chunks = []
-        h = hashlib.sha256()
-        while chunk := resp.read(CHUNK):
-            h.update(chunk)
-            chunks.append(chunk)
-        resp.close()
-        return h.hexdigest(), b"".join(chunks), ""
-    except Exception as exc:
-        return "", b"", str(exc)
+    body, _size, err = _transport_request(url, head_only=False)
+    if err:
+        return "", b"", err
+    return hashlib.sha256(body).hexdigest(), body, ""
 
 
 def run_verification_online(folder_str: str) -> None:
@@ -704,14 +950,21 @@ def run_verification_online(folder_str: str) -> None:
     has_index = index_path.exists()
     if has_index:
         by_hash, by_filename, known_dif, index_meta = load_index(index_path)
+    by_location = load_by_location(index_path)
+
+    # Resume from checkpoint (e14c-verification-dual-mode ADR-5): skip
+    # already-OK/DIF paths, keep ERR paths for retry.
+    cp = _load_checkpoint(folder, "online")
+    done_paths = cp["ok"] | cp["dif"]
+    pdfs = [p for p in pdfs if str(p) not in done_paths]
 
     print("  Verificando contra el servidor de la Registraduria...\n")
 
     results: list[dict] = []
     with tqdm(pdfs, desc="  Verificando", unit="PDF") as bar:
-        for pdf_path in bar:
+        for i, pdf_path in enumerate(bar):
             filename = pdf_path.name
-            url = build_url(filename)
+            url = build_url(pdf_path, by_location)
             local_sha = ""
             server_sha = ""
             note = ""
@@ -757,6 +1010,16 @@ def run_verification_online(folder_str: str) -> None:
                 "url": url or "",
                 "note": note,
             })
+
+            if status == "IGUAL_SERVIDOR":
+                cp["ok"].add(str(pdf_path))
+            elif status == "ERROR_DESCARGA":
+                cp["err"].add(str(pdf_path))
+            else:
+                cp["dif"].add(str(pdf_path))
+
+            if (i + 1) % CHECKPOINT_EVERY == 0 or i == len(pdfs) - 1:
+                _save_checkpoint(folder, "online", cp)
 
     igual = sum(1 for r in results if r["status"] == "IGUAL_SERVIDOR")
     manipulada = sum(1 for r in results if r["status"] == "MANIPULADA_EN_SERVIDOR")
@@ -897,13 +1160,20 @@ def verify_size_online(folder_str: str) -> None:
         input("\n  Presiona Enter para continuar...")
         return
 
+    # Resume from checkpoint (e14c-verification-dual-mode ADR-5).
+    cp = _load_checkpoint(folder, "size")
+    done_paths = cp["ok"] | cp["dif"]
+    pdfs = [p for p in pdfs if str(p) not in done_paths]
+
+    by_location = load_by_location(SCRIPT_DIR / INDEX_FILENAME)
+
     print("  Verificando tamanos via HTTP HEAD (sin descarga completa)...\n")
 
     results: list[dict] = []
     with tqdm(pdfs, desc="  Verificando", unit="PDF") as bar:
-        for pdf_path in bar:
+        for i, pdf_path in enumerate(bar):
             filename = pdf_path.name
-            url = build_url(filename)
+            url = build_url(pdf_path, by_location)
 
             if not url:
                 results.append({
@@ -914,6 +1184,9 @@ def verify_size_online(folder_str: str) -> None:
                     "remote_size": "",
                     "note": "El nombre no corresponde al formato E14C",
                 })
+                cp["dif"].add(str(pdf_path))
+                if (i + 1) % CHECKPOINT_EVERY == 0 or i == len(pdfs) - 1:
+                    _save_checkpoint(folder, "size", cp)
                 continue
 
             try:
@@ -927,6 +1200,9 @@ def verify_size_online(folder_str: str) -> None:
                     "remote_size": "",
                     "note": str(exc),
                 })
+                cp["dif"].add(str(pdf_path))
+                if (i + 1) % CHECKPOINT_EVERY == 0 or i == len(pdfs) - 1:
+                    _save_checkpoint(folder, "size", cp)
                 continue
 
             remote_size, err = _head_content_length(url)
@@ -953,6 +1229,16 @@ def verify_size_online(folder_str: str) -> None:
                 "note": note,
                 "url": url,
             })
+
+            if status == S_IGUAL_TAMANIO:
+                cp["ok"].add(str(pdf_path))
+            elif status == S_ERROR_DESCARGA:
+                cp["err"].add(str(pdf_path))
+            else:
+                cp["dif"].add(str(pdf_path))
+
+            if (i + 1) % CHECKPOINT_EVERY == 0 or i == len(pdfs) - 1:
+                _save_checkpoint(folder, "size", cp)
 
     igual    = sum(1 for r in results if r["status"] == S_IGUAL_TAMANIO)
     diferente = sum(1 for r in results if r["status"] == S_DIFERENTE_TAMANIO)
@@ -1002,6 +1288,15 @@ def run_both_online(folder_str: str) -> None:
     has_index = index_path.exists()
     if has_index:
         by_hash, by_filename, known_dif, index_meta = load_index(index_path)
+    by_location = load_by_location(index_path)
+
+    # Resume from checkpoint (e14c-verification-dual-mode ADR-5). Files
+    # already fully resolved (pass 1 + pass 2) in a prior "both" run are
+    # skipped entirely; DIFERENTE_TAMANIO-only files re-run pass 1 (cheap
+    # HEAD check) since they never reached pass 2's ok/dif/err bucket.
+    cp = _load_checkpoint(folder, "both")
+    done_paths = cp["ok"] | cp["dif"]
+    pdfs = [p for p in pdfs if str(p) not in done_paths]
 
     print("  Paso 1: verificando tamanos via HTTP HEAD...\n")
 
@@ -1009,7 +1304,7 @@ def run_both_online(folder_str: str) -> None:
     with tqdm(pdfs, desc="  Tamanos", unit="PDF") as bar:
         for pdf_path in bar:
             filename = pdf_path.name
-            url = build_url(filename)
+            url = build_url(pdf_path, by_location)
 
             if not url:
                 size_results.append({
@@ -1066,10 +1361,11 @@ def run_both_online(folder_str: str) -> None:
     skipped_size_fail = len(size_results) - len(candidates)
 
     with tqdm(candidates, desc="  SHA256", unit="PDF") as bar:
-        for sr in bar:
+        for i, sr in enumerate(bar):
             pdf_path = sr["pdf_path"]
             filename = sr["filename"]
             url = sr["url"]
+            final_status = None
 
             if sr["status"] in (S_URL_NO_CONSTRUIBLE, S_ERROR_LOCAL):
                 sha_results.append({
@@ -1078,56 +1374,69 @@ def run_both_online(folder_str: str) -> None:
                     "local_sha256": "", "server_sha256": "",
                     "url": url, "note": sr["note"],
                 })
-                continue
-
-            local_sha = ""
-            indice_status = "SIN_INDICE"
-
-            try:
-                local_sha = sha256_file(pdf_path)
-            except Exception as exc:
-                sha_results.append({
-                    "path": str(pdf_path), "filename": filename,
-                    "status": "ERROR_LOCAL", "indice_status": indice_status,
-                    "local_sha256": "", "server_sha256": "",
-                    "url": url, "note": f"error al leer archivo: {exc}",
-                })
-                continue
-
-            if has_index:
-                indice_status = classify(pdf_path, local_sha, by_hash, by_filename, known_dif)["status"]
-
-            server_sha, server_data, err = download_and_hash(url)
-            if err:
-                sha_results.append({
-                    "path": str(pdf_path), "filename": filename,
-                    "status": "ERROR_DESCARGA", "indice_status": indice_status,
-                    "local_sha256": local_sha, "server_sha256": "",
-                    "url": url, "note": err,
-                })
-            elif local_sha == server_sha:
-                sha_results.append({
-                    "path": str(pdf_path), "filename": filename,
-                    "status": "IGUAL_SERVIDOR", "indice_status": indice_status,
-                    "local_sha256": local_sha, "server_sha256": server_sha,
-                    "url": url, "note": "",
-                })
+                final_status = sr["status"]
             else:
-                dif_dir = folder / "dif_evidence"
-                dif_dir.mkdir(exist_ok=True)
-                (dif_dir / f"{pdf_path.stem}_SERVER.pdf").write_bytes(server_data)
-                if has_index and indice_status == "VERIFICADA":
-                    sha_status = "MANIPULADA_EN_SERVIDOR"
-                    note = "local coincide con indice canonico pero el servidor sirve una version diferente"
+                local_sha = ""
+                indice_status = "SIN_INDICE"
+
+                try:
+                    local_sha = sha256_file(pdf_path)
+                except Exception as exc:
+                    sha_results.append({
+                        "path": str(pdf_path), "filename": filename,
+                        "status": "ERROR_LOCAL", "indice_status": indice_status,
+                        "local_sha256": "", "server_sha256": "",
+                        "url": url, "note": f"error al leer archivo: {exc}",
+                    })
+                    final_status = "ERROR_LOCAL"
                 else:
-                    sha_status = "DIFERENTE_SERVIDOR"
-                    note = ""
-                sha_results.append({
-                    "path": str(pdf_path), "filename": filename,
-                    "status": sha_status, "indice_status": indice_status,
-                    "local_sha256": local_sha, "server_sha256": server_sha,
-                    "url": url, "note": note,
-                })
+                    if has_index:
+                        indice_status = classify(pdf_path, local_sha, by_hash, by_filename, known_dif)["status"]
+
+                    server_sha, server_data, err = download_and_hash(url)
+                    if err:
+                        sha_results.append({
+                            "path": str(pdf_path), "filename": filename,
+                            "status": "ERROR_DESCARGA", "indice_status": indice_status,
+                            "local_sha256": local_sha, "server_sha256": "",
+                            "url": url, "note": err,
+                        })
+                        final_status = "ERROR_DESCARGA"
+                    elif local_sha == server_sha:
+                        sha_results.append({
+                            "path": str(pdf_path), "filename": filename,
+                            "status": "IGUAL_SERVIDOR", "indice_status": indice_status,
+                            "local_sha256": local_sha, "server_sha256": server_sha,
+                            "url": url, "note": "",
+                        })
+                        final_status = "IGUAL_SERVIDOR"
+                    else:
+                        dif_dir = folder / "dif_evidence"
+                        dif_dir.mkdir(exist_ok=True)
+                        (dif_dir / f"{pdf_path.stem}_SERVER.pdf").write_bytes(server_data)
+                        if has_index and indice_status == "VERIFICADA":
+                            sha_status = "MANIPULADA_EN_SERVIDOR"
+                            note = "local coincide con indice canonico pero el servidor sirve una version diferente"
+                        else:
+                            sha_status = "DIFERENTE_SERVIDOR"
+                            note = ""
+                        sha_results.append({
+                            "path": str(pdf_path), "filename": filename,
+                            "status": sha_status, "indice_status": indice_status,
+                            "local_sha256": local_sha, "server_sha256": server_sha,
+                            "url": url, "note": note,
+                        })
+                        final_status = sha_status
+
+            if final_status == "IGUAL_SERVIDOR":
+                cp["ok"].add(str(pdf_path))
+            elif final_status == "ERROR_DESCARGA":
+                cp["err"].add(str(pdf_path))
+            else:
+                cp["dif"].add(str(pdf_path))
+
+            if (i + 1) % CHECKPOINT_EVERY == 0 or i == len(candidates) - 1:
+                _save_checkpoint(folder, "both", cp)
 
     igual     = sum(1 for r in sha_results if r["status"] == "IGUAL_SERVIDOR")
     manipulada = sum(1 for r in sha_results if r["status"] == "MANIPULADA_EN_SERVIDOR")
