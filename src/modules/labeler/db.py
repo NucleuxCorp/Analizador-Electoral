@@ -1905,8 +1905,18 @@ def _empty_hierarchical_shape() -> dict:
 def _fetch_hierarchical_rows_grouped() -> list[dict]:
     """
     Fetch one row per (dept, mpio, zona, puesto, overall_status) via the
-    get_hierarchical_mesa_stats_grouped() RPC — a single round trip, with
-    Postgres doing the GROUP BY instead of Python looping over every mesa.
+    get_hierarchical_mesa_stats_grouped() RPC — Postgres does the GROUP BY
+    instead of Python looping over every mesa, so this is a handful of
+    paginated round trips (~28k grouped rows nationally) instead of one per
+    mesa (100k+).
+
+    PostgREST/Supabase hard-caps every response at 1000 rows regardless of
+    the requested .range() — confirmed 2026-07-23: .range(0, 1999) still
+    returned exactly 1000. An unranged call silently truncates to the first
+    1000 grouped rows, which (depending on row order) can be entirely one
+    department — this is exactly the bug that made /mesas show only
+    ANTIOQUIA. Must paginate in 1000-row pages until a page comes back
+    short.
 
     Falls back to the old per-mesa batched scan (scripts/deploy/
     add_hierarchical_mesa_stats_rpc.sql not yet applied on this environment,
@@ -1915,8 +1925,22 @@ def _fetch_hierarchical_rows_grouped() -> list[dict]:
     slower. Raises only if BOTH paths fail — caller handles fail-closed.
     """
     try:
-        resp = _client().rpc("get_hierarchical_mesa_stats_grouped", {}).execute()
-        return resp.data or []
+        _RPC_PAGE = 1000
+        rows: list[dict] = []
+        rpc_offset = 0
+        while True:
+            resp = (
+                _client()
+                .rpc("get_hierarchical_mesa_stats_grouped", {})
+                .range(rpc_offset, rpc_offset + _RPC_PAGE - 1)
+                .execute()
+            )
+            page = resp.data or []
+            rows.extend(page)
+            if len(page) < _RPC_PAGE:
+                break
+            rpc_offset += _RPC_PAGE
+        return rows
     except Exception as exc:
         logger.warning(
             "get_hierarchical_mesa_stats_grouped RPC failed, falling back to "
