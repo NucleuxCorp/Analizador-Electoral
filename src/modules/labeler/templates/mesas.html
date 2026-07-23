@@ -10,6 +10,21 @@
   <!-- End Google Tag Manager -->
 
   <meta charset="UTF-8">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+  <script>
+  (function () {
+    var token = document.querySelector('meta[name="csrf-token"]').content;
+    var origFetch = window.fetch;
+    window.fetch = function (input, init) {
+      init = init || {};
+      var method = (init.method || "GET").toUpperCase();
+      if (["POST", "PUT", "PATCH", "DELETE"].indexOf(method) !== -1) {
+        init.headers = Object.assign({}, init.headers, { "X-CSRFToken": token });
+      }
+      return origFetch.call(this, init);
+    };
+  })();
+  </script>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Estado de la Auditoría — Por Municipio</title>
   <style>
@@ -59,6 +74,13 @@
     }
     .summary-row .sin-alerta { color: #9fb0c0; }
     .summary-row .alerta { color: #ef5350; }
+
+    .report-unavailable-hint {
+      text-align: center;
+      font-size: 0.78rem;
+      color: #7c8794;
+      margin-bottom: 16px;
+    }
 
     /* Table */
     .table-wrap {
@@ -136,7 +158,6 @@
     }
     .report-btn:hover { background: #0d1220; }
     .report-btn:disabled { opacity: 0.6; cursor: default; }
-    .report-login-hint { font-size: 0.68rem; color: #445; }
     .report-msg { font-size: 0.68rem; margin-left: 8px; }
     .report-msg.ok { color: #56c25a; }
     .report-msg.err { color: #ef5350; }
@@ -243,6 +264,12 @@
       </div>
     {% endif %}
 
+    {% if level == 3 and not can_report %}
+      <div class="report-unavailable-hint">
+        Por el momento el reporte de mesas solo está disponible para moderadores.
+      </div>
+    {% endif %}
+
     {% if level == 1 and dept_options %}
     <form class="filter-bar" method="get" action="/mesas">
       <label for="dept">Departamento</label>
@@ -314,12 +341,12 @@
                 <td>{{ '⚪' if row.sin_alerta else '🔴' }}</td>
                 <td>{{ '🟢' if row.revisada else ('🟡' if row.en_revision else '—') }}</td>
                 <td>
-                  {% if logged_in and row.mesa_key %}
+                  {% if can_report and row.mesa_key %}
                     <span data-mesa-key="{{ row.mesa_key }}">
                       <button type="button" class="report-btn" onclick="submitMesaReport('{{ row.mesa_key }}', this)">Reportar</button>
                     </span>
                   {% else %}
-                    <span class="report-login-hint"><a href="/login">Iniciá sesión</a> para reportar</span>
+                    &mdash;
                   {% endif %}
                 </td>
               {% endif %}

@@ -10,6 +10,21 @@
   <!-- End Google Tag Manager -->
 
   <meta charset="UTF-8">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+  <script>
+  (function () {
+    var token = document.querySelector('meta[name="csrf-token"]').content;
+    var origFetch = window.fetch;
+    window.fetch = function (input, init) {
+      init = init || {};
+      var method = (init.method || "GET").toUpperCase();
+      if (["POST", "PUT", "PATCH", "DELETE"].indexOf(method) !== -1) {
+        init.headers = Object.assign({}, init.headers, { "X-CSRFToken": token });
+      }
+      return origFetch.call(this, init);
+    };
+  })();
+  </script>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Validador de Votos{% if not done %} — {{ field_name }}{% endif %}</title>
 
@@ -325,6 +340,7 @@
       </button>
       <button onclick="openWa()" class="btn btn-sm btn-outline-success py-0 px-2" style="font-size:.65rem;">💬 Feedback</button>
       <form action="/auth/logout" method="post" style="margin:0;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-2" style="font-size:.65rem;">Cerrar sesión</button>
       </form>
     </div>

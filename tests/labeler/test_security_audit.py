@@ -61,10 +61,10 @@ ROUTES = [
     ("GET",  "/debug/sentry-test",      True,  ["admin"],                         True,  "sentry debug"),
     ("GET",  "/admin/users",            True,  ["admin"],                         True,  "admin user list"),
     ("POST", "/admin/users/role",       True,  ["admin"],                         False, "admin role change"),
-    # ── Vulnerable: @require_auth only, no @require_role ──
-    ("POST", "/feedback",               True,  None,                              False, "VULNERABILITY: missing @require_role"),
-    # ── Auth-only, any role — intentional (public per-mesa citizen report) ──
-    ("POST", "/api/mesa-report",        True,  None,                              False, "public mesa report — any authenticated role, mesa_result_exists() anti-forgery guard"),
+    # ── Any authenticated role — explicit @require_role listing all roles ──
+    ("POST", "/feedback",               True,  ["reader", "validator", "reviewer", "moderator", "admin"], False, "feedback open to any authenticated role, explicitly"),
+    # ── Protected routes — moderator + admin only ──
+    ("POST", "/api/mesa-report",        True,  ["moderator", "admin"],            False, "public mesa report — restricted to moderator/admin, mesa_result_exists() anti-forgery guard"),
 ]
 
 # ---------------------------------------------------------------------------
@@ -253,11 +253,11 @@ class TestPhase2_PrivilegeEscalation:
 
 
 # ---------------------------------------------------------------------------
-# EXTRA — POST /feedback vulnerability flag
+# EXTRA — POST /feedback: any authenticated role, explicitly allowed
 # ---------------------------------------------------------------------------
 
 class TestFeedbackVulnerability:
-    """POST /feedback has @require_auth but no @require_role — verify."""
+    """POST /feedback is intentionally open to every role via @require_role."""
 
     def test_feedback_missing_role_decorator(self, client, mock_auth):
         """Any authenticated user can POST /feedback regardless of role."""

@@ -10,6 +10,21 @@
   <!-- End Google Tag Manager -->
 
   <meta charset="UTF-8">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+  <script>
+  (function () {
+    var token = document.querySelector('meta[name="csrf-token"]').content;
+    var origFetch = window.fetch;
+    window.fetch = function (input, init) {
+      init = init || {};
+      var method = (init.method || "GET").toUpperCase();
+      if (["POST", "PUT", "PATCH", "DELETE"].indexOf(method) !== -1) {
+        init.headers = Object.assign({}, init.headers, { "X-CSRFToken": token });
+      }
+      return origFetch.call(this, init);
+    };
+  })();
+  </script>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Analizador de Elecciones — Verificación Ciudadana E-14</title>
   <style>
@@ -184,7 +199,9 @@
         {% if user_role %}<span class="role-badge role-{{ user_role }}">{{ user_role }}</span>{% endif %}
         ·
         <a href="#" onclick="document.getElementById('logout-form').submit(); return false;">Cerrar sesión</a>
-        <form id="logout-form" action="/auth/logout" method="post" style="display:none;"></form>
+        <form id="logout-form" action="/auth/logout" method="post" style="display:none;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        </form>
       </div>
     {% endif %}
 

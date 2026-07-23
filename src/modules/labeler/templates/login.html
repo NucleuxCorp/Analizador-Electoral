@@ -10,6 +10,21 @@
   <!-- End Google Tag Manager -->
 
   <meta charset="UTF-8">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+  <script>
+  (function () {
+    var token = document.querySelector('meta[name="csrf-token"]').content;
+    var origFetch = window.fetch;
+    window.fetch = function (input, init) {
+      init = init || {};
+      var method = (init.method || "GET").toUpperCase();
+      if (["POST", "PUT", "PATCH", "DELETE"].indexOf(method) !== -1) {
+        init.headers = Object.assign({}, init.headers, { "X-CSRFToken": token });
+      }
+      return origFetch.call(this, input, init);
+    };
+  })();
+  </script>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Iniciar sesión — Validador de Votos</title>
   <style>
@@ -200,6 +215,15 @@
     if (params.get("registered") === "1") {
       infoEl.textContent = "Registro exitoso — revisá tu correo para confirmar tu cuenta.";
       infoEl.classList.add("visible");
+    } else if (params.get("confirmed") === "1") {
+      infoEl.textContent = "Correo confirmado — ya podés iniciar sesión.";
+      infoEl.classList.add("visible");
+    } else if (params.get("confirm_error") === "missing") {
+      errEl.textContent = "El enlace de confirmación no incluye un token válido.";
+      errEl.classList.add("visible");
+    } else if (params.get("confirm_error") === "invalid") {
+      errEl.textContent = "El enlace de confirmación es inválido o ya expiró. Si ya confirmaste tu correo, iniciá sesión normalmente.";
+      errEl.classList.add("visible");
     }
 
     form.addEventListener("submit", function (e) {

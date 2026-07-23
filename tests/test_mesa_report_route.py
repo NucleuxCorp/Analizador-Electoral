@@ -2,8 +2,9 @@
 
 TDD cycle: RED -> GREEN -> REFACTOR.
 
-Mirrors the POST /feedback pattern (@require_auth only, no @require_role,
-_verify_recaptcha spam guard) but adds a server-side mesa_result_exists()
+Restricted to @require_role(MODERATOR, ADMIN) — reporting is not available
+to validators/reviewers/readers (see tests/test_public_mesas_routes.py for
+the matching UI gating). Adds a server-side mesa_result_exists()
 anti-forgery check before any insert into the shared transversal_review_reports
 table (client-supplied mesa_key must never be trusted directly).
 """
@@ -45,8 +46,12 @@ def client(prod_app):
 
 @pytest.fixture
 def mock_auth():
-    """Mock decode_jwt so an injected session is treated as authenticated."""
-    with patch("src.modules.labeler.auth.decode_jwt") as mock_decode:
+    """Mock decode_jwt so an injected session is treated as authenticated,
+    and resolve its role as moderator — the route is @require_role(MODERATOR,
+    ADMIN)-gated, so tests exercising notes/mesa_key/recaptcha validation
+    (not role gating itself) need the role check to pass to reach that logic."""
+    with patch("src.modules.labeler.auth.decode_jwt") as mock_decode, \
+         patch("src.modules.labeler.auth._get_user_role", return_value="moderator"):
         mock_decode.return_value = {"sub": "test-mesa-report-user", "email": "reporter@test.local"}
         yield mock_decode
 
@@ -193,3 +198,27 @@ class TestValidSubmitInsertsRow:
             [{"source": "e14c", "report_type": "otro", "notes": VALID_PAYLOAD["notes"]}],
             "test-mesa-report-user",
         )
+
+
+# ---------------------------------------------------------------------------
+# Role gating — reporting is moderator/admin only
+# ---------------------------------------------------------------------------
+
+class TestNonModeratorRoleRejected:
+    def test_validator_role_returns_403(self, client):
+        """A validator (the default role for new users) is authenticated
+        but not authorized — @require_role(MODERATOR, ADMIN) rejects before
+        any notes/mesa_key/recaptcha validation runs."""
+        _inject_session(client)
+        with patch("src.modules.labeler.auth.decode_jwt") as mock_decode, \
+             patch("src.modules.labeler.auth._get_user_role", return_value="validator"), \
+             patch("src.modules.labeler.server._verify_recaptcha") as mock_recaptcha, \
+             patch("src.modules.labeler.db.mesa_result_exists") as mock_exists, \
+             patch("src.modules.labeler.db.insert_transversal_reports") as mock_insert:
+            mock_decode.return_value = {"sub": "test-mesa-report-user", "email": "reporter@test.local"}
+            resp = client.post("/api/mesa-report", json=VALID_PAYLOAD, headers={"Accept": "application/json"})
+
+        assert resp.status_code == 403
+        mock_recaptcha.assert_not_called()
+        mock_exists.assert_not_called()
+        mock_insert.assert_not_called()

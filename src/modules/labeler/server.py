@@ -33,8 +33,19 @@ from pathlib import Path
 from typing import Optional
 
 from flask import Flask, Response, g, jsonify, redirect, render_template, request, send_file, session
+from flask_wtf import CSRFProtect
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
 logger = logging.getLogger("labeler")
+
+# Single instances reused across create_app() calls (Flask app-factory pattern).
+csrf = CSRFProtect()
+# In-memory storage: gunicorn runs 2 workers (Procfile), so counts aren't
+# shared across workers (an attacker gets ~2x the nominal limit). Acceptable
+# for now — reCAPTCHA is the primary defense on these routes, this is
+# defense-in-depth. Revisit with a Redis storage_uri if abuse is observed.
+limiter = Limiter(key_func=get_remote_address)
 
 
 def _strip_crlf(value: str) -> str:
@@ -1164,6 +1175,38 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
     resolved_labels_dir.mkdir(parents=True, exist_ok=True)
 
     # ----------------------------------------------------------------
+    # CSRF protection — all state-changing routes are session-cookie driven
+    # (browser only, no third-party webhooks), so global protection applies.
+    # Tests set app.config["TESTING"] = True *after* create_app() returns;
+    # this hook re-checks that flag on every request (not just at init time)
+    # so the ~150 existing tests don't need to send a token.
+    # ----------------------------------------------------------------
+    @app.before_request
+    def _csrf_test_bypass() -> None:
+        if app.config.get("TESTING"):
+            app.config["WTF_CSRF_ENABLED"] = False
+
+    csrf.init_app(app)
+    # The CSRF token is sufficient protection on its own (OWASP-accepted).
+    # The additional Referer-header check is fragile in practice — privacy
+    # extensions/proxies can strip Referer on legitimate same-origin requests
+    # and would lock those users out.
+    app.config["WTF_CSRF_SSL_STRICT"] = False
+
+    # ----------------------------------------------------------------
+    # Rate limiting — brute-force / email-bombing defense-in-depth on
+    # top of reCAPTCHA. request_filter is re-evaluated per request (unlike
+    # the enabled= flag, which is captured once at init_app time), so this
+    # keeps working even though tests set app.config["TESTING"] = True
+    # *after* create_app() returns.
+    # ----------------------------------------------------------------
+    limiter.init_app(app)
+
+    @limiter.request_filter
+    def _skip_limiter_in_tests() -> bool:
+        return bool(app.config.get("TESTING"))
+
+    # ----------------------------------------------------------------
     # Request correlation + global exception handler
     # ----------------------------------------------------------------
     @app.before_request
@@ -1205,6 +1248,11 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
         # mixed-content browser warnings) and enable HSTS for repeat visits.
         resp.headers["Content-Security-Policy"] = "upgrade-insecure-requests"
         resp.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        # Block MIME-sniffing and clickjacking — this app is never meant to be
+        # framed by another site (the iframes in our templates go the other
+        # way: we embed GTM/Loom, nobody embeds us).
+        resp.headers["X-Content-Type-Options"] = "nosniff"
+        resp.headers["X-Frame-Options"] = "DENY"
         return resp
 
     @app.errorhandler(Exception)
@@ -1274,6 +1322,12 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
         # Secure flag only in production (Railway sets RAILWAY_ENVIRONMENT)
         if os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("FLASK_ENV") == "production":
             app.config["SESSION_COOKIE_SECURE"] = True
+            # Railway terminates TLS and proxies through a single hop, adding
+            # its own X-Forwarded-For/-Proto. Without this, request.remote_addr
+            # is always Railway's internal proxy IP — every visitor would share
+            # one IP-based rate-limit bucket instead of getting their own.
+            from werkzeug.middleware.proxy_fix import ProxyFix
+            app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
         # Import auth + db modules (they guard their own client init)
         from src.modules.labeler.auth import require_auth, resolve_user_role, require_role
@@ -1341,6 +1395,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
             return render_template("privacy.html")
 
         @app.route("/auth/register", methods=["POST"])
+        @limiter.limit("5 per hour")
         def auth_register_post() -> Response:
             body = request.get_json(force=True, silent=True) or {}
             # Support both JSON and form data
@@ -1397,7 +1452,8 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                     sentry_sdk.capture_exception(exc)
                 except Exception:
                     pass
-                return jsonify({"error": "registration failed", "detail": str(exc)}), 400
+                # Do not leak Supabase's raw exception text to the client.
+                return jsonify({"error": "registration failed"}), 400
 
         @app.route("/auth/confirm", methods=["GET"])
         def auth_confirm() -> Response:
@@ -1406,7 +1462,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
             token_type = request.args.get("type", "email").strip()
 
             if not token and not token_hash:
-                return Response("Missing confirmation token", status=400)
+                return redirect("/auth/login?confirm_error=missing", code=302)
 
             from src.modules.labeler.auth import init_supabase_client
             client = init_supabase_client()
@@ -1417,15 +1473,18 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 else:
                     # Legacy token flow
                     client.auth.verify_otp({"token": token, "type": token_type})
-                return redirect("/auth/login", code=302)
+                return redirect("/auth/login?confirmed=1", code=302)
             except Exception as exc:
-                return Response(f"Confirmation failed: {exc}", status=400)
+                # Do not leak Supabase's raw exception text to the client.
+                logger.warning("email confirmation failed ip=%s: %s", request.remote_addr, exc)
+                return redirect("/auth/login?confirm_error=invalid", code=302)
 
         @app.route("/auth/forgot-password", methods=["GET"])
         def auth_forgot_get() -> str:
             return render_template("forgot_password.html")
 
         @app.route("/auth/forgot-password", methods=["POST"])
+        @limiter.limit("5 per hour")
         def auth_forgot_post() -> Response:
             body = request.get_json(force=True, silent=True) or {}
             if not body:
@@ -1504,6 +1563,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 return jsonify({"error": "No se pudo actualizar la contraseña. Intentá de nuevo."}), 400
 
         @app.route("/auth/login", methods=["POST"])
+        @limiter.limit("10 per minute")
         def auth_login_post() -> Response:
             body = request.get_json(force=True, silent=True) or {}
             if not body:
@@ -1553,6 +1613,10 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
 
                 # Prime the in-process cache so the first request after login is instant
                 _role_cache[user_id] = (role, _time.monotonic() + _ROLE_CACHE_TTL)
+                # Cheap read for UI gating on unauthenticated routes like /mesas
+                # (no @require_auth there, so g.user_role is never resolved) —
+                # avoids an extra Supabase call just to decide what to render.
+                session["user_role"] = role
 
                 # Redirect by role
                 if role in (ROLE_ADMIN, ROLE_MODERATOR):
@@ -1710,6 +1774,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 dept_filter=None, dept_options=[],
                 sin_actas=(total == 0),
                 logged_in=bool(session.get("access_token")),
+                can_report=session.get("user_role") in (ROLE_MODERATOR, ROLE_ADMIN),
             )
 
         # ----------------------------------------------------------------
@@ -2749,6 +2814,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
 
         @app.route("/feedback", methods=["POST"])
         @require_auth
+        @require_role(ROLE_READER, ROLE_VALIDATOR, ROLE_REVIEWER, ROLE_MODERATOR, ROLE_ADMIN)
         def feedback_prod() -> Response:
             from flask import g
             body = request.get_json(force=True, silent=True) or {}
@@ -2781,6 +2847,7 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
 
         @app.route("/api/mesa-report", methods=["POST"])
         @require_auth
+        @require_role(ROLE_MODERATOR, ROLE_ADMIN)
         def mesa_report_prod() -> Response:
             import src.modules.labeler.db as _db
             body = request.get_json(force=True, silent=True) or {}

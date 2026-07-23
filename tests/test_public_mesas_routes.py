@@ -414,13 +414,15 @@ class TestLevel3ThreeStateRendering:
     """SDD: public-mesa-report, Phase 3 — analyzed / sin-actas-publicadas /
     unavailable are three visually and textually distinct Level-3 states."""
 
-    def test_level3_analyzed_row_has_report_button(self, prod_app):
+    def test_level3_analyzed_row_has_report_button_for_moderator(self, prod_app):
         """Analyzed mesa rows carry a Report control referencing mesa_key,
-        but only when the visitor is logged in (session access_token set)."""
+        but only when the visitor's session role is moderator or admin —
+        reporting is not available to validators/reviewers/readers."""
         all_rows = _make_mesa_rows(3)
         with prod_app.test_client() as client:
             with client.session_transaction() as sess:
                 sess["access_token"] = "fake-token"
+                sess["user_role"] = "moderator"
             with patch(
                 "src.modules.labeler.db.get_mesa_results", return_value=all_rows,
             ), patch(
@@ -435,6 +437,7 @@ class TestLevel3ThreeStateRendering:
         html = resp.data.decode()
         for row in all_rows:
             assert row["mesa_key"] in html
+        assert "solo está disponible para moderadores" not in html
 
     def test_level3_no_report_button_when_logged_out(self, prod_app):
         all_rows = _make_mesa_rows(3)
@@ -452,6 +455,31 @@ class TestLevel3ThreeStateRendering:
         html = resp.data.decode()
         for row in all_rows:
             assert row["mesa_key"] not in html
+        assert "solo está disponible para moderadores" in html
+
+    def test_level3_no_report_button_for_non_moderator_role(self, prod_app):
+        """A logged-in validator sees the explanatory hint once, not a
+        button or a login prompt, per row."""
+        all_rows = _make_mesa_rows(3)
+        with prod_app.test_client() as client:
+            with client.session_transaction() as sess:
+                sess["access_token"] = "fake-token"
+                sess["user_role"] = "validator"
+            with patch(
+                "src.modules.labeler.db.get_mesa_results", return_value=all_rows,
+            ), patch(
+                "src.modules.labeler.db.count_mesa_results", return_value=3,
+            ), patch(
+                "src.modules.labeler.db.get_hierarchical_mesa_stats",
+                return_value=_hierarchical_stats_fixture(),
+            ):
+                resp = client.get("/mesas/01/001/01/01")
+
+        assert resp.status_code == 200
+        html = resp.data.decode()
+        for row in all_rows:
+            assert row["mesa_key"] not in html
+        assert html.count("solo está disponible para moderadores") == 1
 
     def test_level3_sin_actas_publicadas_state(self, prod_app):
         """A puesto reached successfully but with zero mesa_results rows must
