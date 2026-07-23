@@ -115,6 +115,10 @@ Genera dos informes:
 - `informe_tamanio.md` — resultado del paso 1 (tamanos)
 - `informe_online.md` — resultado del paso 2 (SHA-256)
 
+### Progreso guardado (verificaciones largas)
+
+Si estas verificando muchos PDFs en modo Online, el verificador guarda tu avance cada 50 archivos en un archivo `.verify_checkpoint.json` dentro de la misma carpeta de PDFs. Si cierras el programa o se corta la conexion, simplemente vuelve a ejecutar la misma verificacion sobre la misma carpeta: los archivos ya verificados se omiten automaticamente y solo se reintentan los que tuvieron error de red. No necesitas hacer nada especial — es automatico.
+
 ---
 
 ## Estructura de archivos
@@ -122,6 +126,8 @@ Genera dos informes:
 ```
 verificador-e14c/
 ├── verificador_e14c.py      <- Codigo fuente (auditoria)
+├── e14c_paths.py            <- Extraccion dept/mpio/zona/puesto desde la carpeta (copia sincronizada, no editar directo)
+├── http_fallback.py         <- Respaldo con navegador (opcional, ver abajo)
 ├── verificador_e14c.exe     <- Ejecutable compilado (sin Python)
 ├── hash_index_e14c.json     <- Indice de huellas digitales SHA-256
 ├── url_index_e14c.json      <- Indice de URLs por filename (opcional)
@@ -130,6 +136,39 @@ verificador-e14c/
 ├── README.md                <- Este archivo
 └── PDFs-V2/                 <- Carpeta donde colocar tus PDFs
 ```
+
+---
+
+## Respaldo con navegador (opcional, solo modo Online)
+
+A veces el servidor de la Registraduria bloquea temporalmente las descargas automaticas (peticiones "de script"). Si eso pasa mientras estas verificando en modo **Online**, el verificador puede abrir automaticamente una ventana de navegador (Chromium) para seguir descargando desde ahi, como si fueras tu navegando manualmente. Es completamente opcional:
+
+- **Si no instalas nada**, el verificador sigue funcionando normal en modo urllib (sin navegador). Si el servidor bloquea, simplemente veras mas errores en el reporte — puedes reintentar mas tarde, el progreso ya se guardo.
+- **Si quieres activar el respaldo con navegador**, instala Playwright una sola vez:
+
+  ```bash
+  pip install playwright
+  playwright install chromium
+  ```
+
+  A partir de ahi, si el verificador detecta 3 fallos de descarga seguidos, abrira automaticamente una ventana de Chromium y continuara desde ahi — sin que tengas que hacer nada. Cuando el bloqueo pase, vuelve a usar la conexion directa (mas rapida) por si sola.
+
+- **No necesitas iniciar sesion en nada.** La ventana que se abre no usa tu perfil de Chrome ni tus contraseñas guardadas — es una ventana nueva y vacia, solo para descargar el PDF.
+
+- **Variable opcional `E14C_FALLBACK_HEADLESS`**: por defecto la ventana de Chromium es visible (asi funciona de forma mas confiable contra el bloqueo del servidor). Si prefieres que no aparezca ninguna ventana (a costa de que el respaldo pueda fallar con mas frecuencia), puedes activarlo asi antes de ejecutar el verificador:
+
+  ```bash
+  # Windows (cmd)
+  set E14C_FALLBACK_HEADLESS=1
+  python verificador_e14c.py PDFs-V2
+
+  # Windows (PowerShell)
+  $env:E14C_FALLBACK_HEADLESS = "1"
+  python verificador_e14c.py PDFs-V2
+
+  # Linux / macOS
+  E14C_FALLBACK_HEADLESS=1 python verificador_e14c.py PDFs-V2
+  ```
 
 ---
 
@@ -150,6 +189,22 @@ Archivo opcional que mapea cada nombre de archivo a su URL de descarga en el ser
 ```
 
 El archivo es generado por el script `build_url_index.py` (herramienta de mantenedor, **no incluida en la distribucion ciudadana**). Los colaboradores ciudadanos reciben este archivo pre-generado como parte del paquete de distribucion.
+
+### Construccion de URLs — carpeta como fuente de verdad
+
+Las URLs se construyen a partir de la **carpeta** donde vive cada PDF
+(`{DEPT}/{MPIO}/zona_XX/puesto_XX/`), no del nombre plano del archivo — el
+nombre plano tiene una posicion sin resolver que no siempre coincide con la
+zona/puesto real. Esta logica vive en `e14c_paths.py` (copia sincronizada
+del modulo canonico del proyecto).
+
+Si ejecutas el verificador sobre una carpeta **plana** (PDFs sueltos, sin
+organizar en `zona_XX/puesto_XX`), el verificador usa como respaldo la
+clave `by_location` dentro de `hash_index_e14c.json` (mapa
+`filename -> "dept/mpio/zona/puesto"`, precalculado por el mantenedor a
+partir de la estructura de carpetas original). Si un archivo no tiene
+entrada en `by_location` y la carpeta es plana, la URL no puede construirse
+(`URL_NO_CONSTRUIBLE`) — el verificador nunca adivina la ubicacion.
 
 ---
 
