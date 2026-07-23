@@ -1870,11 +1870,11 @@ def _empty_hierarchical_bucket() -> dict:
     return bucket
 
 
-def _accumulate_status(bucket: dict, status: str) -> None:
-    """Increment bucket[status] (if it is a known status) and bucket['total']."""
+def _accumulate_status(bucket: dict, status: str, count: int = 1) -> None:
+    """Add `count` to bucket[status] (if it is a known status) and bucket['total']."""
     if status in bucket:
-        bucket[status] += 1
-    bucket["total"] += 1
+        bucket[status] += count
+    bucket["total"] += count
 
 
 def _hierarchical_coords_from_row(row: dict) -> tuple[str, str, str, str] | None:
@@ -1902,24 +1902,26 @@ def _empty_hierarchical_shape() -> dict:
     }
 
 
-def _get_hierarchical_mesa_stats_uncached() -> dict:
+def _fetch_hierarchical_rows_grouped() -> list[dict]:
     """
-    Build the by_mpio / by_puesto / _global / review_by_mesa aggregation
-    described by the mesas hierarchical drill-down design (D-Phase1).
+    Fetch one row per (dept, mpio, zona, puesto, overall_status) via the
+    get_hierarchical_mesa_stats_grouped() RPC — a single round trip, with
+    Postgres doing the GROUP BY instead of Python looping over every mesa.
 
-    Does ONE scan of mesa_results (reusing the shared batch-pagination
-    helper) plus one call to the review semaphore RPC (via
-    _get_review_semaphore_uncached) to merge in 🟡/🟢 review counts, parsed
-    from mesa_key_mr segments (dept_mpio_zona_puesto_mesa).
-
-    Only mpio/puesto combinations with >=1 analyzed mesa are present (no
-    zero-row DIVIPOLE entries), since buckets are built strictly from
-    mesa_results rows.
-
-    Returns the empty shape on hard failure (fail-closed). Semaphore merge
-    failures never discard status aggregation.
+    Falls back to the old per-mesa batched scan (scripts/deploy/
+    add_hierarchical_mesa_stats_rpc.sql not yet applied on this environment,
+    or the RPC call itself fails) — preserving the mesa_key-parse fallback
+    for the column select — so the route keeps working either way, just
+    slower. Raises only if BOTH paths fail — caller handles fail-closed.
     """
     try:
+        resp = _client().rpc("get_hierarchical_mesa_stats_grouped", {}).execute()
+        return resp.data or []
+    except Exception as exc:
+        logger.warning(
+            "get_hierarchical_mesa_stats_grouped RPC failed, falling back to "
+            "per-mesa batched scan: %s", exc,
+        )
         # Prefer the same slim column set as get_mesa_stats + geo coords.
         # Fall back to mesa_key parse if a wider select is rejected by PostgREST.
         try:
@@ -1932,6 +1934,39 @@ def _get_hierarchical_mesa_stats_uncached() -> dict:
                 fetch_exc,
             )
             rows = _fetch_mesa_results_batched("mesa_key, overall_status")
+
+        grouped: dict[tuple, int] = {}
+        for row in rows:
+            coords = _hierarchical_coords_from_row(row)
+            if coords is None:
+                continue
+            key = (*coords, row.get("overall_status", "unknown"))
+            grouped[key] = grouped.get(key, 0) + 1
+        return [
+            {"dept": d, "mpio": m, "zona": z, "puesto": p, "overall_status": s, "n": n}
+            for (d, m, z, p, s), n in grouped.items()
+        ]
+
+
+def _get_hierarchical_mesa_stats_uncached() -> dict:
+    """
+    Build the by_mpio / by_puesto / _global / review_by_mesa aggregation
+    described by the mesas hierarchical drill-down design (D-Phase1).
+
+    Does ONE grouped-aggregation round trip (get_hierarchical_mesa_stats_grouped
+    RPC — see _fetch_hierarchical_rows_grouped) plus one call to the review
+    semaphore RPC (via _get_review_semaphore_uncached) to merge in 🟡/🟢 review
+    counts, parsed from mesa_key_mr segments (dept_mpio_zona_puesto_mesa).
+
+    Only mpio/puesto combinations with >=1 analyzed mesa are present (no
+    zero-row DIVIPOLE entries), since buckets are built strictly from
+    mesa_results rows.
+
+    Returns the empty shape on hard failure (fail-closed). Semaphore merge
+    failures never discard status aggregation.
+    """
+    try:
+        rows = _fetch_hierarchical_rows_grouped()
     except Exception as exc:
         logger.warning("_get_hierarchical_mesa_stats_uncached fetch failed: %s", exc)
         return _empty_hierarchical_shape()
@@ -1941,11 +1976,12 @@ def _get_hierarchical_mesa_stats_uncached() -> dict:
     global_counts = _empty_hierarchical_bucket()
 
     for row in rows:
-        coords = _hierarchical_coords_from_row(row)
-        if coords is None:
-            continue
-        dept, mpio, zona, puesto = coords
+        dept = row.get("dept", "unknown")
+        mpio = row.get("mpio", "unknown")
+        zona = row.get("zona", "unknown")
+        puesto = row.get("puesto", "unknown")
         status = row.get("overall_status", "unknown")
+        n = row.get("n", 0)
 
         mpio_key = f"{dept}_{mpio}"
         if mpio_key not in by_mpio:
@@ -1953,7 +1989,7 @@ def _get_hierarchical_mesa_stats_uncached() -> dict:
             bucket["dept"] = dept
             bucket["mpio"] = mpio
             by_mpio[mpio_key] = bucket
-        _accumulate_status(by_mpio[mpio_key], status)
+        _accumulate_status(by_mpio[mpio_key], status, n)
 
         puesto_bucket_map = by_puesto.setdefault(mpio_key, {})
         puesto_key = f"{zona}_{puesto}"
@@ -1964,9 +2000,9 @@ def _get_hierarchical_mesa_stats_uncached() -> dict:
             bucket["zona"] = zona
             bucket["puesto"] = puesto
             puesto_bucket_map[puesto_key] = bucket
-        _accumulate_status(puesto_bucket_map[puesto_key], status)
+        _accumulate_status(puesto_bucket_map[puesto_key], status, n)
 
-        _accumulate_status(global_counts, status)
+        _accumulate_status(global_counts, status, n)
 
     # Review counts are best-effort — never wipe status aggregation on RPC failure.
     review_by_mesa: dict[str, dict] = {}
