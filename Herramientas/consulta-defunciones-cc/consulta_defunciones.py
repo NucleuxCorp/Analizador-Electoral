@@ -400,6 +400,8 @@ def _post_json(url: str, payload: dict[str, Any], timeout: int = HTTP_TIMEOUT) -
         },
     )
     ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
     with urllib.request.urlopen(req, context=ctx, timeout=timeout) as resp:
         return resp.read(), resp.status
 
@@ -702,7 +704,7 @@ def write_informe(
         n = counts.get(cls, 0)
         if n:
             lines.append(f"| {cls} | {n:,} | {_pct(n, total)} |")
-    for cls, n in sorted(counts.items()):
+    for cls, n in sorted((k, v) for k, v in counts.items() if k is not None):
         if cls not in order:
             lines.append(f"| {cls} | {n:,} | {_pct(n, total)} |")
     lines.append(f"| **Total** | **{total:,}** | **100%** |")
