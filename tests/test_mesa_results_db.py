@@ -836,3 +836,59 @@ class TestMesaResultExists:
             result = mesa_result_exists("01_001_01_01_1")
 
         assert result is None
+
+
+class TestGetConcordancias:
+    """get_concordancias() must only surface status='confirmed' crops as
+    supporting evidence (sdd/d2aae94: a still-pending crop is itself an
+    unverified guess — showing one as "supporting evidence" for another
+    pending crop is circular and misleading). Regression guard: this filter
+    was silently dropped once already during a branch reconciliation
+    (2026-07-23) because it lived inside a function that exists — with a
+    different body — on both branches, and the reconciliation only compared
+    function *names*, not bodies."""
+
+    def _make_chain(self, rows: list[dict]) -> MagicMock:
+        chain = MagicMock()
+        chain.select.return_value = chain
+        chain.eq.return_value = chain
+        chain.neq.return_value = chain
+        chain.limit.return_value = chain
+        chain.execute.return_value = MagicMock(data=rows)
+        return chain
+
+    def test_query_filters_on_status_confirmed(self):
+        """The Supabase query must include .eq("status", "confirmed")."""
+        from src.modules.labeler.db import get_concordancias
+
+        chain = self._make_chain([{"crop_id": "abc"}])
+        mock_client = MagicMock()
+        mock_client.table.return_value = chain
+
+        with patch("src.modules.labeler.db._client", return_value=mock_client):
+            get_concordancias("data/pdfs/01/x.pdf", "7")
+
+        eq_calls = [c.args for c in chain.eq.call_args_list]
+        assert ("status", "confirmed") in eq_calls
+
+    def test_returns_matching_crop_ids(self):
+        from src.modules.labeler.db import get_concordancias
+
+        chain = self._make_chain([{"crop_id": "abc"}, {"crop_id": "def"}])
+        mock_client = MagicMock()
+        mock_client.table.return_value = chain
+
+        with patch("src.modules.labeler.db._client", return_value=mock_client):
+            result = get_concordancias("data/pdfs/01/x.pdf", "7")
+
+        assert result == ["abc", "def"]
+
+    def test_empty_label_ocr_short_circuits_without_query(self):
+        from src.modules.labeler.db import get_concordancias
+
+        mock_client = MagicMock()
+        with patch("src.modules.labeler.db._client", return_value=mock_client):
+            result = get_concordancias("data/pdfs/01/x.pdf", "?")
+
+        assert result == []
+        mock_client.table.assert_not_called()

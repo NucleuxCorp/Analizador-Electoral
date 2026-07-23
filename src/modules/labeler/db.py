@@ -318,6 +318,12 @@ def get_concordancias(pdf_path: str, label_ocr: str, exclude_crop_id: str = "", 
     OCR prediction as the current crop. Only same-digit siblings are returned —
     no filler from other digit classes — so the reviewer sees how consistent
     the model is on this specific digit across the acta.
+
+    Only status='confirmed' crops are eligible: these are references shown to
+    build the reviewer's confidence, and a still-pending crop is itself an
+    unverified guess — showing one as "supporting evidence" is circular and
+    misleading. Confirmed crops are also independent, already-resolved queue
+    items, so this excludes anything a reviewer would still need to validate.
     """
     if not pdf_path or not label_ocr or label_ocr in ("", "?"):
         return []
@@ -327,6 +333,7 @@ def get_concordancias(pdf_path: str, label_ocr: str, exclude_crop_id: str = "", 
         .select("crop_id")
         .eq("pdf_path", pdf_path)
         .eq("label_ocr", label_ocr)
+        .eq("status", "confirmed")
         .neq("digit_index", -1)
         .neq("crop_id", exclude_crop_id)
         .limit(limit)
