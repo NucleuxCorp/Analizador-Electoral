@@ -413,6 +413,7 @@ class TestGetHierarchicalMesaStats:
 
         def _rpc(name: str, params: dict | None = None) -> MagicMock:
             chain = MagicMock()
+            chain.range.return_value = chain
             if name == "get_hierarchical_mesa_stats_grouped":
                 chain.execute.return_value = MagicMock(data=grouped_rows)
             else:
