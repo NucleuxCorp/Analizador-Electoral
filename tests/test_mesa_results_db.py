@@ -397,20 +397,30 @@ class TestGetHierarchicalMesaStats:
     """get_hierarchical_mesa_stats builds by_mpio / by_puesto / _global / review_by_mesa."""
 
     def _make_client(self, mesa_rows: list[dict], semaphore_rows: list[dict]) -> MagicMock:
-        """Client wired for both the mesa_results table scan and the semaphore RPC."""
-        table_chain = MagicMock()
-        table_chain.select.return_value = table_chain
-        table_chain.range.return_value = table_chain
-        table_chain.eq.return_value = table_chain
-        table_chain.order.return_value = table_chain
-        table_chain.execute.return_value = MagicMock(data=mesa_rows)
+        """Client wired for both the hierarchical-stats grouped RPC and the
+        semaphore RPC. `mesa_rows` are per-mesa rows (test-fixture-friendly);
+        they're grouped into (dept, mpio, zona, puesto, overall_status) -> n
+        here to match what get_hierarchical_mesa_stats_grouped() actually
+        returns from Postgres."""
+        grouped: dict[tuple, int] = {}
+        for row in mesa_rows:
+            key = (row["dept"], row["mpio"], row["zona"], row["puesto"], row["overall_status"])
+            grouped[key] = grouped.get(key, 0) + 1
+        grouped_rows = [
+            {"dept": d, "mpio": m, "zona": z, "puesto": p, "overall_status": s, "n": n}
+            for (d, m, z, p, s), n in grouped.items()
+        ]
 
-        rpc_chain = MagicMock()
-        rpc_chain.execute.return_value = MagicMock(data=semaphore_rows)
+        def _rpc(name: str, params: dict | None = None) -> MagicMock:
+            chain = MagicMock()
+            if name == "get_hierarchical_mesa_stats_grouped":
+                chain.execute.return_value = MagicMock(data=grouped_rows)
+            else:
+                chain.execute.return_value = MagicMock(data=semaphore_rows)
+            return chain
 
         client = MagicMock()
-        client.table.return_value = table_chain
-        client.rpc.return_value = rpc_chain
+        client.rpc.side_effect = _rpc
         return client
 
     def test_by_mpio_and_by_puesto_buckets(self):
@@ -546,7 +556,8 @@ class TestGetHierarchicalMesaStats:
             r2 = db_module.get_hierarchical_mesa_stats()
 
         assert r1 == r2
-        assert mock_client.table.call_count == 1
+        grouped_calls = [c for c in mock_client.rpc.call_args_list if c.args[0] == "get_hierarchical_mesa_stats_grouped"]
+        assert len(grouped_calls) == 1
 
     def test_supabase_unavailable_returns_empty_shape(self):
         """On any exception, returns the empty-but-shaped dict (fail-closed)."""
