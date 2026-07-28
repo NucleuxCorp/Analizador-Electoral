@@ -511,18 +511,24 @@ async function saveDecision(mesaKey, field, src, decision) {
   }
 
   const item = itemByKey[mesaKey];
+  let justCompleted = false;
   if (item && mesaDetail.alerts) {
+    const wasDone = (item.pending_human_count || 0) === 0;
     item.decision_progress = computeProgress(mesaDetail.alerts, mesaDetail.decisions);
     item.pending_human_count = countPending(mesaDetail.alerts, mesaDetail.decisions);
-    if (item.pending_human_count === 0) {
+    if (!wasDone && item.pending_human_count === 0) {
       queueMeta.pending = Math.max(0, queueMeta.pending - 1);
       queueMeta.done = Math.min(queueMeta.queueMesas, queueMeta.done + 1);
+      justCompleted = true;
     }
   }
   renderAlerts(mesaKey);
   updateStatsBar();
   updateNavStatus();
   updateActiveNav();
+  if (justCompleted && mesaKey === currentMesaKey) {
+    goNext();
+  }
 }
 
 function updateNavStatus() {
