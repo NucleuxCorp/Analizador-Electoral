@@ -1878,11 +1878,15 @@ def export_transversal_decisions(dataset: str | None = None) -> dict:
 # Mesas hierarchical drill-down — Work Unit 1 / Phase 1 (DB Foundation)
 # ---------------------------------------------------------------------------
 
-# Separate TTL cache for the hierarchical stats (same 5-min TTL convention as
-# _mesa_stats_cache / _review_semaphore_cache). Single global scan, so the
-# cache key is a fixed constant rather than a dept param.
+# 1800s (30min), not 300s: same rationale as _MESA_STATS_TTL above — a cache
+# miss pays for a full mesa_results pagination (~123 pages). Confirmed via
+# pg_stat_statements (2026-07-28) that this uncached fetch was the single
+# largest disk I/O consumer on the project (millions of shared_blks_read),
+# depleting the Supabase disk IO burst budget and causing a gunicorn
+# crash-loop (see db.py's http_client timeout comment above). Single global
+# scan, so the cache key is a fixed constant rather than a dept param.
 _hierarchical_stats_cache: dict = {}
-_HIERARCHICAL_STATS_TTL = 300  # seconds
+_HIERARCHICAL_STATS_TTL = 1800  # seconds
 _HIERARCHICAL_STATS_CACHE_KEY = "hierarchical"
 
 def _empty_hierarchical_bucket() -> dict:
