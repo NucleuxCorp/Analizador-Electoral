@@ -47,8 +47,25 @@ _supabase_key: str = _service_key or _anon_key
 supabase: Any = None  # supabase.Client | None
 
 if _supabase_url and _supabase_key:
+    import httpx
     from supabase import create_client  # type: ignore[import]
-    supabase = create_client(_supabase_url, _supabase_key)
+    from supabase.lib.client_options import SyncClientOptions  # type: ignore[import]
+
+    # timeout=15s: well under gunicorn's --timeout 60 (Procfile). Without an
+    # explicit timeout here, a slow/degraded Supabase response can block a
+    # sync worker past the gunicorn timeout, which kills the whole process —
+    # and since the stats TTL caches (_mesa_stats_cache /
+    # _hierarchical_stats_cache) are per-process in-memory dicts (not
+    # shared), the replacement worker boots with a cold cache and
+    # immediately repeats the same slow uncached fetch, producing an
+    # unrecoverable crash-loop (confirmed 2026-07-28: every route timing out
+    # in a Booting worker / WORKER TIMEOUT cycle). Bounding the request here
+    # instead raises a controlled exception that the TTL-cached callers
+    # already catch and degrade from (e.g. get_hierarchical_mesa_stats()
+    # falls back to _empty_hierarchical_shape()), so the worker survives.
+    _http_client = httpx.Client(timeout=15.0)
+    _options = SyncClientOptions(httpx_client=_http_client)
+    supabase = create_client(_supabase_url, _supabase_key, options=_options)
 
 
 def _client():
