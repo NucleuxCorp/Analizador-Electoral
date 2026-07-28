@@ -1061,44 +1061,86 @@ def _get_mesa_stats_uncached(dept: str | None = None) -> dict:
     Internal helper — callers should use get_mesa_stats() for the cached
     version. Exposed at module level so tests can bypass the cache.
 
-    Returns {} on any exception (fail-closed).
+    Calls the get_mesa_stats_grouped(p_dept) RPC (scripts/deploy/
+    add_mesa_stats_rpc.sql) — Postgres does the GROUP BY dept, overall_status
+    instead of Python looping over every mesa row. Rows come back already
+    aggregated as {"dept": ..., "overall_status": ..., "n": ...}, so this
+    only needs to sum n into the per-dept/_global buckets, not count rows.
+
+    A zero-row RPC response still returns {"_global": {...zeros...}}, never
+    {} — {} is reserved for the exception/fail-closed path below.
+
+    Raises on any failure (RPC error, client unavailable, etc.) — does NOT
+    catch/return {} itself. get_mesa_stats() is the single decision point
+    for stale-cache-vs-empty-shape degradation on failure (mesa-stats-
+    server-aggregation Phase 3 — see _serve_stale()).
     """
-    try:
-        rows = _fetch_mesa_results_batched("dept, overall_status", dept=dept)
+    params: dict = {}
+    if dept is not None:
+        params["p_dept"] = dept
+    response = _client().rpc("get_mesa_stats_grouped", params).execute()
+    rows: list[dict] = response.data or []
 
-        # Aggregate per-dept counts
-        per_dept: dict[str, dict[str, int]] = {}
-        for row in rows:
-            d = row.get("dept", "unknown")
-            s = row.get("overall_status", "unknown")
-            if d not in per_dept:
-                per_dept[d] = {st: 0 for st in _MESA_STATUSES}
-                per_dept[d]["total"] = 0
-            if s in per_dept[d]:
-                per_dept[d][s] += 1
-            per_dept[d]["total"] += 1
+    # Aggregate per-dept counts from the RPC's pre-grouped (dept,
+    # overall_status, n) rows.
+    per_dept: dict[str, dict[str, int]] = {}
+    for row in rows:
+        d = row.get("dept", "unknown")
+        s = row.get("overall_status", "unknown")
+        n = int(row.get("n") or 0)
+        if d not in per_dept:
+            per_dept[d] = {st: 0 for st in _MESA_STATUSES}
+            per_dept[d]["total"] = 0
+        if s in per_dept[d]:
+            per_dept[d][s] += n
+        per_dept[d]["total"] += n
 
-        # Build _global rollup
-        global_counts: dict[str, int] = {st: 0 for st in _MESA_STATUSES}
-        global_counts["total"] = 0
-        for dept_counts in per_dept.values():
-            for st in _MESA_STATUSES:
-                global_counts[st] += dept_counts.get(st, 0)
-            global_counts["total"] += dept_counts["total"]
+    # Build _global rollup
+    global_counts: dict[str, int] = {st: 0 for st in _MESA_STATUSES}
+    global_counts["total"] = 0
+    for dept_counts in per_dept.values():
+        for st in _MESA_STATUSES:
+            global_counts[st] += dept_counts.get(st, 0)
+        global_counts["total"] += dept_counts["total"]
 
-        return {**per_dept, "_global": global_counts}
-    except Exception as exc:
-        logger.warning("_get_mesa_stats_uncached failed: %s", exc)
-        return {}
+    return {**per_dept, "_global": global_counts}
+
+
+def _serve_stale(cache: dict, key) -> dict | None:
+    """
+    Return the previously cached value at `key`, ignoring TTL expiry, or
+    None if nothing has EVER been cached for this key.
+
+    TTL cache dicts in this module (_mesa_stats_cache,
+    _hierarchical_stats_cache) never evict entries on expiry — expiry is
+    only a timestamp comparison done at read time by their respective
+    getters — so a stale-but-present entry is still sitting here long past
+    its TTL. This is the middle rung between "fresh cache hit" and
+    "fail-closed empty shape" when the underlying RPC call raises
+    (mesa-stats-server-aggregation Phase 3).
+    """
+    entry = cache.get(key)
+    if entry is None:
+        return None
+    logger.warning(
+        "Serving stale cached data for key=%r after RPC failure (age=%.1fs)",
+        key, time.monotonic() - entry["ts"],
+    )
+    return entry["data"]
 
 
 def get_mesa_stats(dept: str | None = None) -> dict:
     """
-    Return overall_status distribution from mesa_results, with a 5-min TTL cache.
+    Return overall_status distribution from mesa_results, with a 30-min TTL cache.
 
     Cache key is the dept parameter (None means global). On a cache miss the
     function delegates to _get_mesa_stats_uncached() and stores the result.
-    Returns {} on any exception (fail-closed).
+
+    On RPC failure: serves the last-known-good cached value for this dept
+    (even past TTL) with a warning logged, via _serve_stale(). Only falls
+    back to {} when no successful fetch has ever populated the cache for
+    this dept (e.g. first call after a cold start) — mesa-stats-server-
+    aggregation Phase 3.
 
     Args:
         dept: Two-digit department code to scope the stats, or None for all.
@@ -1112,7 +1154,15 @@ def get_mesa_stats(dept: str | None = None) -> dict:
     if entry is not None and (now - entry["ts"]) < _MESA_STATS_TTL:
         return entry["data"]
 
-    data = _get_mesa_stats_uncached(dept=dept)
+    try:
+        data = _get_mesa_stats_uncached(dept=dept)
+    except Exception as exc:
+        logger.warning("get_mesa_stats failed: %s", exc)
+        stale = _serve_stale(_mesa_stats_cache, cache_key)
+        if stale is not None:
+            return stale
+        return {}
+
     _mesa_stats_cache[cache_key] = {"data": data, "ts": now}
     return data
 
@@ -1946,58 +1996,28 @@ def _fetch_hierarchical_rows_grouped() -> list[dict]:
     ANTIOQUIA. Must paginate in 1000-row pages until a page comes back
     short.
 
-    Falls back to the old per-mesa batched scan (scripts/deploy/
-    add_hierarchical_mesa_stats_rpc.sql not yet applied on this environment,
-    or the RPC call itself fails) — preserving the mesa_key-parse fallback
-    for the column select — so the route keeps working either way, just
-    slower. Raises only if BOTH paths fail — caller handles fail-closed.
+    Raises on any failure — no fallback to a raw mesa_results table scan
+    (mesa-stats-server-aggregation Phase 3 removed the two-scan fallback
+    cascade this used to have). _get_hierarchical_mesa_stats_uncached()
+    propagates the exception; get_hierarchical_mesa_stats() is the single
+    decision point for stale-cache-vs-empty-shape degradation.
     """
-    try:
-        _RPC_PAGE = 1000
-        rows: list[dict] = []
-        rpc_offset = 0
-        while True:
-            resp = (
-                _client()
-                .rpc("get_hierarchical_mesa_stats_grouped", {})
-                .range(rpc_offset, rpc_offset + _RPC_PAGE - 1)
-                .execute()
-            )
-            page = resp.data or []
-            rows.extend(page)
-            if len(page) < _RPC_PAGE:
-                break
-            rpc_offset += _RPC_PAGE
-        return rows
-    except Exception as exc:
-        logger.warning(
-            "get_hierarchical_mesa_stats_grouped RPC failed, falling back to "
-            "per-mesa batched scan: %s", exc,
+    _RPC_PAGE = 1000
+    rows: list[dict] = []
+    rpc_offset = 0
+    while True:
+        resp = (
+            _client()
+            .rpc("get_hierarchical_mesa_stats_grouped", {})
+            .range(rpc_offset, rpc_offset + _RPC_PAGE - 1)
+            .execute()
         )
-        # Prefer the same slim column set as get_mesa_stats + geo coords.
-        # Fall back to mesa_key parse if a wider select is rejected by PostgREST.
-        try:
-            rows = _fetch_mesa_results_batched(
-                "mesa_key, dept, mpio, zona, puesto, overall_status"
-            )
-        except Exception as fetch_exc:
-            logger.warning(
-                "hierarchical select with coords failed, falling back to mesa_key: %s",
-                fetch_exc,
-            )
-            rows = _fetch_mesa_results_batched("mesa_key, overall_status")
-
-        grouped: dict[tuple, int] = {}
-        for row in rows:
-            coords = _hierarchical_coords_from_row(row)
-            if coords is None:
-                continue
-            key = (*coords, row.get("overall_status", "unknown"))
-            grouped[key] = grouped.get(key, 0) + 1
-        return [
-            {"dept": d, "mpio": m, "zona": z, "puesto": p, "overall_status": s, "n": n}
-            for (d, m, z, p, s), n in grouped.items()
-        ]
+        page = resp.data or []
+        rows.extend(page)
+        if len(page) < _RPC_PAGE:
+            break
+        rpc_offset += _RPC_PAGE
+    return rows
 
 
 def _get_hierarchical_mesa_stats_uncached() -> dict:
@@ -2014,14 +2034,12 @@ def _get_hierarchical_mesa_stats_uncached() -> dict:
     zero-row DIVIPOLE entries), since buckets are built strictly from
     mesa_results rows.
 
-    Returns the empty shape on hard failure (fail-closed). Semaphore merge
+    Raises on a hard fetch failure (does not catch/return the empty shape
+    itself) — get_hierarchical_mesa_stats() is the single stale-vs-empty
+    decision point (mesa-stats-server-aggregation Phase 3). Semaphore merge
     failures never discard status aggregation.
     """
-    try:
-        rows = _fetch_hierarchical_rows_grouped()
-    except Exception as exc:
-        logger.warning("_get_hierarchical_mesa_stats_uncached fetch failed: %s", exc)
-        return _empty_hierarchical_shape()
+    rows = _fetch_hierarchical_rows_grouped()
 
     by_mpio: dict[str, dict] = {}
     by_puesto: dict[str, dict[str, dict]] = {}
@@ -2114,6 +2132,11 @@ def get_hierarchical_mesa_stats() -> dict:
     Delegates to _get_hierarchical_mesa_stats_uncached() on a cache miss.
     Successful non-empty results are cached; empty/fail-closed results are not
     (so a transient outage does not pin zeros for the full TTL).
+
+    On RPC failure: serves the last-known-good cached value (even past TTL)
+    with a warning logged, via _serve_stale(). Only falls back to the empty
+    shape when no successful fetch has ever populated the cache (e.g. first
+    call after a cold start) — mesa-stats-server-aggregation Phase 3.
     """
     now = time.monotonic()
     entry = _hierarchical_stats_cache.get(_HIERARCHICAL_STATS_CACHE_KEY)
@@ -2124,6 +2147,9 @@ def get_hierarchical_mesa_stats() -> dict:
         data = _get_hierarchical_mesa_stats_uncached()
     except Exception as exc:
         logger.warning("get_hierarchical_mesa_stats failed: %s", exc)
+        stale = _serve_stale(_hierarchical_stats_cache, _HIERARCHICAL_STATS_CACHE_KEY)
+        if stale is not None:
+            return stale
         return _empty_hierarchical_shape()
 
     total = (data.get("_global") or {}).get("total", 0) or 0

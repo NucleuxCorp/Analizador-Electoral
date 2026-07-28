@@ -187,52 +187,85 @@ class TestGetMesaResultsSupabaseUnavailable:
 
 # ---------------------------------------------------------------------------
 # T1a-3 (RED) — get_mesa_stats
+#
+# mesa-stats-server-aggregation Phase 2: _get_mesa_stats_uncached() now calls
+# the get_mesa_stats_grouped(p_dept) RPC (Postgres GROUP BY dept, overall_status)
+# instead of _fetch_mesa_results_batched() (full per-mesa table scan). Rows
+# come back pre-aggregated as {"dept": ..., "overall_status": ..., "n": ...}.
 # ---------------------------------------------------------------------------
+
+def _make_stats_rpc_client(grouped_rows: list[dict]) -> MagicMock:
+    """Client wired for the get_mesa_stats_grouped RPC.
+
+    `grouped_rows` are (dept, overall_status, n) rows — exactly what
+    Postgres' GROUP BY dept, overall_status returns.
+    """
+    def _rpc(name: str, params: dict | None = None) -> MagicMock:
+        chain = MagicMock()
+        chain.range.return_value = chain
+        chain.execute.return_value = MagicMock(data=grouped_rows)
+        return chain
+
+    client = MagicMock()
+    client.rpc.side_effect = _rpc
+    return client
+
 
 class TestGetMesaStatsAllDepts:
     """get_mesa_stats returns a dict keyed by dept code plus a _global key."""
 
-    def _make_stats_client(self, rows: list[dict]) -> MagicMock:
-        """Return a client whose .table().select().order().range().eq().execute() returns rows."""
-        chain = MagicMock()
-        chain.select.return_value = chain
-        chain.order.return_value = chain
-        chain.range.return_value = chain
-        chain.limit.return_value = chain
-        chain.eq.return_value = chain
-        chain.execute.return_value = MagicMock(data=rows)
-        client = MagicMock()
-        client.table.return_value = chain
-        return client
+    def test_get_mesa_stats_calls_rpc_not_batched_scan(self):
+        """_get_mesa_stats_uncached() calls the get_mesa_stats_grouped RPC,
+        not _fetch_mesa_results_batched (no full-table .table('mesa_results')
+        select scan)."""
+        from src.modules.labeler.db import _get_mesa_stats_uncached
+
+        grouped_rows = [
+            {"dept": "01", "overall_status": "clean", "n": 1},
+            {"dept": "01", "overall_status": "needs_review_large_delta", "n": 1},
+            {"dept": "05", "overall_status": "warning", "n": 1},
+        ]
+        mock_client = _make_stats_rpc_client(grouped_rows)
+
+        with patch("src.modules.labeler.db._client", return_value=mock_client):
+            result = _get_mesa_stats_uncached(dept=None)
+
+        assert mock_client.rpc.call_args_list, "expected _client().rpc(...) to be called"
+        rpc_names = [c.args[0] for c in mock_client.rpc.call_args_list]
+        assert "get_mesa_stats_grouped" in rpc_names
+        mock_client.table.assert_not_called()
+        assert isinstance(result, dict)
 
     def test_get_mesa_stats_all_depts(self):
         """Returns dict with per-dept counts and a _global rollup."""
-        from src.modules.labeler.db import get_mesa_stats
+        from src.modules.labeler.db import _get_mesa_stats_uncached
 
-        rows = [
-            {"dept": "01", "overall_status": "clean"},
-            {"dept": "01", "overall_status": "needs_review_large_delta"},
-            {"dept": "05", "overall_status": "warning"},
+        grouped_rows = [
+            {"dept": "01", "overall_status": "clean", "n": 1},
+            {"dept": "01", "overall_status": "needs_review_large_delta", "n": 1},
+            {"dept": "05", "overall_status": "warning", "n": 1},
         ]
-        mock_client = self._make_stats_client(rows)
+        mock_client = _make_stats_rpc_client(grouped_rows)
 
         with patch("src.modules.labeler.db._client", return_value=mock_client):
-            # Bust cache to get a fresh call
-            result = get_mesa_stats.__wrapped__(None) if hasattr(get_mesa_stats, "__wrapped__") else _call_uncached(get_mesa_stats)
+            result = _get_mesa_stats_uncached(dept=None)
 
         # Verify shape — top-level keys include dept codes and _global
         assert isinstance(result, dict)
+        assert "01" in result
+        assert "05" in result
+        assert "_global" in result
 
     def test_get_mesa_stats_returns_status_counts(self):
-        """Each dept entry contains counts for all 5 statuses and a total."""
-        from src.modules.labeler.db import get_mesa_stats, _get_mesa_stats_uncached
+        """Each dept entry contains counts for all 5 statuses and a total,
+        summed from the RPC's n column (not one row per mesa)."""
+        from src.modules.labeler.db import _get_mesa_stats_uncached
 
-        rows = [
-            {"dept": "01", "overall_status": "clean"},
-            {"dept": "01", "overall_status": "clean"},
-            {"dept": "01", "overall_status": "needs_review_large_delta"},
+        grouped_rows = [
+            {"dept": "01", "overall_status": "clean", "n": 2},
+            {"dept": "01", "overall_status": "needs_review_large_delta", "n": 1},
         ]
-        mock_client = self._make_stats_client(rows)
+        mock_client = _make_stats_rpc_client(grouped_rows)
 
         with patch("src.modules.labeler.db._client", return_value=mock_client):
             result = _get_mesa_stats_uncached(dept=None)
@@ -245,12 +278,12 @@ class TestGetMesaStatsAllDepts:
         """_global key contains aggregate totals across all depts."""
         from src.modules.labeler.db import _get_mesa_stats_uncached
 
-        rows = [
-            {"dept": "01", "overall_status": "clean"},
-            {"dept": "05", "overall_status": "warning"},
-            {"dept": "05", "overall_status": "needs_review_large_delta"},
+        grouped_rows = [
+            {"dept": "01", "overall_status": "clean", "n": 1},
+            {"dept": "05", "overall_status": "warning", "n": 1},
+            {"dept": "05", "overall_status": "needs_review_large_delta", "n": 1},
         ]
-        mock_client = self._make_stats_client(rows)
+        mock_client = _make_stats_rpc_client(grouped_rows)
 
         with patch("src.modules.labeler.db._client", return_value=mock_client):
             result = _get_mesa_stats_uncached(dept=None)
@@ -260,30 +293,36 @@ class TestGetMesaStatsAllDepts:
         assert result["_global"]["warning"] == 1
         assert result["_global"]["needs_review_large_delta"] == 1
 
-
-class TestGetMesaStatsFiltered:
-    """get_mesa_stats with dept filter applies .eq() to restrict results."""
-
-    def test_get_mesa_stats_filtered(self):
-        """When dept is given, query applies .eq('dept', dept) filter."""
+    def test_get_mesa_stats_empty_rows_returns_global_zeros_not_empty_dict(self):
+        """D6: a zero-row RPC response still returns {"_global": {zeros}},
+        never {} — {} is reserved for the exception/fail-closed path."""
         from src.modules.labeler.db import _get_mesa_stats_uncached
 
-        rows = [{"dept": "01", "overall_status": "clean"}]
-        chain = MagicMock()
-        chain.select.return_value = chain
-        chain.order.return_value = chain
-        chain.range.return_value = chain
-        chain.limit.return_value = chain
-        chain.eq.return_value = chain
-        chain.execute.return_value = MagicMock(data=rows)
-        mock_client = MagicMock()
-        mock_client.table.return_value = chain
+        mock_client = _make_stats_rpc_client([])
 
         with patch("src.modules.labeler.db._client", return_value=mock_client):
-            result = _get_mesa_stats_uncached(dept="01")
+            result = _get_mesa_stats_uncached(dept=None)
 
-        eq_calls = [c.args for c in chain.eq.call_args_list]
-        assert ("dept", "01") in eq_calls
+        assert result != {}
+        assert result["_global"]["total"] == 0
+        assert result["_global"]["clean"] == 0
+
+
+class TestGetMesaStatsFiltered:
+    """get_mesa_stats with dept filter passes p_dept to the RPC."""
+
+    def test_get_mesa_stats_filtered(self):
+        """When dept is given, the RPC is called with p_dept=dept."""
+        from src.modules.labeler.db import _get_mesa_stats_uncached
+
+        grouped_rows = [{"dept": "01", "overall_status": "clean", "n": 1}]
+        mock_client = _make_stats_rpc_client(grouped_rows)
+
+        with patch("src.modules.labeler.db._client", return_value=mock_client):
+            _get_mesa_stats_uncached(dept="01")
+
+        rpc_calls = [c.args for c in mock_client.rpc.call_args_list]
+        assert ("get_mesa_stats_grouped", {"p_dept": "01"}) in rpc_calls
 
 
 class TestGetMesaStatsCacheHit:
@@ -296,14 +335,8 @@ class TestGetMesaStatsCacheHit:
         # Reset cache state before test
         db_module._mesa_stats_cache.clear()
 
-        rows = [{"dept": "01", "overall_status": "clean"}]
-        chain = MagicMock()
-        chain.select.return_value = chain
-        chain.range.return_value = chain
-        chain.eq.return_value = chain
-        chain.execute.return_value = MagicMock(data=rows)
-        mock_client = MagicMock()
-        mock_client.table.return_value = chain
+        grouped_rows = [{"dept": "01", "overall_status": "clean", "n": 1}]
+        mock_client = _make_stats_rpc_client(grouped_rows)
 
         with patch("src.modules.labeler.db._client", return_value=mock_client):
             r1 = db_module.get_mesa_stats(dept=None)
@@ -311,7 +344,7 @@ class TestGetMesaStatsCacheHit:
 
         assert r1 == r2
         # Client should be accessed only once — second call hits the cache
-        assert mock_client.table.call_count == 1
+        assert mock_client.rpc.call_count == 1
 
     def test_get_mesa_stats_cache_key_is_dept(self):
         """Different dept values use separate cache entries."""
@@ -319,29 +352,29 @@ class TestGetMesaStatsCacheHit:
 
         db_module._mesa_stats_cache.clear()
 
-        rows_01 = [{"dept": "01", "overall_status": "clean"}]
-        rows_05 = [{"dept": "05", "overall_status": "needs_review_large_delta"}]
+        rows_01 = [{"dept": "01", "overall_status": "clean", "n": 1}]
+        rows_05 = [{"dept": "05", "overall_status": "needs_review_large_delta", "n": 1}]
 
         call_count = {"n": 0}
 
-        def execute_side_effect():
+        def _rpc(name: str, params: dict | None = None) -> MagicMock:
             call_count["n"] += 1
-            return MagicMock(data=rows_01 if call_count["n"] == 1 else rows_05)
+            chain = MagicMock()
+            chain.range.return_value = chain
+            chain.execute.return_value = MagicMock(
+                data=rows_01 if call_count["n"] == 1 else rows_05
+            )
+            return chain
 
-        chain = MagicMock()
-        chain.select.return_value = chain
-        chain.range.return_value = chain
-        chain.eq.return_value = chain
-        chain.execute.side_effect = execute_side_effect
         mock_client = MagicMock()
-        mock_client.table.return_value = chain
+        mock_client.rpc.side_effect = _rpc
 
         with patch("src.modules.labeler.db._client", return_value=mock_client):
             r1 = db_module.get_mesa_stats(dept="01")
             r2 = db_module.get_mesa_stats(dept="05")
 
         # Two different dept keys → two DB calls
-        assert mock_client.table.call_count == 2
+        assert mock_client.rpc.call_count == 2
 
 
 class TestGetMesaStatsSupabaseUnavailable:
@@ -364,17 +397,95 @@ class TestGetMesaStatsSupabaseUnavailable:
 
         db_module._mesa_stats_cache.clear()
 
-        chain = MagicMock()
-        chain.select.return_value = chain
-        chain.order.return_value = chain
-        chain.range.return_value = chain
-        chain.limit.return_value = chain
-        chain.eq.return_value = chain
-        chain.execute.side_effect = Exception("timeout")
+        def _rpc(name: str, params: dict | None = None) -> MagicMock:
+            chain = MagicMock()
+            chain.range.return_value = chain
+            chain.execute.side_effect = Exception("timeout")
+            return chain
+
         mock_client = MagicMock()
-        mock_client.table.return_value = chain
+        mock_client.rpc.side_effect = _rpc
 
         with patch("src.modules.labeler.db._client", return_value=mock_client):
+            result = db_module.get_mesa_stats(dept=None)
+
+        assert result == {}
+
+
+# ---------------------------------------------------------------------------
+# mesa-stats-server-aggregation Phase 3: stale-cache-or-empty degradation.
+#
+# On RPC failure, get_mesa_stats() must serve the last-known-good cached
+# value (even past TTL) instead of immediately fail-closing to {} — {} is
+# now reserved for the case where no successful fetch has EVER populated
+# the cache for this key (e.g. first call after cold start).
+# ---------------------------------------------------------------------------
+
+class TestGetMesaStatsStaleServe:
+    """get_mesa_stats serves stale cache on RPC failure when one exists."""
+
+    def test_serves_stale_value_when_rpc_fails_after_prior_success(self):
+        """First call succeeds and populates the cache; a later call whose
+        RPC raises must return the SAME prior data, not {}."""
+        import src.modules.labeler.db as db_module
+
+        db_module._mesa_stats_cache.clear()
+
+        grouped_rows = [{"dept": "01", "overall_status": "clean", "n": 1}]
+        good_client = _make_stats_rpc_client(grouped_rows)
+
+        with patch("src.modules.labeler.db._client", return_value=good_client):
+            first = db_module.get_mesa_stats(dept=None)
+
+        assert first["_global"]["total"] == 1
+
+        # Force the cache entry to look expired so the next call re-fetches.
+        db_module._mesa_stats_cache[None]["ts"] -= (db_module._MESA_STATS_TTL + 1)
+
+        with patch(
+            "src.modules.labeler.db._client",
+            side_effect=RuntimeError("rpc down"),
+        ):
+            second = db_module.get_mesa_stats(dept=None)
+
+        assert second == first
+        assert second != {}
+
+    def test_logs_warning_when_serving_stale(self, caplog):
+        """Serving stale data on RPC failure must log a warning, not fail silently."""
+        import logging
+        import src.modules.labeler.db as db_module
+
+        db_module._mesa_stats_cache.clear()
+
+        grouped_rows = [{"dept": "01", "overall_status": "clean", "n": 1}]
+        good_client = _make_stats_rpc_client(grouped_rows)
+
+        with patch("src.modules.labeler.db._client", return_value=good_client):
+            db_module.get_mesa_stats(dept=None)
+
+        db_module._mesa_stats_cache[None]["ts"] -= (db_module._MESA_STATS_TTL + 1)
+
+        with caplog.at_level(logging.WARNING):
+            with patch(
+                "src.modules.labeler.db._client",
+                side_effect=RuntimeError("rpc down"),
+            ):
+                db_module.get_mesa_stats(dept=None)
+
+        assert any("stale" in rec.message.lower() for rec in caplog.records)
+
+    def test_returns_empty_dict_when_no_prior_cache_exists(self):
+        """RPC failure with NO prior successful fetch (cold start) still
+        fail-closes to {} — there is nothing stale to serve."""
+        import src.modules.labeler.db as db_module
+
+        db_module._mesa_stats_cache.clear()
+
+        with patch(
+            "src.modules.labeler.db._client",
+            side_effect=RuntimeError("rpc down"),
+        ):
             result = db_module.get_mesa_stats(dept=None)
 
         assert result == {}
@@ -584,6 +695,131 @@ class TestGetHierarchicalMesaStats:
             db_module.get_hierarchical_mesa_stats()
 
         assert db_module._hierarchical_stats_cache == {}
+
+
+# ---------------------------------------------------------------------------
+# mesa-stats-server-aggregation Phase 3: remove the two-scan fallback cascade
+# in _fetch_hierarchical_rows_grouped(), and add stale-cache-or-empty
+# degradation to get_hierarchical_mesa_stats().
+# ---------------------------------------------------------------------------
+
+class TestFetchHierarchicalRowsGroupedNoFallback:
+    """_fetch_hierarchical_rows_grouped raises on RPC failure — no fallback
+    to a raw mesa_results table scan of any kind."""
+
+    def test_rpc_failure_raises_and_never_touches_table(self):
+        from src.modules.labeler.db import _fetch_hierarchical_rows_grouped
+
+        mock_client = MagicMock()
+        mock_client.rpc.side_effect = RuntimeError("rpc down")
+
+        with patch("src.modules.labeler.db._client", return_value=mock_client):
+            try:
+                _fetch_hierarchical_rows_grouped()
+                raised = False
+            except RuntimeError:
+                raised = True
+
+        assert raised, "expected _fetch_hierarchical_rows_grouped to raise, not swallow the RPC failure"
+        mock_client.table.assert_not_called()
+
+
+class TestGetHierarchicalMesaStatsStaleServe:
+    """get_hierarchical_mesa_stats serves stale cache on RPC failure when one exists."""
+
+    def _make_client(self, mesa_rows: list[dict]) -> MagicMock:
+        grouped: dict[tuple, int] = {}
+        for row in mesa_rows:
+            key = (row["dept"], row["mpio"], row["zona"], row["puesto"], row["overall_status"])
+            grouped[key] = grouped.get(key, 0) + 1
+        grouped_rows = [
+            {"dept": d, "mpio": m, "zona": z, "puesto": p, "overall_status": s, "n": n}
+            for (d, m, z, p, s), n in grouped.items()
+        ]
+
+        def _rpc(name: str, params: dict | None = None) -> MagicMock:
+            chain = MagicMock()
+            chain.range.return_value = chain
+            if name == "get_hierarchical_mesa_stats_grouped":
+                chain.execute.return_value = MagicMock(data=grouped_rows)
+            else:
+                chain.execute.return_value = MagicMock(data=[])
+            return chain
+
+        client = MagicMock()
+        client.rpc.side_effect = _rpc
+        return client
+
+    def test_serves_stale_value_when_rpc_fails_after_prior_success(self):
+        import src.modules.labeler.db as db_module
+
+        db_module._hierarchical_stats_cache.clear()
+
+        mesa_rows = [
+            {"dept": "01", "mpio": "001", "zona": "01", "puesto": "01", "mesa": "1", "overall_status": "clean"},
+        ]
+        good_client = self._make_client(mesa_rows)
+
+        with patch("src.modules.labeler.db._client", return_value=good_client):
+            first = db_module.get_hierarchical_mesa_stats()
+
+        assert first["_global"]["total"] == 1
+
+        db_module._hierarchical_stats_cache[db_module._HIERARCHICAL_STATS_CACHE_KEY]["ts"] -= (
+            db_module._HIERARCHICAL_STATS_TTL + 1
+        )
+
+        with patch(
+            "src.modules.labeler.db._client",
+            side_effect=RuntimeError("rpc down"),
+        ):
+            second = db_module.get_hierarchical_mesa_stats()
+
+        assert second == first
+        assert second["_global"] != _empty_global_bucket() or first["_global"]["total"] == 0
+
+    def test_logs_warning_when_serving_stale(self, caplog):
+        import logging
+        import src.modules.labeler.db as db_module
+
+        db_module._hierarchical_stats_cache.clear()
+
+        mesa_rows = [
+            {"dept": "01", "mpio": "001", "zona": "01", "puesto": "01", "mesa": "1", "overall_status": "clean"},
+        ]
+        good_client = self._make_client(mesa_rows)
+
+        with patch("src.modules.labeler.db._client", return_value=good_client):
+            db_module.get_hierarchical_mesa_stats()
+
+        db_module._hierarchical_stats_cache[db_module._HIERARCHICAL_STATS_CACHE_KEY]["ts"] -= (
+            db_module._HIERARCHICAL_STATS_TTL + 1
+        )
+
+        with caplog.at_level(logging.WARNING):
+            with patch(
+                "src.modules.labeler.db._client",
+                side_effect=RuntimeError("rpc down"),
+            ):
+                db_module.get_hierarchical_mesa_stats()
+
+        assert any("stale" in rec.message.lower() for rec in caplog.records)
+
+    def test_returns_empty_shape_when_no_prior_cache_exists(self):
+        """RPC failure with no prior successful fetch still fail-closes to
+        the empty shape — nothing stale to serve."""
+        import src.modules.labeler.db as db_module
+
+        db_module._hierarchical_stats_cache.clear()
+
+        with patch(
+            "src.modules.labeler.db._client",
+            side_effect=RuntimeError("no client"),
+        ):
+            result = db_module.get_hierarchical_mesa_stats()
+
+        assert result["by_mpio"] == {}
+        assert result["_global"] == _empty_global_bucket()
 
 
 # ---------------------------------------------------------------------------

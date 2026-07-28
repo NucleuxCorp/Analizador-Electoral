@@ -46,6 +46,7 @@ Safe to re-run:
 | `add_mesa_report_type.sql` | Migration | `report_type` column |
 | `fix_mesa_reports_view.sql` | Migration | `mesa_reports_view` + backfill |
 | `add_mesa_source_status.sql` | Migration | `source_status` JSONB + GIN index on `mesa_results` |
+| `add_mesa_stats_rpc.sql` | Installation | `get_mesa_stats_grouped(p_dept)` RPC — server-side GROUP BY for `get_mesa_stats()`/`get_public_stats()`, replaces the full-table Python scan (sdd/mesa-stats-server-aggregation). No new index needed — covered by existing `idx_mesa_results_dept_status` |
 
 ### 4. Panel transversal (`/admin/transversal`)
 
