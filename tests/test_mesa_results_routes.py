@@ -7,6 +7,7 @@ No live Supabase connection is required.
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -363,9 +364,13 @@ class TestAdminMesaDetailRoute:
 
         assert resp.status_code == 200
         body = resp.get_data(as_text=True).lower()
-        assert "confirmado" not in body
-        assert "pendiente" not in body
-        assert "disputado" not in body
+        # Word-boundary match, not a bare substring: the shared legal footer
+        # (_footer_legal.html) contains "independiente", which embeds the
+        # substring "pendiente" without being a decision badge.
+        for word in ("confirmado", "pendiente", "disputado"):
+            assert re.search(rf"\b{word}\b", body) is None, (
+                f"unexpected decision-badge wording rendered: {word!r}"
+            )
 
     # -----------------------------------------------------------------
     # mesa-detail-decision-status — read-only decision-confirmation matrix

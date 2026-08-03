@@ -1,0 +1,47 @@
+{# Shared legal disclaimer. Included before </body> in every public template.
+
+   Purpose: make it unambiguous that this is an independent citizen-participation
+   platform and NOT an official Registraduria/CNE site. Two risks this mitigates:
+     1. The site being reported/flagged as impersonating an official government
+        site (Safe Browsing, phishing lists, hosting complaints) and taken down.
+     2. A reader mistaking OCR-derived figures for official results.
+
+   Edit the text HERE only — it is included by every public view, so a local
+   copy would silently desynchronise. #}
+<div class="legal-disclaimer" role="contentinfo">
+  <p>
+    <strong>Plataforma independiente de participación ciudadana.</strong>
+    Este sitio no es parte de, no está afiliado a, ni está respaldado por la
+    Registraduría Nacional del Estado Civil, el Consejo Nacional Electoral ni
+    ninguna entidad del Estado colombiano. Los nombres, logos y marcas
+    mencionados pertenecen a sus respectivos titulares.
+  </p>
+  <p>
+    Los datos analizados provienen de <strong>fuentes públicas</strong> publicadas
+    por la Registraduría (actas E-14 de claveros, transmisión y delegados). Las
+    cifras que se muestran acá son producto de un <strong>análisis automatizado
+    (OCR)</strong> y <strong>pueden contener errores</strong>: no constituyen
+    resultados oficiales ni tienen valor probatorio.
+  </p>
+  <p>
+    Los <strong>resultados oficiales</strong> de la elección son únicamente los
+    que publica la Registraduría Nacional del Estado Civil y el Consejo Nacional
+    Electoral.
+  </p>
+</div>
+
+<style>
+  .legal-disclaimer {
+    max-width: 900px;
+    margin: 48px auto 24px;
+    padding: 18px 20px;
+    border-top: 1px solid rgba(128, 128, 128, 0.28);
+    font-size: 0.74rem;
+    line-height: 1.55;
+    color: #6b7280;
+    text-align: left;
+  }
+  .legal-disclaimer p { margin: 0 0 10px; }
+  .legal-disclaimer p:last-child { margin-bottom: 0; }
+  .legal-disclaimer strong { color: #9ca3af; font-weight: 600; }
+</style>

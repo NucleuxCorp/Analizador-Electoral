@@ -720,3 +720,76 @@ class TestTotalUniverseConstant:
         """TOTAL_UNIVERSE equals 122_020."""
         from src.modules.labeler.db import TOTAL_UNIVERSE
         assert TOTAL_UNIVERSE == 122_020
+
+
+# ---------------------------------------------------------------------------
+# Legal disclaimer footer (non-affiliation notice)
+# ---------------------------------------------------------------------------
+
+class TestLegalDisclaimerFooter:
+    """Every public view carries the shared non-affiliation disclaimer.
+
+    This is a takedown-risk mitigation, not cosmetics: without it the site can
+    be reported as impersonating an official Registraduria page, and readers
+    can mistake OCR-derived figures for official results.
+    """
+
+    PUBLIC_TEMPLATES = [
+        "home.html",
+        "mesas.html",
+        "mesa_detail.html",
+        "privacy.html",
+        "login.html",
+        "register.html",
+        "forgot_password.html",
+        "reset_password.html",
+        "maintenance.html",
+    ]
+
+    def _templates_dir(self):
+        from pathlib import Path
+        import src.modules.labeler as labeler_pkg
+        return Path(labeler_pkg.__file__).parent / "templates"
+
+    def test_partial_exists(self):
+        """The shared partial exists — single source of truth for the text."""
+        assert (self._templates_dir() / "_footer_legal.html").is_file()
+
+    def test_every_public_template_includes_the_partial(self):
+        """No public view may ship without the disclaimer."""
+        tdir = self._templates_dir()
+        missing = [
+            name for name in self.PUBLIC_TEMPLATES
+            if '{% include "_footer_legal.html" %}'
+            not in (tdir / name).read_text(encoding="utf-8")
+        ]
+        assert missing == [], f"public templates without the disclaimer: {missing}"
+
+    def test_partial_states_non_affiliation_and_unofficial_figures(self):
+        """The text must deny affiliation AND disclaim the figures."""
+        text = (self._templates_dir() / "_footer_legal.html").read_text(encoding="utf-8")
+        assert "no está afiliado" in text
+        assert "Registraduría Nacional del Estado Civil" in text
+        assert "Consejo Nacional Electoral" in text
+        assert "no constituyen" in text and "resultados oficiales" in text
+
+    def test_home_renders_the_disclaimer(self, prod_app):
+        """GET / actually serves the disclaimer, not just the include tag."""
+        known = {
+            "mesas_all_three": 500,
+            "mesas_analyzed": 1000,
+            "mesas_remaining": 121_020,
+            "total_anomalias": 100,
+            "total_universe": 122_020,
+            "mesas_sin_e14c": 3_670,
+            "mesas_concordancia_perfecta": 231,
+            "mesas_concordancia_perfecta_pct": 0.19,
+        }
+        with patch("src.modules.labeler.db.get_public_stats", return_value=known):
+            resp = prod_app.test_client().get("/")
+
+        assert resp.status_code == 200
+        html = resp.data.decode()
+        assert "Plataforma independiente de participación ciudadana" in html
+        assert "no está afiliado" in html
+        assert "resultados oficiales" in html
