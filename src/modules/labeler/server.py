@@ -1664,6 +1664,17 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
                 total_anomalias=public_stats["total_anomalias"],
                 total_universe=public_stats["total_universe"],
                 mesas_sin_e14c=public_stats["mesas_sin_e14c"],
+                # .get(key, _db.CONSTANT) — not direct indexing (design D3):
+                # these two keys are compile-time constants, so the
+                # fallback is always correct even against a stale/partial
+                # public_stats dict (e.g. cached before this change
+                # deployed) that predates them, without a KeyError -> 500.
+                mesas_concordancia_perfecta=public_stats.get(
+                    "mesas_concordancia_perfecta", _db.MESAS_CONCORDANCIA_PERFECTA
+                ),
+                mesas_concordancia_perfecta_pct=public_stats.get(
+                    "mesas_concordancia_perfecta_pct", _db.MESAS_CONCORDANCIA_PERFECTA_PCT
+                ),
                 semaphore_global=semaphore_global,
             )
 

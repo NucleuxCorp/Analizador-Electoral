@@ -289,6 +289,12 @@
         <div class="stat-sublabel">escrutinio oficial aún no publicado</div>
       </div>
 
+      <div class="stat-card">
+        <div class="stat-value">{{ "—" if mesas_concordancia_perfecta == 0 else mesas_concordancia_perfecta | format_number }}</div>
+        <div class="stat-label">Mesas con concordancia perfecta<br>(3 fuentes · 9 campos)</div>
+        <div class="stat-sublabel">{{ mesas_concordancia_perfecta_pct | replace(".", ",") }}% de {{ total_universe | format_number }} mesas — las 3 fuentes coinciden en las 27 lecturas de dígito de la mesa. Muestra pequeña, no representativa del universo.</div>
+      </div>
+
     </div>
 
     {% if semaphore_global %}

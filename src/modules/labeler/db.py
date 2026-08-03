@@ -868,6 +868,25 @@ MESAS_ALL_THREE: int = 118_543
 # re-running scripts/upload_mesa_results.py against a full dataset.
 MESAS_SIN_E14C: int = 3_688
 
+# Mesas where all 9 tracked fields (VOTANTES, URNA, INCINER, C1_CEPEDA,
+# C2_ABELARDO, BLANCO, NULOS, NO_MARCADOS, SUMA_TOTAL) roll up to "armonico"
+# — the three sources (E14C/E14T/E14D) agree on all 27 tracked digit
+# positions for that mesa. Recomputed 2026-08-03 from the 34 local
+# data/cross_mesa_validation_{dept}.jsonl files (hallazgo [13]), via:
+#   python scripts/analyze/compute_perfect_concordance.py
+# A precomputed constant, not a live query — same discipline as
+# MESAS_ALL_THREE / MESAS_SIN_E14C (see MESAS_SIN_E14C docstring on why
+# full-table aggregation queries are avoided on this Supabase instance).
+# Small-sample caveat: 231/122,020 (0.19%) is not representative of the
+# national universe — most mesas have partial concordance, not zero or full.
+MESAS_CONCORDANCIA_PERFECTA: int = 231
+
+# Derived from MESAS_CONCORDANCIA_PERFECTA / TOTAL_UNIVERSE, not a second
+# hardcoded literal (avoids drift between the count and its percentage).
+MESAS_CONCORDANCIA_PERFECTA_PCT: float = round(
+    MESAS_CONCORDANCIA_PERFECTA / TOTAL_UNIVERSE * 100, 2
+)
+
 # Zeros dict returned by get_public_stats() on any exception (fail-closed).
 _PUBLIC_STATS_ZEROS: dict = {
     "mesas_all_three": MESAS_ALL_THREE,
@@ -876,6 +895,8 @@ _PUBLIC_STATS_ZEROS: dict = {
     "total_anomalias": 0,
     "total_universe": TOTAL_UNIVERSE,
     "mesas_sin_e14c": MESAS_SIN_E14C,
+    "mesas_concordancia_perfecta": MESAS_CONCORDANCIA_PERFECTA,
+    "mesas_concordancia_perfecta_pct": MESAS_CONCORDANCIA_PERFECTA_PCT,
 }
 
 # All valid overall_status values (5-level taxonomy, design D3).
@@ -1184,7 +1205,8 @@ def get_public_stats() -> dict:
     Returns:
         Dict with keys: ``mesas_all_three``, ``mesas_analyzed``,
         ``mesas_remaining``, ``total_anomalias``, ``total_universe``,
-        ``mesas_sin_e14c``.
+        ``mesas_sin_e14c``, ``mesas_concordancia_perfecta``,
+        ``mesas_concordancia_perfecta_pct``.
         Returns ``_PUBLIC_STATS_ZEROS`` on any exception — never re-raises.
     """
     cache_key = "public_stats"
@@ -1221,6 +1243,8 @@ def get_public_stats() -> dict:
             "total_anomalias": total_anomalias,
             "total_universe": TOTAL_UNIVERSE,
             "mesas_sin_e14c": mesas_sin_e14c,
+            "mesas_concordancia_perfecta": MESAS_CONCORDANCIA_PERFECTA,
+            "mesas_concordancia_perfecta_pct": MESAS_CONCORDANCIA_PERFECTA_PCT,
         }
         _mesa_stats_cache[cache_key] = {"data": result, "ts": now}
         return result

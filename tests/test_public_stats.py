@@ -67,6 +67,8 @@ ZEROS_DICT = {
     "total_anomalias": 0,
     "total_universe": 122_020,
     "mesas_sin_e14c": 3_688,
+    "mesas_concordancia_perfecta": 231,
+    "mesas_concordancia_perfecta_pct": 0.19,
 }
 
 
@@ -108,7 +110,7 @@ class TestGetPublicStatsHappyPath:
     """get_public_stats() returns correct dict on the happy path."""
 
     def test_happy_path_all_keys_present(self):
-        """Returns a dict with all five required keys."""
+        """Returns a dict with all eight required keys."""
         from src.modules.labeler.db import get_public_stats
 
         chain = _make_count_chain(5000)
@@ -122,6 +124,7 @@ class TestGetPublicStatsHappyPath:
         assert set(result.keys()) == {
             "mesas_all_three", "mesas_analyzed", "mesas_remaining",
             "total_anomalias", "total_universe", "mesas_sin_e14c",
+            "mesas_concordancia_perfecta", "mesas_concordancia_perfecta_pct",
         }
 
     def test_happy_path_mesas_all_three_is_constant(self):
@@ -209,6 +212,84 @@ class TestGetPublicStatsHappyPath:
 
         assert result["mesas_sin_e14c"] == MESAS_SIN_E14C
         assert result["mesas_all_three"] == MESAS_ALL_THREE
+
+    def test_happy_path_mesas_concordancia_perfecta_is_constant(self):
+        """mesas_concordancia_perfecta equals the MESAS_CONCORDANCIA_PERFECTA
+        constant (recomputed 2026-08-03 from the 34 cross_mesa_validation
+        files, hallazgo [13]) — not a live query."""
+        from src.modules.labeler.db import get_public_stats, MESAS_CONCORDANCIA_PERFECTA
+
+        stats = _global_stats()
+
+        with patch("src.modules.labeler.db.get_mesa_stats", return_value=stats):
+            result = get_public_stats()
+
+        assert result["mesas_concordancia_perfecta"] == MESAS_CONCORDANCIA_PERFECTA
+
+    def test_happy_path_mesas_concordancia_perfecta_pct_is_derived_constant(self):
+        """mesas_concordancia_perfecta_pct equals the derived
+        MESAS_CONCORDANCIA_PERFECTA_PCT constant, itself
+        round(MESAS_CONCORDANCIA_PERFECTA / TOTAL_UNIVERSE * 100, 2)."""
+        from src.modules.labeler.db import (
+            get_public_stats,
+            MESAS_CONCORDANCIA_PERFECTA,
+            MESAS_CONCORDANCIA_PERFECTA_PCT,
+            TOTAL_UNIVERSE,
+        )
+
+        stats = _global_stats()
+
+        with patch("src.modules.labeler.db.get_mesa_stats", return_value=stats):
+            result = get_public_stats()
+
+        assert result["mesas_concordancia_perfecta_pct"] == MESAS_CONCORDANCIA_PERFECTA_PCT
+        assert MESAS_CONCORDANCIA_PERFECTA_PCT == round(
+            MESAS_CONCORDANCIA_PERFECTA / TOTAL_UNIVERSE * 100, 2
+        )
+
+
+# ---------------------------------------------------------------------------
+# Phase 4.1/4.2 — MESAS_CONCORDANCIA_PERFECTA constants (module-level)
+# ---------------------------------------------------------------------------
+
+class TestMesasConcordanciaPerfectaConstants:
+    """db.py module-level constants for the perfect-concordance metric."""
+
+    def test_mesas_concordancia_perfecta_value(self):
+        """MESAS_CONCORDANCIA_PERFECTA == 231 (2026-08-03 recompute gate)."""
+        from src.modules.labeler.db import MESAS_CONCORDANCIA_PERFECTA
+        assert MESAS_CONCORDANCIA_PERFECTA == 231
+
+    def test_mesas_concordancia_perfecta_pct_value(self):
+        """MESAS_CONCORDANCIA_PERFECTA_PCT == 0.19, derived from TOTAL_UNIVERSE."""
+        from src.modules.labeler.db import (
+            MESAS_CONCORDANCIA_PERFECTA_PCT,
+            MESAS_CONCORDANCIA_PERFECTA,
+            TOTAL_UNIVERSE,
+        )
+        assert MESAS_CONCORDANCIA_PERFECTA_PCT == 0.19
+        assert MESAS_CONCORDANCIA_PERFECTA_PCT == round(
+            MESAS_CONCORDANCIA_PERFECTA / TOTAL_UNIVERSE * 100, 2
+        )
+        assert isinstance(MESAS_CONCORDANCIA_PERFECTA_PCT, float)
+
+
+# ---------------------------------------------------------------------------
+# Phase 4.4 — _PUBLIC_STATS_ZEROS fail-closed dict includes real constants
+# ---------------------------------------------------------------------------
+
+class TestPublicStatsZerosIncludesNewKeys:
+    """_PUBLIC_STATS_ZEROS carries the real constant values (not 0) for the
+    new keys, matching the existing treatment of mesas_all_three/mesas_sin_e14c."""
+
+    def test_zeros_dict_has_real_concordancia_perfecta_values(self):
+        from src.modules.labeler.db import (
+            _PUBLIC_STATS_ZEROS,
+            MESAS_CONCORDANCIA_PERFECTA,
+            MESAS_CONCORDANCIA_PERFECTA_PCT,
+        )
+        assert _PUBLIC_STATS_ZEROS["mesas_concordancia_perfecta"] == MESAS_CONCORDANCIA_PERFECTA
+        assert _PUBLIC_STATS_ZEROS["mesas_concordancia_perfecta_pct"] == MESAS_CONCORDANCIA_PERFECTA_PCT
 
 
 # ---------------------------------------------------------------------------
@@ -345,6 +426,8 @@ class TestHomeViewInjectsStats:
             "total_anomalias": 100,
             "total_universe": 122_020,
             "mesas_sin_e14c": 3_670,
+            "mesas_concordancia_perfecta": 231,
+            "mesas_concordancia_perfecta_pct": 0.19,
         }
         with patch("src.modules.labeler.db.get_public_stats", return_value=known):
             client = prod_app.test_client()
@@ -366,6 +449,8 @@ class TestHomeViewInjectsStats:
             "total_anomalias": 100,
             "total_universe": 122_020,
             "mesas_sin_e14c": 0,
+            "mesas_concordancia_perfecta": 231,
+            "mesas_concordancia_perfecta_pct": 0.19,
         }
         with patch("src.modules.labeler.db.get_public_stats", return_value=known):
             client = prod_app.test_client()
@@ -384,6 +469,8 @@ class TestHomeViewInjectsStats:
             "total_anomalias": 100,
             "total_universe": 122_020,
             "mesas_sin_e14c": 3_670,
+            "mesas_concordancia_perfecta": 231,
+            "mesas_concordancia_perfecta_pct": 0.19,
         }
         with patch("src.modules.labeler.db.get_public_stats", return_value=known):
             client = prod_app.test_client()
@@ -398,6 +485,128 @@ class TestHomeViewInjectsStats:
         )
         assert sin_e14c_script is not None
         assert "mesas_analyzed_v1" not in sin_e14c_script
+
+    def test_home_view_renders_perfect_concordance_card(self, prod_app):
+        """GET / renders the 5th stat-card: count, formatted pct, label,
+        and the non-representativeness caveat — no link (2026-08-03 product
+        decision)."""
+        known = {
+            "mesas_all_three": 500,
+            "mesas_analyzed": 1000,
+            "mesas_remaining": 121_020,
+            "total_anomalias": 100,
+            "total_universe": 122_020,
+            "mesas_sin_e14c": 3_670,
+            "mesas_concordancia_perfecta": 231,
+            "mesas_concordancia_perfecta_pct": 0.19,
+        }
+        with patch("src.modules.labeler.db.get_public_stats", return_value=known):
+            client = prod_app.test_client()
+            resp = client.get("/")
+
+        assert resp.status_code == 200
+        html = resp.data.decode()
+        assert "231" in html
+        assert "0,19%" in html
+        assert "Mesas con concordancia perfecta" in html
+        assert "no representativa" in html
+
+    def test_home_view_perfect_concordance_card_has_no_link(self, prod_app):
+        """The 5th card is static markup with no outbound <a> link."""
+        known = {
+            "mesas_all_three": 500,
+            "mesas_analyzed": 1000,
+            "mesas_remaining": 121_020,
+            "total_anomalias": 100,
+            "total_universe": 122_020,
+            "mesas_sin_e14c": 3_670,
+            "mesas_concordancia_perfecta": 231,
+            "mesas_concordancia_perfecta_pct": 0.19,
+        }
+        with patch("src.modules.labeler.db.get_public_stats", return_value=known):
+            client = prod_app.test_client()
+            resp = client.get("/")
+
+        html = resp.data.decode()
+        cards = html.split('class="stat-card"')
+        perfect_card = next(
+            (c for c in cards if "concordancia perfecta" in c), None
+        )
+        assert perfect_card is not None
+        assert "<a " not in perfect_card
+
+    def test_home_view_dash_when_mesas_concordancia_perfecta_is_zero(self, prod_app):
+        """mesas_concordancia_perfecta == 0 renders '—', not the literal '0'."""
+        known = {
+            "mesas_all_three": 500,
+            "mesas_analyzed": 1000,
+            "mesas_remaining": 121_020,
+            "total_anomalias": 100,
+            "total_universe": 122_020,
+            "mesas_sin_e14c": 3_670,
+            "mesas_concordancia_perfecta": 0,
+            "mesas_concordancia_perfecta_pct": 0.0,
+        }
+        with patch("src.modules.labeler.db.get_public_stats", return_value=known):
+            client = prod_app.test_client()
+            resp = client.get("/")
+
+        html = resp.data.decode()
+        cards = html.split('class="stat-card"')
+        perfect_card = next(
+            (c for c in cards if "concordancia perfecta" in c), None
+        )
+        assert perfect_card is not None
+        assert "—" in perfect_card
+
+
+# ---------------------------------------------------------------------------
+# Phase 4.5 — fail-closed guard: home_view() survives a public_stats dict
+# missing the two new keys (D3's .get(key, _db.CONSTANT), not direct
+# indexing)
+# ---------------------------------------------------------------------------
+
+class TestHomeViewFailClosedNewKeys:
+    """home_view() must NOT 500 when get_public_stats() returns a dict that
+    omits mesas_concordancia_perfecta / mesas_concordancia_perfecta_pct —
+    e.g. a stale cached value from before this change deployed."""
+
+    def test_get_returns_200_when_stats_dict_omits_new_keys(self, prod_app):
+        partial_stats = {
+            "mesas_all_three": 500,
+            "mesas_analyzed": 1000,
+            "mesas_remaining": 121_020,
+            "total_anomalias": 100,
+            "total_universe": 122_020,
+            "mesas_sin_e14c": 3_670,
+            # mesas_concordancia_perfecta / _pct intentionally omitted
+        }
+        with patch("src.modules.labeler.db.get_public_stats", return_value=partial_stats):
+            client = prod_app.test_client()
+            resp = client.get("/")
+
+        assert resp.status_code == 200
+
+    def test_falls_back_to_module_constants_when_keys_missing(self, prod_app):
+        """The fallback value rendered is the real db.MESAS_CONCORDANCIA_PERFECTA
+        constant (231), not a synthesized 0 — home_view uses
+        public_stats.get(key, _db.CONSTANT), never .get(key, 0)."""
+        from src.modules.labeler.db import MESAS_CONCORDANCIA_PERFECTA
+
+        partial_stats = {
+            "mesas_all_three": 500,
+            "mesas_analyzed": 1000,
+            "mesas_remaining": 121_020,
+            "total_anomalias": 100,
+            "total_universe": 122_020,
+            "mesas_sin_e14c": 3_670,
+        }
+        with patch("src.modules.labeler.db.get_public_stats", return_value=partial_stats):
+            client = prod_app.test_client()
+            resp = client.get("/")
+
+        html = resp.data.decode()
+        assert str(MESAS_CONCORDANCIA_PERFECTA) in html
 
 
 # ---------------------------------------------------------------------------
@@ -442,6 +651,8 @@ class TestNoPublicFilterableSurface:
             "total_anomalias": 100,
             "total_universe": 122_020,
             "mesas_sin_e14c": 3_670,
+            "mesas_concordancia_perfecta": 231,
+            "mesas_concordancia_perfecta_pct": 0.19,
         }
         with patch("src.modules.labeler.db.get_public_stats", return_value=known):
             client = prod_app.test_client()
