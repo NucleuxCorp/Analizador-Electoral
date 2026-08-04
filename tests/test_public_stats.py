@@ -766,12 +766,12 @@ class TestLegalDisclaimerFooter:
         assert missing == [], f"public templates without the disclaimer: {missing}"
 
     def test_partial_states_non_affiliation_and_unofficial_figures(self):
-        """The text must deny affiliation AND disclaim the figures."""
+        """The text must deny affiliation AND point readers to the real official source."""
         text = (self._templates_dir() / "_footer_legal.html").read_text(encoding="utf-8")
         assert "no está afiliado" in text
         assert "Registraduría Nacional del Estado Civil" in text
         assert "Consejo Nacional Electoral" in text
-        assert "no constituyen" in text and "resultados oficiales" in text
+        assert "resultados oficiales" in text and "únicamente" in text
 
     def test_home_renders_the_disclaimer(self, prod_app):
         """GET / actually serves the disclaimer, not just the include tag."""
