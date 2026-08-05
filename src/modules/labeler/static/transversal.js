@@ -527,8 +527,45 @@ async function saveDecision(mesaKey, field, src, decision) {
   updateNavStatus();
   updateActiveNav();
   if (justCompleted && mesaKey === currentMesaKey) {
-    goNext();
+    if (sidebarFilter === 'pending') {
+      // Precompute next BEFORE remove — goNext after splice would use index -1.
+      const pos = keyOrder.indexOf(mesaKey);
+      const nextKey = (pos >= 0 && pos < keyOrder.length - 1)
+        ? keyOrder[pos + 1]
+        : null;
+      removeMesaFromQueue(mesaKey);
+      updateNavStatus();
+      if (nextKey) {
+        selectMesaByKey(nextKey);
+      } else {
+        currentMesaKey = null;
+        mesaDetail = null;
+        document.getElementById('main').innerHTML =
+          '<p class="empty-msg">Sin mesas en cola.</p>';
+        renderAlerts(null);
+        updateNavCounter();
+      }
+    } else {
+      goNext();
+    }
   }
+}
+
+function removeMesaFromQueue(mesaKey) {
+  const pos = keyOrder.indexOf(mesaKey);
+  if (pos >= 0) keyOrder.splice(pos, 1);
+  delete itemByKey[mesaKey];
+  const el = document.querySelector(
+    `.nav-item[data-mesa-key="${CSS.escape(mesaKey)}"]`,
+  );
+  if (el) el.remove();
+  keyOrder.forEach((k, i) => {
+    const num = document.querySelector(
+      `.nav-item[data-mesa-key="${CSS.escape(k)}"] .nav-num`,
+    );
+    if (num) num.textContent = String(i + 1).padStart(2, '0');
+  });
+  updateStatsBar();
 }
 
 function updateNavStatus() {

@@ -1604,6 +1604,7 @@ def reopen_transversal_decisions(
                 .eq("field", field)
                 .execute()
             )
+            clear_transversal_decided_slots_cache()
             return True, None
         except Exception as exc:
             logger.warning("reopen_transversal_decisions failed: %s", exc)
@@ -1630,6 +1631,7 @@ def reopen_transversal_decisions(
                 .eq("field", f)
                 .execute()
             )
+        clear_transversal_decided_slots_cache()
         return True, None
     except Exception as exc:
         logger.warning("reopen_transversal_decisions failed: %s", exc)
@@ -1671,6 +1673,7 @@ def upsert_transversal_decision(
             row,
             on_conflict="mesa_key,field,source",
         ).execute()
+        clear_transversal_decided_slots_cache()
         return True
     except Exception as exc:
         logger.warning("upsert_transversal_decision failed: %s", exc)
@@ -1704,12 +1707,32 @@ def _fetch_transversal_decision_rows(
         )
         return (query.in_("mesa_key", list(mesa_keys)).execute().data) or []
 
-    query = _client().table("transversal_review_decisions").select(
-        "mesa_key, field, source, decision"
-    )
     if mesa_key is not None:
-        query = query.eq("mesa_key", mesa_key)
-    return (query.execute().data) or []
+        query = _client().table("transversal_review_decisions").select(
+            "mesa_key, field, source, decision"
+        )
+        return (query.eq("mesa_key", mesa_key).execute().data) or []
+
+    # Full-table path: PostgREST silently caps responses at 1000 rows even when
+    # a wider .range() is requested. Paginate in 1000-row pages until short.
+    # Mirror _fetch_hierarchical_rows_grouped / _fetch_mesa_results_batched.
+    _BATCH = 1000
+    rows: list[dict] = []
+    offset = 0
+    while True:
+        page = (
+            _client()
+            .table("transversal_review_decisions")
+            .select("mesa_key, field, source, decision")
+            .range(offset, offset + _BATCH - 1)
+            .execute()
+            .data
+        ) or []
+        rows.extend(page)
+        if len(page) < _BATCH:
+            break
+        offset += _BATCH
+    return rows
 
 
 def get_transversal_decisions(

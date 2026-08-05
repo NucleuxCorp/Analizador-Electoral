@@ -1311,3 +1311,222 @@ class TestGetTransversalDecidedSlotsCache:
                 result = db.get_transversal_decided_slots()
 
         assert result == {}
+
+
+# ---------------------------------------------------------------------------
+# SDD: transversal-pending-queue-fix — cache clear on mutation + pagination
+# ---------------------------------------------------------------------------
+
+
+class TestUpsertClearsDecidedSlotsCache:
+    """Spec: Fresh decided-slots after decision mutations (upsert)."""
+
+    def test_successful_upsert_clears_decided_slots_cache(self):
+        chain = _make_chain([])  # empty edit window → first decision allowed
+        mock_client = _make_client(chain)
+
+        with patch("src.modules.labeler.db._client", return_value=mock_client):
+            with patch(
+                "src.modules.labeler.db.clear_transversal_decided_slots_cache"
+            ) as clear_cache:
+                ok = db.upsert_transversal_decision(
+                    "mesa-1", "VOTANTES", "e14c", "accepted", "user-1"
+                )
+
+        assert ok is True
+        clear_cache.assert_called_once_with()
+
+    def test_validation_failure_does_not_clear_decided_slots_cache(self):
+        mock_client = _make_client(_make_chain([]))
+
+        with patch("src.modules.labeler.db._client", return_value=mock_client):
+            with patch(
+                "src.modules.labeler.db.clear_transversal_decided_slots_cache"
+            ) as clear_cache:
+                ok = db.upsert_transversal_decision(
+                    "mesa-1", "NOT_A_FIELD", "e14c", "accepted", "user-1"
+                )
+
+        assert ok is False
+        clear_cache.assert_not_called()
+
+    def test_db_error_on_upsert_does_not_clear_decided_slots_cache(self):
+        query_chain = _make_chain([])
+        upsert_chain = MagicMock()
+        upsert_chain.execute.side_effect = RuntimeError("boom")
+
+        def _table(_name):
+            m = MagicMock()
+            m.select = query_chain.select
+            m.upsert = MagicMock(return_value=upsert_chain)
+            return m
+
+        client = MagicMock()
+        client.table.side_effect = _table
+
+        with patch("src.modules.labeler.db._client", return_value=client):
+            with patch(
+                "src.modules.labeler.db.clear_transversal_decided_slots_cache"
+            ) as clear_cache:
+                ok = db.upsert_transversal_decision(
+                    "mesa-1", "VOTANTES", "e14c", "accepted", "user-1"
+                )
+
+        assert ok is False
+        clear_cache.assert_not_called()
+
+
+class TestReopenClearsDecidedSlotsCache:
+    """Spec: Reopen restores mesa to pending filter (cache must clear)."""
+
+    def test_successful_single_field_reopen_clears_cache(self):
+        now = datetime.now(timezone.utc)
+        created = (now - timedelta(minutes=30)).isoformat()
+        chain = _make_chain([{"field": "VOTANTES", "created_at": created}])
+        mock_client = _make_client(chain)
+
+        with patch("src.modules.labeler.db._client", return_value=mock_client):
+            with patch(
+                "src.modules.labeler.db.clear_transversal_decided_slots_cache"
+            ) as clear_cache:
+                ok, err = db.reopen_transversal_decisions("mesa-1", field="VOTANTES")
+
+        assert (ok, err) == (True, None)
+        clear_cache.assert_called_once_with()
+
+    def test_successful_multi_field_reopen_clears_cache(self):
+        now = datetime.now(timezone.utc)
+        open_created = (now - timedelta(minutes=30)).isoformat()
+        rows = [
+            {"field": "VOTANTES", "created_at": open_created},
+            {"field": "URNA", "created_at": open_created},
+        ]
+        chain = _make_chain(rows)
+        mock_client = _make_client(chain)
+
+        with patch("src.modules.labeler.db._client", return_value=mock_client):
+            with patch(
+                "src.modules.labeler.db.clear_transversal_decided_slots_cache"
+            ) as clear_cache:
+                ok, err = db.reopen_transversal_decisions("mesa-1")
+
+        assert (ok, err) == (True, None)
+        clear_cache.assert_called_once_with()
+
+    def test_reopen_failure_does_not_clear_cache(self):
+        chain = _make_chain([])  # no decisions
+        mock_client = _make_client(chain)
+
+        with patch("src.modules.labeler.db._client", return_value=mock_client):
+            with patch(
+                "src.modules.labeler.db.clear_transversal_decided_slots_cache"
+            ) as clear_cache:
+                ok, err = db.reopen_transversal_decisions("mesa-1", field="VOTANTES")
+
+        assert (ok, err) == (False, "no_decisions")
+        clear_cache.assert_not_called()
+
+    def test_reopen_db_error_does_not_clear_cache(self):
+        now = datetime.now(timezone.utc)
+        created = (now - timedelta(minutes=30)).isoformat()
+        query_chain = _make_chain([{"field": "VOTANTES", "created_at": created}])
+        delete_chain = MagicMock()
+        delete_chain.eq.return_value = delete_chain
+        delete_chain.execute.side_effect = RuntimeError("boom")
+
+        def _table(_name):
+            m = MagicMock()
+            m.select = query_chain.select
+            m.delete = MagicMock(return_value=delete_chain)
+            return m
+
+        client = MagicMock()
+        client.table.side_effect = _table
+
+        with patch("src.modules.labeler.db._client", return_value=client):
+            with patch(
+                "src.modules.labeler.db.clear_transversal_decided_slots_cache"
+            ) as clear_cache:
+                ok, err = db.reopen_transversal_decisions("mesa-1", field="VOTANTES")
+
+        assert ok is False
+        assert err == "db_error"
+        clear_cache.assert_not_called()
+
+
+class TestFetchTransversalDecisionRowsPagination:
+    """Spec: Complete decided-slots index (no silent truncation at 1000)."""
+
+    def test_full_table_fetch_issues_multiple_range_pages(self):
+        page1 = [
+            {
+                "mesa_key": f"mesa-{i:04d}",
+                "field": "VOTANTES",
+                "source": "e14c",
+                "decision": "accepted",
+            }
+            for i in range(1000)
+        ]
+        page2 = [
+            {
+                "mesa_key": "mesa-1000",
+                "field": "VOTANTES",
+                "source": "e14c",
+                "decision": "accepted",
+            }
+        ]
+
+        chain = MagicMock()
+        chain.select.return_value = chain
+        chain.eq.return_value = chain
+        chain.in_.return_value = chain
+        chain.range.return_value = chain
+        chain.execute.side_effect = [
+            MagicMock(data=page1),
+            MagicMock(data=page2),
+        ]
+        mock_client = _make_client(chain)
+
+        with patch("src.modules.labeler.db._client", return_value=mock_client):
+            result = db._fetch_transversal_decision_rows()
+
+        assert len(result) == 1001
+        assert result[0]["mesa_key"] == "mesa-0000"
+        assert result[-1]["mesa_key"] == "mesa-1000"
+        assert chain.range.call_count >= 2
+        chain.range.assert_any_call(0, 999)
+        chain.range.assert_any_call(1000, 1999)
+
+    def test_full_table_fetch_stops_on_short_first_page(self):
+        rows = [
+            {
+                "mesa_key": "mesa-1",
+                "field": "VOTANTES",
+                "source": "e14c",
+                "decision": "accepted",
+            }
+        ]
+        chain = MagicMock()
+        chain.select.return_value = chain
+        chain.eq.return_value = chain
+        chain.range.return_value = chain
+        chain.execute.return_value = MagicMock(data=rows)
+        mock_client = _make_client(chain)
+
+        with patch("src.modules.labeler.db._client", return_value=mock_client):
+            result = db._fetch_transversal_decision_rows()
+
+        assert result == rows
+        chain.range.assert_called_once_with(0, 999)
+
+    def test_full_table_empty_returns_empty_list(self):
+        chain = MagicMock()
+        chain.select.return_value = chain
+        chain.range.return_value = chain
+        chain.execute.return_value = MagicMock(data=[])
+        mock_client = _make_client(chain)
+
+        with patch("src.modules.labeler.db._client", return_value=mock_client):
+            result = db._fetch_transversal_decision_rows()
+
+        assert result == []
