@@ -66,6 +66,23 @@ class TestTransversalUI:
         assert "/api/transversal/decisions/export" in content
         assert "showSaveFilePicker" not in content
 
+    def test_pending_complete_removes_mesa_from_queue(self):
+        """SDD transversal-pending-queue-fix: under Pendientes, complete
+        must strip the mesa from the queue (not leave a green ghost)."""
+        js_path = (
+            Path(__file__).resolve().parents[1]
+            / "src/modules/labeler/static/transversal.js"
+        )
+        content = js_path.read_text(encoding="utf-8")
+
+        assert "function removeMesaFromQueue" in content
+        assert "removeMesaFromQueue" in content
+        assert "sidebarFilter === 'pending'" in content
+        assert "goNext()" in content
+        assert "keyOrder.splice" in content or "keyOrder.filter" in content
+        assert "delete itemByKey" in content
+        assert "nav-num" in content
+
     def test_admin_html_has_transversal_link(self):
         admin_path = Path(__file__).resolve().parents[1] / "src/modules/labeler/templates/admin.html"
         html = admin_path.read_text(encoding="utf-8")
