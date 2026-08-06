@@ -2517,7 +2517,17 @@ def create_app(index_path: Path, labels_dir: Path) -> Flask:
         @require_role(ROLE_ADMIN)
         def admin_users_view() -> Response:
             try:
-                raw_users = _db._client().auth.admin.list_users()
+                raw_users = []
+                page = 1
+                per_page = 200
+                while True:
+                    batch = _db._client().auth.admin.list_users(page=page, per_page=per_page)
+                    if not batch:
+                        break
+                    raw_users.extend(batch)
+                    if len(batch) < per_page or page >= 50:
+                        break
+                    page += 1
                 unavailable = False
             except Exception as exc:
                 logger.error("admin_users_view: list_users failed: %s", exc)

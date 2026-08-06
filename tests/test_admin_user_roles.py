@@ -241,6 +241,54 @@ class TestAdminUsersListView:
             resp = client.get("/admin/users", headers={"Accept": "application/json"})
         assert resp.status_code == 403
 
+    def test_paginates_past_first_page(self, prod_app, admin_client):
+        """More users than fit in one Supabase Auth page (per_page=200) must all
+        render — the view must not silently stop at the first page."""
+        page1 = [_make_user(f"u{i}", f"user{i}@example.com", "validator") for i in range(200)]
+        page2 = [_make_user("u200", "user200@example.com", "moderator")]
+        mock_client = MagicMock()
+        mock_client.auth.admin.list_users.side_effect = [page1, page2, []]
+
+        p1, p2 = _admin_auth_patches()
+        with p1, p2, patch("src.modules.labeler.db._client", return_value=mock_client):
+            resp = admin_client.get("/admin/users", headers={"Accept": "text/html"})
+
+        assert resp.status_code == 200
+        body = resp.get_data(as_text=True)
+        assert "user0@example.com" in body
+        assert "user199@example.com" in body
+        assert "user200@example.com" in body
+        assert mock_client.auth.admin.list_users.call_args_list[0].kwargs == {"page": 1, "per_page": 200}
+        assert mock_client.auth.admin.list_users.call_args_list[1].kwargs == {"page": 2, "per_page": 200}
+
+    def test_stops_when_page_shorter_than_per_page(self, prod_app, admin_client):
+        """A short (non-full) page signals the last page — must not request a
+        page beyond it even though list_users wasn't called with an empty batch."""
+        users = [_make_user("u1", "solo@example.com", "validator")]
+        mock_client = MagicMock()
+        mock_client.auth.admin.list_users.return_value = users
+
+        p1, p2 = _admin_auth_patches()
+        with p1, p2, patch("src.modules.labeler.db._client", return_value=mock_client):
+            resp = admin_client.get("/admin/users", headers={"Accept": "text/html"})
+
+        assert resp.status_code == 200
+        assert mock_client.auth.admin.list_users.call_count == 1
+
+    def test_page_cap_prevents_infinite_loop(self, prod_app, admin_client):
+        """If the API kept returning full pages forever, the loop must still
+        terminate via the hard page cap instead of looping indefinitely."""
+        full_page = [_make_user(f"u{i}", f"user{i}@example.com", "validator") for i in range(200)]
+        mock_client = MagicMock()
+        mock_client.auth.admin.list_users.return_value = full_page
+
+        p1, p2 = _admin_auth_patches()
+        with p1, p2, patch("src.modules.labeler.db._client", return_value=mock_client):
+            resp = admin_client.get("/admin/users", headers={"Accept": "text/html"})
+
+        assert resp.status_code == 200
+        assert mock_client.auth.admin.list_users.call_count == 50
+
 
 # ---------------------------------------------------------------------------
 # Phase 4 — POST /admin/users/role
