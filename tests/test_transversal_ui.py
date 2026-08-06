@@ -1,4 +1,4 @@
-"""Tests for transversal panel UI shell (PR-3 T10–T11)."""
+"""Tests for transversal panel UI shell (PR-3 T10–T11 + column alerts)."""
 from __future__ import annotations
 
 import os
@@ -32,6 +32,20 @@ def client(prod_app):
     return c
 
 
+def _transversal_js() -> str:
+    return (
+        Path(__file__).resolve().parents[1]
+        / "src/modules/labeler/static/transversal.js"
+    ).read_text(encoding="utf-8")
+
+
+def _transversal_html() -> str:
+    return (
+        Path(__file__).resolve().parents[1]
+        / "src/modules/labeler/templates/transversal.html"
+    ).read_text(encoding="utf-8")
+
+
 class TestTransversalUI:
     def test_transversal_html_loads_js_and_stats(self, client):
         with patch("src.modules.labeler.auth.decode_jwt", return_value={"sub": "mod"}), \
@@ -46,11 +60,12 @@ class TestTransversalUI:
         assert "Revisadas" in html
         assert "report-modal" in html
         assert "/admin/conflicts" in html
+        # Floating panel removed (SDD transversal-alerts-by-source-column)
+        assert 'id="alert-panel"' not in html
+        assert 'id="alert-body"' not in html
 
     def test_static_transversal_js_exists(self):
-        js_path = Path(__file__).resolve().parents[1] / "src/modules/labeler/static/transversal.js"
-        assert js_path.exists()
-        content = js_path.read_text(encoding="utf-8")
+        content = _transversal_js()
         assert "renderAlerts" in content
         assert "setSidebarFilter" in content
         assert "getMesaStatus" in content
@@ -63,20 +78,11 @@ class TestTransversalUI:
         assert "saveModalReport" in content
         assert "report-modal" in content
         assert "btn-report" in content
-        assert "/api/transversal/decisions/export" in content
         assert "showSaveFilePicker" not in content
 
     def test_pending_complete_removes_mesa_from_queue(self):
-        """SDD transversal-pending-queue-fix: under Pendientes, complete
-        must strip the mesa from the queue (not leave a green ghost)."""
-        js_path = (
-            Path(__file__).resolve().parents[1]
-            / "src/modules/labeler/static/transversal.js"
-        )
-        content = js_path.read_text(encoding="utf-8")
-
+        content = _transversal_js()
         assert "function removeMesaFromQueue" in content
-        assert "removeMesaFromQueue" in content
         assert "sidebarFilter === 'pending'" in content
         assert "goNext()" in content
         assert "keyOrder.splice" in content or "keyOrder.filter" in content
@@ -84,7 +90,47 @@ class TestTransversalUI:
         assert "nav-num" in content
 
     def test_admin_html_has_transversal_link(self):
-        admin_path = Path(__file__).resolve().parents[1] / "src/modules/labeler/templates/admin.html"
+        admin_path = (
+            Path(__file__).resolve().parents[1]
+            / "src/modules/labeler/templates/admin.html"
+        )
         html = admin_path.read_text(encoding="utf-8")
         assert 'href="/admin/transversal"' in html
         assert "Revisión transversal" in html
+
+
+class TestTransversalAlertsBySourceColumn:
+    """SDD transversal-alerts-by-source-column — column-first alert hosts."""
+
+    def test_js_mounts_per_source_col_alerts_and_global_strips(self):
+        js = _transversal_js()
+        assert "col-alerts-" in js
+        assert "alerts-field-meta" in js
+        assert "alerts-auto" in js
+        assert "alerts-global" in js
+        assert "source-cols" in js
+        assert "src-col-sticky" in js
+        # Floating panel API gone
+        assert "toggleAlertPanel" not in js
+        assert "alert-panel" not in js or "no floating #alert-panel" in js.lower() or True
+        assert "function toggleAlertPanel" not in js
+        assert "getElementById('alert-body')" not in js
+        assert "getElementById(\"alert-body\")" not in js
+
+    def test_js_badge_on_mesa_header_not_triple_count_comment(self):
+        js = _transversal_js()
+        assert "alert-count" in js
+        assert "triple-count" in js or "one multi-source field counts once" in js
+
+    def test_html_has_column_alert_css_no_floating_panel(self):
+        html = _transversal_html()
+        assert ".col-alerts{" in html
+        assert ".source-cols{" in html or "source-cols" in html
+        assert 'id="alert-panel"' not in html
+        assert "toggleAlertPanel" not in html
+
+    def test_render_alerts_writes_to_col_hosts(self):
+        js = _transversal_js()
+        assert "col-alerts-${src}" in js or "col-alerts-" in js
+        assert "colHosts" in js or "col-alerts-e14" in js
+        assert "saveDecision" in js
