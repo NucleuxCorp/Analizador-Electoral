@@ -90,7 +90,12 @@ function navItemHtml(item, index) {
   const deptName = DEPT_NAMES[item.dept] || item.dept;
   const short = `${deptName} / z${item.zona} p${item.puesto} m${item.mesa}`;
   const status = getMesaStatus(item);
+  // SDD: admin-tables-export PR-B — row checkbox for the shared export
+  // toolbar (design.md D2/D3, mesa_key as export id). `event.stopPropagation()`
+  // keeps a checkbox click from also bubbling into the anchor's own
+  // `selectMesaByKey()` navigation handler.
   return `<a href="#" class="nav-item" data-mesa-key="${item.mesa_key}" data-dept="${item.dept}" onclick="selectMesaByKey('${item.mesa_key}');return false;">
+    <input type="checkbox" class="export-row-checkbox" data-export-table="transversal" data-export-id="${item.mesa_key}" onclick="event.stopPropagation()" style="margin-top:3px">
     <span class="nav-num">${String(index + 1).padStart(2, '0')}</span>
     <span class="nav-label">${short}</span>
     <span class="nav-status ${status}" title="${status === 'done' ? 'Revisada' : 'Pendiente'}"></span>
@@ -189,6 +194,20 @@ async function loadNextQueuePage(reset = false) {
     if (sentinel) {
       sentinel.textContent = queueMeta.hasMore ? 'Cargando más…' : '';
       sentinel.style.display = queueMeta.hasMore ? 'block' : 'none';
+    }
+
+    // SDD: admin-tables-export PR-B — the sidebar queue is this view's
+    // client-hydrated "table" (mesas.html pattern). A filter/page reset
+    // MUST clear any prior selection (spec scenario "Selection cleared on
+    // filter or page change"); an incremental infinite-scroll append only
+    // needs the newly-inserted checkboxes bound, without touching the
+    // existing selection.
+    if (window.AdminTableSelect) {
+      if (reset) {
+        AdminTableSelect.refresh('transversal');
+      } else {
+        AdminTableSelect.init('transversal');
+      }
     }
 
     updateStatsBar();
@@ -311,28 +330,41 @@ function renderMesaMain() {
   const deptName = DEPT_NAMES[d.dept] || d.dept;
   const pages = d.pages || {};
   const maxPages = Math.max(0, ...Object.values(pages));
-  const rows = [];
 
-  for (let p = 1; p <= maxPages; p += 1) {
-    const cells = SOURCE_ORDER.map((src) => {
-      const color = SOURCE_COLORS[src];
-      const label = SOURCE_LABELS[src];
-      const count = pages[src] || 0;
-      if (p <= count) {
-        return `<div class="cell"><div class="src-label" style="background:${color}">${label}</div>
-          ${pageImageHtml(d.mesa_key, src, p, label)}</div>`;
+  // Column-first layout (design D1): one .src-col per SOURCE_ORDER source,
+  // sticky label + empty #col-alerts-{src}, then stacked page cells.
+  const sourceCols = SOURCE_ORDER.map((src) => {
+    const color = SOURCE_COLORS[src];
+    const label = SOURCE_LABELS[src];
+    const count = pages[src] || 0;
+    const cells = [];
+    if (!count) {
+      cells.push(`<div class="cell missing">
+        <div class="no-pdf">PDF no disponible</div>
+      </div>`);
+    } else {
+      for (let p = 1; p <= count; p += 1) {
+        cells.push(`<div class="cell" data-page="${p}">
+          <div class="page-badge">Pág. ${p}</div>
+          ${pageImageHtml(d.mesa_key, src, p, label)}
+        </div>`);
       }
-      if (p === 1 && !count) {
-        return `<div class="cell missing"><div class="src-label" style="background:${color}">${label}</div>
-          <div class="no-pdf">PDF no disponible</div></div>`;
+      // Pad empty slots so multi-page sources align when another source has fewer pages.
+      for (let p = count + 1; p <= maxPages; p += 1) {
+        cells.push(`<div class="cell missing" data-page="${p}">
+          <div class="page-badge">Pág. ${p}</div>
+          <div class="no-pdf">—</div>
+        </div>`);
       }
-      return '';
-    }).filter(Boolean).join('');
-
-    if (cells) {
-      rows.push(`<div class="page-row"><div class="page-badge">Pág. ${p}</div><div class="page-cols">${cells}</div></div>`);
     }
-  }
+    return `<div class="src-col" data-src="${src}">
+      <div class="src-col-sticky">
+        <div class="src-label" style="background:${color}">${label}</div>
+        <div class="col-alerts" id="col-alerts-${src}" data-src="${src}"></div>
+      </div>
+      ${cells.join('')}
+    </div>`;
+  }).join('');
 
   document.getElementById('main').innerHTML = `
     <section class="mesa active">
@@ -341,6 +373,7 @@ function renderMesaMain() {
           <span class="dept-badge">${deptName}</span>
           zona ${d.zona} · puesto ${d.puesto} · mesa ${d.mesa}
           <span class="mesa-meta">C1+C2=${d.candidate_votes ?? '—'}</span>
+          <span class="alert-badge" id="alert-count">0</span>
         </div>
         <div class="mesa-nav">
           <button type="button" class="btn-report" onclick="openReportPanel('${d.mesa_key}')">📝 Reporte</button>
@@ -349,7 +382,13 @@ function renderMesaMain() {
           <button type="button" onclick="goNext()">Siguiente →</button>
         </div>
       </div>
-      ${rows.join('') || '<p class="empty-msg">Sin páginas disponibles.</p>'}
+      <div class="alerts-global" id="alerts-global">
+        <div class="alerts-auto" id="alerts-auto"></div>
+        <div class="alerts-field-meta" id="alerts-field-meta"></div>
+      </div>
+      ${maxPages > 0 || SOURCE_ORDER.some((s) => (pages[s] || 0) === 0)
+        ? `<div class="page-cols source-cols">${sourceCols}</div>`
+        : '<p class="empty-msg">Sin páginas disponibles.</p>'}
     </section>`;
   document.getElementById('main').scrollTop = 0;
   updateNavCounter();
@@ -395,29 +434,53 @@ function renderAlerts(mesaKey) {
     return (h.sources || []).some((s) => !fd[s.src]);
   }
 
+  // Field-level pending unit — one multi-source field counts once (no triple-count).
   const pending = human.filter(isPending).length;
   const badge = document.getElementById('alert-count');
-  badge.textContent = String(pending);
-  badge.style.background = pending === 0 ? '#16a34a' : '#f59e0b';
-
-  const body = document.getElementById('alert-body');
-  let html = '';
-
-  if (auto.length) {
-    html += '<div class="alert-section-label">Auto-resueltas (sin tinta)</div>';
-    html += auto.map((a) => `
-      <div class="alert-item alert-auto">
-        <div class="alert-item-header">
-          <span class="alert-src-name">${a.field_label}</span>
-          <span class="alert-auto-badge">AUTO</span>
-        </div>
-        <div class="alert-msg">${a.msg}</div>
-      </div>`).join('');
+  if (badge) {
+    badge.textContent = String(pending);
+    badge.style.background = pending === 0 ? '#16a34a' : '#f59e0b';
   }
 
+  const autoHost = document.getElementById('alerts-auto');
+  const metaHost = document.getElementById('alerts-field-meta');
+  // Clear per-source column action hosts (null-safe when main cleared).
+  const colHosts = {};
+  SOURCE_ORDER.forEach((src) => {
+    const el = document.getElementById(`col-alerts-${src}`);
+    colHosts[src] = el;
+    if (el) el.innerHTML = '';
+  });
+
+  if (!autoHost && !metaHost && !SOURCE_ORDER.some((s) => colHosts[s])) {
+    return;
+  }
+
+  // --- Auto alerts → neutral global strip ---
+  if (autoHost) {
+    let autoHtml = '';
+    if (auto.length) {
+      autoHtml += '<div class="alert-section-label">Auto-resueltas (sin tinta)</div>';
+      autoHtml += auto.map((a) => `
+        <div class="alert-item alert-auto">
+          <div class="alert-item-header">
+            <span class="alert-src-name">${a.field_label}</span>
+            <span class="alert-auto-badge">AUTO</span>
+          </div>
+          <div class="alert-msg">${a.msg}</div>
+        </div>`).join('');
+    }
+    autoHost.innerHTML = autoHtml;
+  }
+
+  // --- Shared field meta once → #alerts-field-meta ---
+  // --- Accept/reject per source → #col-alerts-{src} ---
   if (!human.length) {
-    if (!auto.length) html += '<div class="empty-msg">Sin alertas.</div>';
-    body.innerHTML = html;
+    if (metaHost) {
+      metaHost.innerHTML = (!auto.length)
+        ? '<div class="empty-msg">Sin alertas.</div>'
+        : '';
+    }
     return;
   }
 
@@ -425,10 +488,14 @@ function renderAlerts(mesaKey) {
   const sectionLabel = blankConfirm
     ? `Blancos reales — confirmar (${pending} pendiente(s))`
     : `Revisión humana (${human.length} campo(s))`;
-  html += `<div class="alert-section-label human">${sectionLabel}</div>`;
-  html += '<div class="edit-locked">La ventana de 3 h aplica por campo (no por mesa).</div>';
 
-  html += human.map((h) => {
+  let metaHtml = `<div class="alert-section-label human">${sectionLabel}</div>`;
+  metaHtml += '<div class="edit-locked">La ventana de 3 h aplica por campo (no por mesa).</div>';
+
+  const colHtml = {};
+  SOURCE_ORDER.forEach((src) => { colHtml[src] = ''; });
+
+  human.forEach((h) => {
     const fd = mesaDecisions[h.field] || {};
     const fw = fieldEditMeta(h.field);
     const locked = fw.decision_count > 0 && !fw.editable;
@@ -438,7 +505,24 @@ function renderAlerts(mesaKey) {
     } else if (fw.editable_until) {
       fieldNote = `<div class="edit-locked">Este campo editable hasta ${formatEditDeadline(fw.editable_until)}</div>`;
     }
-    const srcRows = (h.sources || []).map((s) => {
+    const tierBadge = h.tier === 'blank_confirm'
+      ? '<span class="alert-auto-badge">BLANCO</span>'
+      : `<span class="alert-class">${h.class}</span>`;
+    const reopenBtn = (fw.decision_count > 0 && fw.editable)
+      ? `<button type="button" class="btn-reopen" onclick="reopenField('${mesaKey}','${h.field}')">Reabrir ${h.field_label}</button>`
+      : '';
+
+    metaHtml += `<div class="alert-item">
+      <div class="alert-item-header human">
+        <span class="alert-src-name">${h.field_label}</span>
+        ${tierBadge}
+      </div>
+      <div class="alert-msg">${h.msg}</div>
+      ${fieldNote}
+      ${reopenBtn}
+    </div>`;
+
+    (h.sources || []).forEach((s) => {
       const dec = fd[s.src];
       const disabled = locked ? ' disabled' : '';
       const acceptCls = dec === 'accepted' ? ' is-current' : '';
@@ -446,9 +530,9 @@ function renderAlerts(mesaKey) {
       const missing = s.available === false
         ? '<span class="src-missing" title="Sin página renderizada; igual puedes aceptar o rechazar">sin imagen</span>'
         : '';
-      return `<div class="alert-actions">
-        <span class="alert-src-dot" style="background:${s.color}"></span>
-        <span class="src-name">${s.label}${missing ? ' ' + missing : ''}</span>
+      const row = `<div class="col-alert-row" data-field="${h.field}" data-src="${s.src}">
+        <span class="col-alert-field">${h.field_label}</span>
+        ${missing}
         <button type="button" class="btn-accept${acceptCls}"${disabled}
           onclick="saveDecision('${mesaKey}','${h.field}','${s.src}','accepted')"
           title="${dec === 'accepted' ? 'Ya aceptado' : 'Aceptar'}">✓</button>
@@ -456,25 +540,19 @@ function renderAlerts(mesaKey) {
           onclick="saveDecision('${mesaKey}','${h.field}','${s.src}','rejected')"
           title="${dec === 'rejected' ? 'Ya rechazado' : 'Rechazar'}">✗</button>
       </div>`;
-    }).join('');
-    const tierBadge = h.tier === 'blank_confirm'
-      ? '<span class="alert-auto-badge">BLANCO</span>'
-      : `<span class="alert-class">${h.class}</span>`;
-    const reopenBtn = (fw.decision_count > 0 && fw.editable)
-      ? `<button type="button" class="btn-reopen" onclick="reopenField('${mesaKey}','${h.field}')">Reabrir ${h.field_label}</button>`
-      : '';
-    return `<div class="alert-item">
-      <div class="alert-item-header human">
-        <span class="alert-src-name">${h.field_label}</span>
-        ${tierBadge}
-      </div>
-      <div class="alert-msg">${h.msg}</div>
-      ${fieldNote}
-      ${srcRows}
-      ${reopenBtn}
-    </div>`;
-  }).join('');
-  body.innerHTML = html;
+      if (colHtml[s.src] !== undefined) {
+        colHtml[s.src] += row;
+      } else if (colHosts[s.src]) {
+        // Source outside SOURCE_ORDER still gets a host if present.
+        colHosts[s.src].insertAdjacentHTML('beforeend', row);
+      }
+    });
+  });
+
+  if (metaHost) metaHost.innerHTML = metaHtml;
+  SOURCE_ORDER.forEach((src) => {
+    if (colHosts[src]) colHosts[src].innerHTML = colHtml[src] || '';
+  });
 }
 
 async function saveDecision(mesaKey, field, src, decision) {
@@ -679,12 +757,6 @@ function toggleSidebar() {
   document.getElementById('sidebar').classList.toggle('open');
 }
 
-function toggleAlertPanel() {
-  document.getElementById('alert-panel').classList.toggle('collapsed');
-  const chevron = document.getElementById('alert-chevron');
-  chevron.textContent = document.getElementById('alert-panel').classList.contains('collapsed') ? '▼' : '▲';
-}
-
 const BLANK_FIELDS = ['VOTANTES', 'URNA', 'SUMA_TOTAL'];
 const RTYPE_LABELS = {
   campos_vacios: 'Campos críticos vacíos',
@@ -849,10 +921,6 @@ async function deleteModalReport(reportId) {
   renderModalSaved(_reportMesaKey || currentMesaKey);
 }
 
-function exportDecisions() {
-  window.location.href = '/api/transversal/decisions/export';
-}
-
 function onFilterChange() {
   currentMesaKey = null;
   resetQueue().catch((err) => console.error(err));
@@ -881,8 +949,6 @@ window.saveDecision = saveDecision;
 window.reopenField = reopenField;
 window.reopenMesa = reopenMesa;
 window.toggleSidebar = toggleSidebar;
-window.toggleAlertPanel = toggleAlertPanel;
-window.exportDecisions = exportDecisions;
 window.onFilterChange = onFilterChange;
 window.onSearchInput = onSearchInput;
 window.setSidebarFilter = setSidebarFilter;

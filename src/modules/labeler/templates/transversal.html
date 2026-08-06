@@ -74,13 +74,16 @@
     .cell.missing{background:#0f172a}
     .no-pdf{display:flex;align-items:center;justify-content:center;min-height:120px;font-size:0.8rem;color:#334155;font-style:italic}
 
-    .alert-panel{position:fixed;bottom:20px;right:20px;z-index:50;width:320px;background:#1e293b;border:1px solid #334155;border-radius:12px;box-shadow:0 8px 32px #0008;overflow:hidden}
-    .alert-panel-header{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:#0f172a;cursor:pointer;user-select:none}
-    .alert-panel-title{font-size:0.8rem;font-weight:700;color:#f8fafc;display:flex;align-items:center;gap:8px}
+    .mesa-header{position:sticky;top:0;z-index:10;display:flex;align-items:center;justify-content:space-between;padding:6px 14px;gap:8px;flex-wrap:wrap;background:#0f172a;border-bottom:1px solid #1e293b;min-height:40px}
+    .source-cols{padding:6px 12px 12px}
+    .src-col{display:flex;flex-direction:column;gap:6px;min-width:0}
+    .src-col-sticky{position:sticky;top:40px;z-index:5;background:#0f172a;padding-bottom:4px}
+    .col-alerts{display:flex;flex-direction:column;gap:4px;padding:6px;max-height:40vh;overflow-y:auto;background:#1e293b;border:1px solid #334155;border-radius:8px}
+    .col-alert-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:0.7rem}
+    .col-alert-field{font-weight:600;color:#e2e8f0}
+    .alerts-global{padding:8px 12px;display:flex;flex-direction:column;gap:8px}
+    .alerts-auto,.alerts-field-meta{display:flex;flex-direction:column;gap:6px}
     .alert-badge{background:#ef4444;color:#fff;font-size:0.65rem;font-weight:700;padding:2px 7px;border-radius:999px}
-    .alert-panel-toggle{font-size:0.75rem;color:#64748b}
-    .alert-panel-body{padding:10px 12px;display:flex;flex-direction:column;gap:8px;max-height:50vh;overflow-y:auto}
-    .alert-panel.collapsed .alert-panel-body{display:none}
     .alert-item{border-radius:8px;overflow:hidden;border:1px solid #334155}
     .alert-item.alert-auto{opacity:0.85;border-color:#1e3a2f}
     .alert-item-header{display:flex;align-items:center;gap:8px;padding:6px 10px;background:#16a34a18}
@@ -151,7 +154,7 @@
       .btn-sidebar-toggle{display:inline-block}
       .topbar .legend{display:none}
       .topbar input{width:110px}
-      .page-cols{grid-template-columns:1fr}
+      .page-cols,.source-cols{grid-template-columns:1fr}
     }
   </style>
 </head>
@@ -246,16 +249,6 @@
       <button type="button" class="btn-modal-save" onclick="saveModalReport()">Guardar reporte</button>
     </div>
   </div>
-</div>
-
-<div class="alert-panel" id="alert-panel">
-  <div class="alert-panel-header" onclick="toggleAlertPanel()">
-    <div class="alert-panel-title">
-      Alertas <span class="alert-badge" id="alert-count">0</span>
-    </div>
-    <span class="alert-panel-toggle" id="alert-chevron">▲</span>
-  </div>
-  <div class="alert-panel-body" id="alert-body"></div>
 </div>
 
 <script src="{{ url_for('static', filename='transversal.js') }}"></script>
