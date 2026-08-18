@@ -73,11 +73,21 @@ class PlaywrightFetcher:
         fetcher.close()
     """
 
-    def __init__(self, base_url: str, headless: Optional[bool] = None) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        headless: Optional[bool] = None,
+        route_glob: Optional[str] = None,
+    ) -> None:
         self.base_url = base_url
         if headless is None:
             headless = bool(os.environ.get("E14C_FALLBACK_HEADLESS"))
         self._headless = headless
+        # Per-domain override for the escalation route interceptor (design.md
+        # D5, hash-probe-per-type): E14D serves under a different path than
+        # E14C's ROUTE_GLOB. Defaults to the module constant so every
+        # existing caller (E14C) is unaffected.
+        self._route_glob = route_glob or ROUTE_GLOB
 
         self._available = False
         self._launch_attempted = False
@@ -192,7 +202,7 @@ class PlaywrightFetcher:
             return self._page
 
         page = self._context.new_page()
-        page.route(ROUTE_GLOB, self._handle_route)
+        page.route(self._route_glob, self._handle_route)
         page.goto(self.base_url, wait_until="domcontentloaded", timeout=20000)
         self._page = page
         return page
