@@ -55,7 +55,7 @@ pip install tqdm
 ```bash
 python consulta_cc.py
 # Selecciona [2]
-# Ingresa cédula: 73135439
+# Ingresa cédula: 12345678   (NUIP ficticio de demostración)
 ```
 
 ### Opción 2: Menú integrado (vigencia + datos)
@@ -148,8 +148,8 @@ Importar módulo:
 from modulos.datos_personales import ProcuradoriaClient
 
 client = ProcuradoriaClient()
-datos = client.consultar_cedula("73135439")
-print(datos.get("primerApellido"))  # CUETO
+datos = client.consultar_cedula("12345678")
+print(datos.get("primerApellido"))  # -> primer apellido asociado al NUIP
 ```
 
 ---
