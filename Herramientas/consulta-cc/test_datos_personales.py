@@ -24,7 +24,7 @@ def test_consulta_cedula():
     print("=" * 60)
     
     # Ejemplo con un NUIP (ajusta si es necesario)
-    numeroIdentificacion = input("\nIngresa NUIP para probar (ej: 73135439): ").strip()
+    numeroIdentificacion = input("\nIngresa NUIP para probar (ej: 12345678): ").strip()
     if not numeroIdentificacion:
         print("SKIP: Sin NUIP")
         return
